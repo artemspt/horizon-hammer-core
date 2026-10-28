@@ -16,9 +16,10 @@ The contract between Horizon and its mods: the WIT package `horizon:mods@0.1.0`,
 | `ui` | [`ui`](#ui) | show its own screens and a settings page |
 | `render` | [`render`](#render) | draw on your screen, shake and zoom the camera |
 | `input` | [`input`](#input) | see the keys you hold and your clicks, take over the use button on its own items and the mouse wheel, and add keys |
-| `players` | [`players`](#players) | see who is on the server and message them |
-| `world` | [`world`](#world) | read and change the world's blocks |
+| `players` | [`players`](#players) | see who is on the server, message them and change their inventories |
+| `world` | [`world`](#world) | read and change the world's blocks, and keep items, energy and fluids on them |
 | `recipes` | [`recipes`](#recipes) | read the game's recipes and items and which recipes you know, place recipes in your crafting grid and, in creative mode, give you items |
+| `entities` | [`entities`](#entities) | find, spawn, hurt and move mobs and players, give effects, show particles and play sounds |
 
 ## World `horizon-mod`
 
@@ -36,14 +37,14 @@ A server mod (manifest `side = "server"`, `api = "0.3"`, experimental): runs whe
 
 ## World `horizon-server-mod`
 
-- Imports (what the game offers): `log`, `storage`, `players`, `world`
+- Imports (what the game offers): `log`, `storage`, `players`, `world`, `storages`, `entities`
 - Exports (what the mod provides): `server-events`
 
 ## World `horizon-server-block-mod`
 
 What the SDK builds a server mod as: `horizon-server-mod` and the block hooks.
 
-- Imports (what the game offers): `log`, `storage`, `players`, `world`
+- Imports (what the game offers): `log`, `storage`, `players`, `world`, `storages`, `entities`
 - Exports (what the mod provides): `block-events`, `server-events`
 
 ## World `horizon-ui-mod`
@@ -673,11 +674,27 @@ Capability `players`, server mods only (manifest `api = "0.3"`, experimental): t
 | `game-mode` | `game-mode` |  |
 | `health` | `f32` | Hit points as vanilla counts them: 20 is full health without effects. |
 
+### record `item-stack`
+
+An item stack, as server mods hand it around (inventories, block storages, item events).
+
+| Field | Type | |
+| --- | --- | --- |
+| `item` | `string` | `minecraft:iron_ingot`. |
+| `count` | `u32` |  |
+| `data` | `list<u8>` | The mod's own bytes on the stack (up to 1024), kept in the item's `minecraft:custom_data` and saved with it: every mod sees only its own. Stacks with different bytes do not stack together. |
+| `components` | `list<u8>` | Everything else the stack carries (enchantments, damage, a name, other mods' bytes), opaque: hand it back unchanged when moving the stack; empty for a plain new stack. |
+
 | Function | Signature | What it does |
 | --- | --- | --- |
 | `online` | `func() -> list<player>` | The players online, in the order they joined. |
 | `tell` | `func(player: string, text: string) -> bool` | A system message to one player, after the mod's name; false when no player with that id is online. Up to 8 messages per call. |
 | `broadcast` | `func(text: string)` | A system message to every player and the server's log, after the mod's name. Counts toward the same 8 per call. |
+| `inventory` | `func(player: string) -> list<option<item-stack>>` | The player's inventory as of this tick's start, 41 slots: 0-8 the hotbar, 9-35 the main inventory, 36-39 armor (feet, legs, chest, head), 40 the off hand. Empty when no such player is online. |
+| `selected-slot` | `func(player: string) -> option<u32>` | The hotbar slot the player holds (0-8); none when not online. |
+| `give` | `func(player: string, stack: item-stack) -> result<_, string>` | Gives a stack as `/give` does: into the inventory, the rest dropped at the player's feet. Changes to inventories are made in order at the tick's end. Err for an unknown item or a player not online. |
+| `set-slot` | `func(player: string, slot: u32, stack: option<item-stack>) -> result<_, string>` | Puts a stack in a slot (`inventory`'s numbering), none empties it. |
+| `take` | `func(player: string, item: string, count: u32) -> u32` | Takes up to `count` of `item` (any bytes and components) from the inventory, as `/clear` does: how many it holds of it now, so how many go at the tick's end. |
 
 ## `world`
 
@@ -702,6 +719,84 @@ Capability `world`, server mods only (manifest `api = "0.3"`, experimental): the
 | `get-data` | `func(dimension: string, x: s32, y: s32, z: s32) -> option<list<u8>>` | The mod's own bytes on the block at a position, as `set-data` left them: none when it kept none there, where no chunk is loaded, or when the block is no longer the one they were set on (broken or replaced since; its properties may change, a furnace lit or not). Only this mod's data: every mod has its own. |
 | `set-data` | `func(dimension: string, x: s32, y: s32, z: s32, data: list<u8>) -> result<_, string>` | Keeps `data` (up to 4096 bytes) on the block at a position: saved with the world, gone once that block is broken or replaced. Empty `data` removes it. Err where no chunk is loaded, on air, for too much, or past 65536 positions per mod. |
 | `data-positions` | `func(dimension: string) -> list<tuple<s32, s32, s32>>` | Every position in `dimension` where the mod keeps data (some may be stale until read: `get-data` says), for a tick over its machines. |
+| `schedule-tick` | `func(dimension: string, x: s32, y: s32, z: s32, delay: u32) -> result<_, string>` | Calls `block-events.block-tick` for this mod at a position after `delay` server ticks (1 to 72000), as long as the same block is there then: a machine's timer, a growing crop. Saved with the world. Err where no chunk is loaded, or past 65536 waiting per mod. |
+| `redstone-power` | `func(dimension: string, x: s32, y: s32, z: s32) -> option<u8>` | The strongest redstone signal reaching the block at a position from its neighbours (0 to 15, `getBestNeighborSignal`), as of the tick's start. Known for blocks a server mod keeps data or a storage on; none elsewhere. |
+
+## `storages`
+
+Access: capability `world`.
+
+Capability `world`: items, energy and fluids kept on blocks, which every server mod can move in and out (a pipe of one mod feeds a machine of another), and windows with slots for them. A storage belongs to the mod that declared it, lives on its block like `world.set-data` (saved with the world, gone with the block) and works in every dimension. Vanilla containers (chests, barrels, hoppers, furnaces, shulker boxes...) answer the item calls too, in the loaded level.
+
+### type `item-stack`
+
+`type item-stack = item-stack`
+
+### record `fluid-stack`
+
+A fluid amount in millibuckets (1000 per bucket).
+
+| Field | Type | |
+| --- | --- | --- |
+| `fluid` | `string` | `minecraft:water`, `minecraft:lava`, or any id a mod uses. |
+| `amount` | `u32` |  |
+
+### record `storage-shape`
+
+What a storage holds: slots (up to 54), energy (FE, the unit NeoForge mods use) and tanks (up to 16), each with its capacity in mB.
+
+| Field | Type | |
+| --- | --- | --- |
+| `slots` | `u32` |  |
+| `energy-capacity` | `u64` |  |
+| `tanks` | `list<u32>` |  |
+
+| Function | Signature | What it does |
+| --- | --- | --- |
+| `declare` | `func(dimension: string, x: s32, y: s32, z: s32, shape: storage-shape) -> result<_, string>` | Gives the block at a position a storage of this shape, for this mod. Declared again with another shape it keeps what fits. Err where no chunk is loaded, on air, on another mod's storage or a vanilla container, or past 65536 storages per mod. |
+| `remove` | `func(dimension: string, x: s32, y: s32, z: s32)` | Removes this mod's storage there, and what it held. |
+| `shape` | `func(dimension: string, x: s32, y: s32, z: s32) -> option<storage-shape>` | The storage's shape there (a vanilla container: its slots only). |
+| `items` | `func(dimension: string, x: s32, y: s32, z: s32) -> option<list<option<item-stack>>>` | The slots of the storage or vanilla container there. |
+| `set-item` | `func(dimension: string, x: s32, y: s32, z: s32, slot: u32, stack: option<item-stack>) -> result<_, string>` | Sets a slot of the mod's own storage (no limits but the slot count). |
+| `insert-item` | `func(dimension: string, x: s32, y: s32, z: s32, stack: item-stack, simulate: bool) -> u32` | Moves a stack in, as a hopper does: into slots holding the same item first, then empty ones, up to each item's stack size. How many went in (or would, when `simulate`). |
+| `extract-item` | `func(dimension: string, x: s32, y: s32, z: s32, item: option<string>, count: u32, simulate: bool) -> option<item-stack>` | Takes up to `count` from the first slot holding `item` (none: any item), as a hopper does. What came out (or would). |
+| `energy` | `func(dimension: string, x: s32, y: s32, z: s32) -> option<tuple<u64, u64>>` | Stored and capacity, in FE. |
+| `insert-energy` | `func(dimension: string, x: s32, y: s32, z: s32, amount: u64, simulate: bool) -> u64` | How much went in (up to the capacity), or would. |
+| `extract-energy` | `func(dimension: string, x: s32, y: s32, z: s32, amount: u64, simulate: bool) -> u64` | How much came out, or would. |
+| `set-energy` | `func(dimension: string, x: s32, y: s32, z: s32, amount: u64) -> result<_, string>` | Sets the mod's own storage's energy (clamped to its capacity). |
+| `fluids` | `func(dimension: string, x: s32, y: s32, z: s32) -> option<list<option<fluid-stack>>>` | Each tank's fluid, none when empty. |
+| `insert-fluid` | `func(dimension: string, x: s32, y: s32, z: s32, fluid: fluid-stack, simulate: bool) -> u32` | Fills tanks holding the same fluid first, then empty ones: how many mB went in, or would. |
+| `extract-fluid` | `func(dimension: string, x: s32, y: s32, z: s32, fluid: option<string>, amount: u32, simulate: bool) -> option<fluid-stack>` | Drains up to `amount` mB from the first tank holding `fluid` (none: any). |
+| `set-fluid` | `func(dimension: string, x: s32, y: s32, z: s32, tank: u32, fluid: option<fluid-stack>) -> result<_, string>` | Sets a tank of the mod's own storage (clamped to its capacity). |
+| `open-menu` | `func(player: string, dimension: string, x: s32, y: s32, z: s32, title: string) -> result<_, string>` | Opens a window with the storage's slots and the player's inventory, as a chest's: the server runs every click, shift-click and drag, so the mod only reads its slots. The window has rows of 9 (a storage of 9, 18, ... 54 slots) or is a hopper's (5 slots); `title` is plain text. It closes when the player leaves or the storage goes. Err for another shape, or a player not online. |
+
+## `entities`
+
+Access: capability `entities`.
+
+Capability `entities` (server mods): the mobs of the loaded level, and the server's own commands for entities, effects, particles and sounds. Changes are made in order at the end of the call's tick, as the server console would make them.
+
+### record `entity`
+
+| Field | Type | |
+| --- | --- | --- |
+| `id` | `string` | The UUID, `xxxxxxxx-xxxx-...`; a player's is `players`'s id. |
+| `kind` | `string` | `minecraft:zombie`. |
+| `x` | `f64` |  |
+| `y` | `f64` |  |
+| `z` | `f64` |  |
+| `health` | `f32` |  |
+
+| Function | Signature | What it does |
+| --- | --- | --- |
+| `near` | `func(dimension: string, x: f64, y: f64, z: f64, radius: f64) -> list<entity>` | The living mobs within `radius` (up to 128) blocks of a position, as of the tick's start, nearest first, at most 256. Mobs of the level the server ticks last (single player: the owner's) only. |
+| `spawn` | `func(dimension: string, kind: string, x: f64, y: f64, z: f64, nbt: string) -> result<_, string>` | `/summon`: `kind` at a position, with `nbt` (SNBT, empty for none). |
+| `hurt` | `func(id: string, amount: f32) -> result<_, string>` | `/damage`: hurts an entity or player by its id. |
+| `kill` | `func(id: string) -> result<_, string>` | `/kill`. |
+| `teleport` | `func(id: string, dimension: string, x: f64, y: f64, z: f64) -> result<_, string>` | `/tp`: to a position in a dimension. |
+| `effect` | `func(id: string, effect: string, seconds: u32, amplifier: u8) -> result<_, string>` | `/effect give`: `effect` (`minecraft:speed`) for `seconds` at `amplifier` (0 is level I). |
+| `particle` | `func(dimension: string, particle: string, x: f64, y: f64, z: f64, dx: f32, dy: f32, dz: f32, speed: f32, count: u32) -> result<_, string>` | `/particle`: `count` of `particle` (`minecraft:flame`) spread over `dx dy dz`, at `speed`, seen by every player in range. |
+| `sound` | `func(dimension: string, sound: string, x: f64, y: f64, z: f64, volume: f32, pitch: f32) -> result<_, string>` | `/playsound`: `sound` (`minecraft:block.anvil.use`) at a position for every player in range. |
 
 ## `server-events`
 
@@ -795,7 +890,15 @@ Asked before the server acts on a block: what a server mod answers decides it (m
 
 `type player = player`
 
+### type `item-stack`
+
+`type item-stack = item-stack`
+
 | Function | Signature | What it does |
 | --- | --- | --- |
 | `break-block` | `func(player: player, x: s32, y: s32, z: s32, state: string) -> bool` | `player` starts breaking the block at `x y z` in their dimension; `state` is what is there, as `minecraft:oak_log[axis=y]`. True refuses it: the block stays, and the player's game puts it back, as under spawn protection. Every mod asked may refuse. |
 | `use-block` | `func(player: player, x: s32, y: s32, z: s32, state: string, item: string) -> bool` | `player` right-clicks the block at `x y z` (`state`) holding `item` in the hand they use (`minecraft:air`: an empty hand). True: the mod handled it, and vanilla neither uses the block (doors, chests, buttons...) nor uses or places the held item there. The first mod (in load order) that answers true takes it. |
+| `place-block` | `func(player: player, x: s32, y: s32, z: s32, item: string) -> bool` | `player` is about to place `item` (a block item) at `x y z`, the block it would go in. True refuses it: nothing is placed and the item stays. Every mod asked may refuse. |
+| `use-item` | `func(player: player, stack: item-stack, off-hand: bool) -> bool` | `player` right-clicks the air holding `stack` (`off-hand`: in the off hand). True: the mod handled it and vanilla does not use the item. |
+| `block-tick` | `func(dimension: string, x: s32, y: s32, z: s32, state: string)` | The tick `world.schedule-tick` asked for, the block still `state`. |
+| `neighbor-changed` | `func(dimension: string, x: s32, y: s32, z: s32, state: string, from-x: s32, from-y: s32, from-z: s32)` | A block next to one this mod keeps data or a storage on changed, found at the tick's start: `state` is the mod's block, `from-*` the neighbour. |

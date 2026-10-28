@@ -1,0 +1,8 @@
+id = "iron_press"
+name = "Iron Press"
+version = "0.1.0"
+description = "An iron block becomes a press: right click it with an empty hand. It pulls iron ingots from a container above, charges from redstone and presses nuggets into a container below."
+authors = ["Horizon Hammer Core"]
+api = "0.3"
+side = "server"
+capabilities = ["players", "world", "entities"]

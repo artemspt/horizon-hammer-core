@@ -23,6 +23,32 @@ The project has a working WASM mod system in `crates/horizon-mods/` with:
 
 ## Changelog
 
+### 2025-10-28 - Machines: items, storages, windows, timers, redstone, entities (API level 10)
+
+#### Added
+- **WIT `players`**: `item-stack` (item, count, the mod's own `data`, opaque `components`); `inventory`, `selected-slot`,
+  `give`, `set-slot`, `take` (made at the tick's end, in the player's own inventory: `as_guest`)
+- **WIT `storages`** (capability `world`): `declare`/`remove`/`shape`; items (`items`, `set-item`, `insert-item`,
+  `extract-item`), energy (FE), fluids (mB), each insert/extract with `simulate`, usable by every mod; vanilla
+  containers answer the item calls; `open-menu`: a chest's window on a storage (placeholder `BlockEntity::Chest` under a
+  key no block has, copied both ways each tick)
+- **WIT `entities`** (new capability `entities`): `near` (mobs of the level ticked last), `spawn`, `hurt`, `kill`,
+  `teleport`, `effect`, `particle`, `sound` as the server console's commands
+- **WIT `world`**: `schedule-tick` (saved with the world), `redstone-power` (for mod blocks)
+- **WIT `block-events`**: `place-block` (refuse), `use-item` (take a right click in the air), `block-tick`,
+  `neighbor-changed` (six neighbours of every mod block compared each tick)
+- **Runtime** - `runtime/server_api.rs`: `HostStack`, `Storage`, `ScheduledTick`, `ServerAction`, `EntityInfo`;
+  `BlockData` keeps storages, timers and the clock; `WorldView` gains `redstone`, `max_stack`, `container`,
+  `set_container`, `mobs` (defaults: none); `Output::Server`; `Mods::place_block`, `use_item`, `machine_positions`,
+  `storage_slots`, `set_storage_slots`
+- **Game** - `game/mod_machines.rs`: stacks both ways (mods' bytes under `minecraft:custom_data.horizon_mods`), inventories
+  in the snapshot, the lent extras (redstone, stack sizes, block entities of every level, mobs), actions, windows;
+  `game/server_mods.rs` `mods_refuse_place`, `mods_take_item_use`; `game/lan_actions.rs` asks them; `levels.rs`
+  `parked_world(s)`
+- **SDK** - `server::{ItemStack, StorageShape, FluidStack, Entity, storages, entities}`, `ServerMod::place_block`,
+  `use_item`, `block_tick`, `neighbor_changed`
+- **Example** `iron-press`; **test** `iron_press_runs_a_machine`; `docs/mods.md` "Machines"; API reference regenerated
+
 ### 2025-10-28 - Fixes: the inventory key and `/hmod` in default single player
 
 #### Fixed

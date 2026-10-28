@@ -480,7 +480,10 @@ its component targets the WIT world `horizon-server-mod` instead of
 | `log` | always | as for client mods |
 | `storage` | `storage` | as for client mods, in the server's `horizon-mods/` |
 | `players` | `players` | `online()`: id, name, position, dimension, game mode, health of each player on; `tell(id, text)`, `broadcast(text)`: system messages after the mod's name, 8 per call |
-| `world` | `world` | `get-block(dimension, x, y, z)`: the state in a loaded chunk, `minecraft:oak_log[axis=y]`; `get-biome(dimension, x, y, z)`: `minecraft:plains`, ...; `set-blocks(dimension, changes)`: up to 4096 per call, checked at once, made as `/setblock` makes them (neighbours, light, block entities, every player told) after the call, before that dimension's next tick |
+| `world` | `world` | `get-block(dimension, x, y, z)`: the state in a loaded chunk, `minecraft:oak_log[axis=y]`; `get-biome(dimension, x, y, z)`: `minecraft:plains`, ...; `set-blocks(dimension, changes)`: up to 4096 per call, checked at once, made as `/setblock` makes them (neighbours, light, block entities, every player told) after the call, before that dimension's next tick; `get-data`/`set-data`/`data-positions`: the mod's own bytes on a block; `schedule-tick`, `redstone-power` (level 10) |
+| `players` (level 10) | `players` | `inventory(id)`: 41 slots; `selected-slot(id)`; `give`, `set-slot`, `take`: made at the tick's end |
+| `storages` (level 10) | `world` | items, energy (FE) and fluids (mB) on blocks, for every mod to move in and out; vanilla containers answer the item calls; `open-menu`: a chest-like window on a storage |
+| `entities` (level 10) | `entities` | `near(dimension, x, y, z, radius)`: the mobs around; `spawn`, `hurt`, `kill`, `teleport`, `effect`, `particle`, `sound`: the server's own commands, at the tick's end |
 
 | Hook (export `server-events`) | When |
 |---|---|
@@ -490,6 +493,9 @@ its component targets the WIT world `horizon-server-mod` instead of
 | `chat(player, text)` | `registration.chat`: each chat message a player sends |
 | `command(player, name, args, values)` | `/name args` typed by a player, for a command it registered, with its arguments' values (below); `ok(some)` is that player's feedback, `err` their red error |
 | `block-broken(player, pos, state)`, `block-placed(player, pos, state)` | `registration.blocks`, with the state as `minecraft:oak_log[axis=y]` |
+| `block-events` (a second export): `break-block`, `use-block`, `place-block`, `use-item` | `registration.blocks`, *before* the server acts: true refuses (or takes) it |
+| `block-events`: `block-tick(dimension, x, y, z, state)` | the tick `world.schedule-tick` asked for |
+| `block-events`: `neighbor-changed(dimension, x, y, z, state, from)` | a block next to one the mod keeps data or a storage on changed |
 
 Capabilities that act on a local player (`game-read`, `chat`, `hud`) are for
 client mods; `players` is for server mods. In Rust: `impl
@@ -534,6 +540,52 @@ that code. Changes for a dimension whose level isn't ticking wait for it
 change in a chunk that isn't loaded when it is made is skipped, as `/setblock`
 refuses one.
 
+**Machines (API level 10).** What NeoForge mods build machines from, in the
+sandbox: the example is
+[`iron-press`](../crates/horizon-mod-sdk/examples/iron-press/src/lib.rs).
+
+- *Stacks.* An `item-stack` is an item, a count, the mod's own bytes (`data`,
+  up to 1024, kept in `minecraft:custom_data`, each mod sees only its own)
+  and `components`: everything else (enchantments, damage, names, other mods'
+  bytes), opaque. A mod moving a stack hands `components` back unchanged, so
+  nothing it can't see is lost. `ItemStack::new(item, count).with_data(bytes)`
+  makes a plain one.
+- *Inventories.* `players.inventory(id)` reads the 41 slots as of the tick's
+  start (hotbar 0-8, main 9-35, armor 36-39 feet to head, off hand 40);
+  `give` (the rest dropped at the player's feet, as `/give`), `set-slot` and
+  `take` (as `/clear`; it answers how many the player holds) are made in order
+  at the tick's end, in each player's own inventory, so their game sees them
+  as vanilla's.
+- *Storages.* `storages.declare(dimension, x, y, z, shape)` gives a block up
+  to 54 slots, an energy buffer (FE) and up to 16 tanks (mB). It belongs to
+  the mod, lives on the block as `world.set-data` does (saved with the world
+  in `horizon-mods/block-data.json`, gone with the block) and works in every
+  dimension. Every server mod can `insert-item`/`extract-item` (as a hopper:
+  same items first, each item's stack size), `insert-energy`/`extract-energy`
+  and `insert-fluid`/`extract-fluid`, each with `simulate`; only its owner
+  sets slots, energy and tanks directly. Vanilla containers (chests, barrels,
+  hoppers, furnaces, shulker boxes...) answer the item calls too, in the
+  levels the server has: so one mod's pipe feeds another mod's machine or a
+  chest the same way.
+- *Windows.* `storages.open-menu(player, dimension, x, y, z, title)` opens a
+  chest's window (rows of 9, or a hopper's 5 slots) on the storage. The
+  server runs every click, shift-click and drag as vanilla's chest; the mod
+  only reads its slots, and what it sets shows in the open window. Players on
+  the server thread, LAN and dedicated servers (not `--in-frame`).
+- *Timers and redstone.* `world.schedule-tick(dimension, x, y, z, delay)`
+  calls `block-tick` after 1 to 72,000 ticks while the same block is there,
+  saved with the world. `world.redstone-power` is the strongest signal
+  reaching a block the mod keeps data or a storage on (0-15, as of the tick's
+  start).
+- *Neighbours.* At each tick's start the server compares the six blocks
+  around each block a mod keeps data or a storage on with the last tick's:
+  each change is a `neighbor-changed`.
+- *Entities.* `entities.near` lists the living mobs within 128 blocks (the
+  level ticked last, so in single player the owner's). `spawn`, `hurt`,
+  `kill`, `teleport`, `effect`, `particle` and `sound` are vanilla's
+  `/summon`, `/damage`, `/kill`, `/tp`, `/effect`, `/particle` and
+  `/playsound`, run as the server console at the tick's end (ids are UUIDs).
+
 **Where they run.** The game that simulates the world starts the server mods
 that are on, and only that one:
 
@@ -563,7 +615,10 @@ on, each of these points costs one branch (measured in the PR that added
 them).
 
 **Not yet.** Block events are a player's own breaking and placing, not
-explosions, pistons or other mods. Command arguments don't take entities,
+explosions, pistons or other mods. Storages have no comparator output and
+emit no redstone; a storage's window has no progress bars; entity events
+(hurt, death) and models, particles of a mod's own and its own sounds are
+for later. Command arguments don't take entities,
 items or block states yet, and `^` coordinates; in-frame single player's chat
 box lists server mods' commands by name only (the server still parses their
 arguments).

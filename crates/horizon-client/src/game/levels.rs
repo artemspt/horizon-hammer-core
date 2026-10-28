@@ -122,6 +122,16 @@ impl Levels {
             .iter_mut()
             .map(|(d, p)| (*d, &mut p.world.chunks))
     }
+    /// The worlds of the levels that are not in place.
+    #[cfg_attr(not(feature = "mods"), allow(dead_code))]
+    pub(super) fn parked_worlds(&mut self) -> impl Iterator<Item = (Dim, &mut World)> {
+        self.parked.iter_mut().map(|(d, p)| (*d, &mut p.world))
+    }
+    /// A level's world while it is parked.
+    #[cfg_attr(not(feature = "mods"), allow(dead_code))]
+    pub(super) fn parked_world(&mut self, dim: Dim) -> Option<&mut World> {
+        self.parked.get_mut(&dim).map(|p| &mut p.world)
+    }
     /// The levels that are not in place, by dimension.
     pub(super) fn parked_dims(&self) -> Vec<Dim> {
         self.parked.keys().copied().collect()

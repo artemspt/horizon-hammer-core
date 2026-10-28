@@ -19,6 +19,11 @@ use wasmtime::{
     component::{Component, HasSelf, Linker},
 };
 
+mod server_api;
+pub use server_api::{
+    EntityInfo, HostStack, INVENTORY_SLOTS, ScheduledTick, ServerAction, Storage, Tank,
+};
+
 mod bindings {
     wasmtime::component::bindgen!({
         path: "../horizon-mod-sdk/wit",
@@ -170,6 +175,9 @@ pub struct Snapshot {
     pub font_widths: Arc<[f32]>,
     /// The players on the server, for server mods.
     pub players: Vec<ServerPlayer>,
+    /// Each player's id, held hotbar slot and 41 inventory slots
+    /// (`players.inventory`), for server mods.
+    pub inventories: Vec<(String, u32, Vec<Option<HostStack>>)>,
     /// The first block along the player's view within [`RAYCAST_MAX`] and
     /// its distance from the eye, for `game.raycast`; the game works it out
     /// only while a mod calls it ([`Mods::wants_raycast`]).
@@ -263,6 +271,9 @@ pub enum Output {
         count: u32,
         components: String,
     },
+    /// A server mod's change to players, windows or entities, made by the
+    /// game at the tick's end.
+    Server(ServerAction),
 }
 
 /// The game's world as capability `world` reads it during a call: the
@@ -277,6 +288,35 @@ pub trait WorldView: std::any::Any + Send {
     fn has_dimension(&self, dimension: &str) -> bool;
     /// `Err` (why) for a state string that names no block state.
     fn check_state(&self, state: &str) -> Result<(), String>;
+    /// The redstone power reaching a block (`world.redstone-power`): the
+    /// game works it out for [`Mods::machine_positions`] before lending.
+    fn redstone(&self, _dimension: &str, _x: i32, _y: i32, _z: i32) -> Option<u8> {
+        None
+    }
+    /// An item's stack size; none for an item the game does not know.
+    fn max_stack(&self, _item: &str) -> Option<u32> {
+        Some(64)
+    }
+    /// A vanilla container's slots at a position (chest, barrel, hopper...).
+    fn container(&self, _dimension: &str, _x: i32, _y: i32, _z: i32) -> Option<Vec<Option<HostStack>>> {
+        None
+    }
+    /// Stores a vanilla container's slots (as many as it has): false when
+    /// none is there.
+    fn set_container(
+        &mut self,
+        _dimension: &str,
+        _x: i32,
+        _y: i32,
+        _z: i32,
+        _slots: Vec<Option<HostStack>>,
+    ) -> bool {
+        false
+    }
+    /// The living mobs of a dimension (`entities.near`).
+    fn mobs(&self, _dimension: &str) -> Vec<EntityInfo> {
+        Vec::new()
+    }
 }
 
 /// The view lent for the current calls, shared by every mod's store.
@@ -460,6 +500,20 @@ struct State {
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct BlockData {
     pub mods: std::collections::BTreeMap<String, std::collections::BTreeMap<String, (String, String)>>,
+    /// `storages.declare`: `"dimension x y z"` → the storage.
+    #[serde(default)]
+    pub storages: std::collections::BTreeMap<String, Storage>,
+    /// `world.schedule-tick`s waiting.
+    #[serde(default)]
+    pub ticks: Vec<ScheduledTick>,
+    /// The server tick of the last [`Mods::server_tick`], which `ticks` count from.
+    #[serde(default)]
+    pub now: u64,
+    /// `now` follows this server's clock (false right after loading).
+    #[serde(skip)]
+    synced: bool,
+    #[serde(skip)]
+    neighbors: server_api::NeighborCache,
 }
 type BlockDataSlot = Arc<Mutex<BlockData>>;
 const BLOCK_DATA_BYTES: usize = 4096;
@@ -640,6 +694,10 @@ impl Mods {
             let engine = Engine::new(&config).map_err(|e| e.to_string())?;
             let mut linker = Linker::new(&engine);
             HorizonMod::add_to_linker::<State, HasSelf<State>>(&mut linker, |s| s)
+                .map_err(|e| e.to_string())?;
+            server_bindings::horizon::mods::storages::add_to_linker::<State, HasSelf<State>>(&mut linker, |s| s)
+                .map_err(|e| e.to_string())?;
+            server_bindings::horizon::mods::entities::add_to_linker::<State, HasSelf<State>>(&mut linker, |s| s)
                 .map_err(|e| e.to_string())?;
             players::add_to_linker::<State, HasSelf<State>>(&mut linker, |s| s)
                 .map_err(|e| e.to_string())?;
@@ -966,6 +1024,7 @@ impl Mods {
 
     /// A server tick.
     pub fn server_tick(&mut self, tick: u64) {
+        self.block_hooks(tick);
         self.each_server(FUEL_TICK, |h| h.tick, |m, s| m.call_tick(s, tick));
     }
     /// `player` joined the server (they are in the snapshot's players).
@@ -1845,6 +1904,12 @@ impl mod_world::Host for State {
             })
             .collect()
     }
+    fn schedule_tick(&mut self, dimension: String, x: i32, y: i32, z: i32, delay: u32) -> Result<(), String> {
+        State::schedule_tick(self, dimension, x, y, z, delay)
+    }
+    fn redstone_power(&mut self, dimension: String, x: i32, y: i32, z: i32) -> Option<u8> {
+        State::redstone_power(self, dimension, x, y, z)
+    }
     fn get_block(&mut self, dimension: String, x: i32, y: i32, z: i32) -> Option<String> {
         let view = self.world.lock().ok()?;
         view.as_ref()?.block(&dimension, x, y, z)
@@ -1895,6 +1960,21 @@ impl players::Host for State {
             name,
             text: clip(text),
         });
+    }
+    fn inventory(&mut self, player: String) -> Vec<Option<players::ItemStack>> {
+        self.player_inventory(player)
+    }
+    fn selected_slot(&mut self, player: String) -> Option<u32> {
+        self.player_selected(player)
+    }
+    fn give(&mut self, player: String, stack: players::ItemStack) -> Result<(), String> {
+        self.player_give(player, stack)
+    }
+    fn set_slot(&mut self, player: String, slot: u32, stack: Option<players::ItemStack>) -> Result<(), String> {
+        self.player_set_slot(player, slot, stack)
+    }
+    fn take(&mut self, player: String, item: String, count: u32) -> u32 {
+        self.player_take(player, item, count)
     }
 }
 /// A key a mod registered (capability `input`).

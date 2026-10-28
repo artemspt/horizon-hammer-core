@@ -99,6 +99,9 @@ fn access(interface: &str, exported: bool) -> String {
     if interface == "log" {
         return "always granted".into();
     }
+    if interface == "storages" {
+        return "capability `world`".into();
+    }
     match Capability::ALL.iter().find(|c| c.interface() == interface) {
         Some(c) => format!("capability `{c}`"),
         None => "not granted by any capability".into(),

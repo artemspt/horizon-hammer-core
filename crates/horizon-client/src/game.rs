@@ -168,6 +168,8 @@ mod sculk;
 mod sculk_fixture;
 mod server_links;
 mod server_mods;
+#[cfg(feature = "mods")]
+mod mod_machines;
 mod server_packs;
 mod server_travel;
 mod shader_packs;

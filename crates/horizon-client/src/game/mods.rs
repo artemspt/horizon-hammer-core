@@ -71,6 +71,18 @@ pub(super) struct ModsState {
     /// tick.
     #[cfg(feature = "mods")]
     pub(super) block_writes: Vec<(String, horizon_mods::BlockChange)>,
+    /// Server mods' changes to inventories, windows and entities, made at
+    /// the tick's end.
+    #[cfg(feature = "mods")]
+    pub(super) actions: Vec<horizon_mods::ServerAction>,
+    /// Storages' windows open for players.
+    #[cfg(feature = "mods")]
+    pub(super) menus: Vec<super::mod_machines::ModMenu>,
+    #[cfg(feature = "mods")]
+    pub(super) next_menu: i32,
+    /// Every item's stack size, for server mods' calls, made once.
+    #[cfg(feature = "mods")]
+    pub(super) max_stacks: Option<std::sync::Arc<std::collections::HashMap<String, u32>>>,
     /// `command.run` lines for this window's own world, run on the next tick:
     /// run at once, their chat lines would reach the mods while their output
     /// is still being shown, and a mod answering its own lines would recurse.
@@ -487,6 +499,7 @@ impl Game<'_> {
             cps,
             font_widths: self.mods.font_widths.clone(),
             players,
+            inventories: Vec::new(),
             view_hit: self.mod_view_hit(),
             recipes,
             known_recipes,
@@ -720,7 +733,8 @@ impl Game<'_> {
                 server @ (Output::Tell { .. }
                 | Output::Broadcast { .. }
                 | Output::Reply { .. }
-                | Output::SetBlocks { .. }) => {
+                | Output::SetBlocks { .. }
+                | Output::Server(_)) => {
                     self.route_server_output(host.as_deref_mut(), server);
                     continue;
                 }

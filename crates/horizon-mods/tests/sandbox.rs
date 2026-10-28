@@ -2,8 +2,8 @@
 //! examples and a guest
 //! that misbehaves on command. Needs `rustup target add wasm32-unknown-unknown`.
 use horizon_mods::{
-    BlockPos, Clock, Corner, GameMode, HeldItem, Hit, Mods, Output, Package, Player, Runs,
-    ServerPlayer, Shape, Snapshot, Status,
+    BlockPos, Clock, Corner, EntityInfo, GameMode, HeldItem, Hit, HostStack, Mods, Output, Package,
+    Player, Runs, ServerAction, ServerPlayer, Shape, Snapshot, Status,
     manifest::componentize,
     testing::{Script, TestGame},
 };
@@ -51,6 +51,8 @@ fn mods_dir() -> &'static Path {
                 "-p",
                 "block-guard",
                 "-p",
+                "iron-press",
+                "-p",
                 "horizon-mods-test-guest",
                 "-p",
                 "horizon-mods-test-ui-guest",
@@ -76,6 +78,7 @@ fn mods_dir() -> &'static Path {
             ("welcome", example("welcome")),
             ("beacons", example("beacons")),
             ("block_guard", example("block-guard")),
+            ("iron_press", example("iron-press")),
             ("horizon_mods_test_guest", GUEST_MANIFEST.to_string()),
             ("horizon_mods_test_ui_guest", UI_MANIFEST.to_string()),
         ];
@@ -260,8 +263,10 @@ experimental = ["ui", "render", "input", "recipes"]
     assert_eq!(level("coords_hud.hmod"), 0);
     // The UI guest replaces the inventory (`ui.replace-screen`, level 8).
     assert_eq!(level("horizon_mods_test_ui_guest.hmod"), 8);
-    // Block Guard keeps data on blocks (`world.set-data`): the newest level.
-    assert_eq!(level("block_guard.hmod"), LEVEL);
+    // Block Guard keeps data on blocks (`world.set-data`, level 9).
+    assert_eq!(level("block_guard.hmod"), 9);
+    // The Iron Press uses storages, timers and entities: the newest level.
+    assert_eq!(level("iron_press.hmod"), LEVEL);
 }
 
 #[test]
@@ -544,6 +549,178 @@ impl horizon_mods::WorldView for FewBlocks {
     fn check_state(&self, _state: &str) -> Result<(), String> {
         Ok(())
     }
+}
+
+/// A world for machines: blocks, vanilla containers, redstone and mobs.
+#[derive(Default)]
+struct Machines {
+    blocks: Vec<((i32, i32, i32), String)>,
+    containers: Vec<((i32, i32, i32), Vec<Option<HostStack>>)>,
+    redstone: u8,
+    mobs: Vec<EntityInfo>,
+}
+impl horizon_mods::WorldView for Machines {
+    fn block(&self, _dimension: &str, x: i32, y: i32, z: i32) -> Option<String> {
+        let found = self.blocks.iter().find(|(p, _)| *p == (x, y, z));
+        Some(found.map_or_else(|| "minecraft:air".to_owned(), |(_, s)| s.clone()))
+    }
+    fn biome(&self, _dimension: &str, _x: i32, _y: i32, _z: i32) -> Option<String> {
+        Some("minecraft:plains".into())
+    }
+    fn has_dimension(&self, dimension: &str) -> bool {
+        dimension == "minecraft:overworld"
+    }
+    fn check_state(&self, _state: &str) -> Result<(), String> {
+        Ok(())
+    }
+    fn redstone(&self, _dimension: &str, _x: i32, _y: i32, _z: i32) -> Option<u8> {
+        Some(self.redstone)
+    }
+    fn max_stack(&self, item: &str) -> Option<u32> {
+        (item != "minecraft:nothing").then_some(64)
+    }
+    fn container(&self, _dimension: &str, x: i32, y: i32, z: i32) -> Option<Vec<Option<HostStack>>> {
+        self.containers.iter().find(|(p, _)| *p == (x, y, z)).map(|(_, s)| s.clone())
+    }
+    fn set_container(&mut self, _dimension: &str, x: i32, y: i32, z: i32, slots: Vec<Option<HostStack>>) -> bool {
+        match self.containers.iter_mut().find(|(p, _)| *p == (x, y, z)) {
+            Some((_, at)) if at.len() == slots.len() => {
+                *at = slots;
+                true
+            }
+            _ => false,
+        }
+    }
+    fn mobs(&self, _dimension: &str) -> Vec<EntityInfo> {
+        self.mobs.clone()
+    }
+}
+fn with_machines(mods: &mut Mods, f: impl FnOnce(&mut Machines)) {
+    let view: Box<dyn std::any::Any> = mods.take_world().expect("a world lent");
+    let mut view = view.downcast::<Machines>().expect("the machines");
+    f(&mut view);
+    mods.lend_world(view);
+}
+fn stack(item: &str, count: u32) -> HostStack {
+    HostStack {
+        item: item.into(),
+        count,
+        ..HostStack::default()
+    }
+}
+
+// API level 10: a machine with a storage and a window, timers, redstone,
+// vanilla containers, stacks that keep what the mod can't see, inventories,
+// placing, item use, neighbours and entities
+#[test]
+fn iron_press_runs_a_machine() {
+    let steve = ServerPlayer {
+        id: "00000000-0000-0000-0000-000000000001".into(),
+        name: "Steve".into(),
+        x: 0.5,
+        y: 64.0,
+        z: 0.5,
+        dimension: "minecraft:overworld".into(),
+        game_mode: GameMode::Survival,
+        health: 20.0,
+    };
+    let dim = "minecraft:overworld";
+    let (press, above, below) = ((1, 64, 2), (1, 65, 2), (1, 63, 2));
+    let at = BlockPos { x: 1, y: 64, z: 2 };
+    // An ingot carrying an enchantment-like component and another mod's bytes.
+    let marked = HostStack {
+        components: vec![10, 0, 0],
+        data: [("other_mod".to_string(), vec![9u8])].into_iter().collect(),
+        ..stack("minecraft:iron_ingot", 1)
+    };
+    let mut slots = vec![Some(marked.clone()), Some(stack("minecraft:iron_ingot", 2))];
+    slots.resize(27, None);
+    let mut mods = Mods::load(&[mods_dir().join("iron_press.hmod")], |_| true, |_| false);
+    assert_eq!(mods.entries()[0].status, Status::Running);
+    mods.set_snapshot(Snapshot {
+        players: vec![steve.clone()],
+        inventories: vec![(
+            steve.id.clone(),
+            0,
+            vec![Some(stack("minecraft:paper", 3)), Some(stack("minecraft:stone", 5))],
+        )],
+        ..Snapshot::default()
+    });
+    mods.lend_world(Box::new(Machines {
+        blocks: vec![
+            (press, "minecraft:iron_block".into()),
+            (above, "minecraft:chest[facing=north]".into()),
+            (below, "minecraft:hopper[facing=down]".into()),
+        ],
+        containers: vec![(above, slots), (below, vec![None; 5])],
+        redstone: 0,
+        mobs: vec![EntityInfo {
+            id: "00000000-0000-0000-0000-00000000000a".into(),
+            kind: "minecraft:zombie".into(),
+            pos: (2.0, 64.0, 2.0),
+            health: 20.0,
+        }],
+    }));
+
+    // An empty hand declares the press's storage and opens its window.
+    assert!(mods.use_block(&steve, at, "minecraft:iron_block", "minecraft:air"));
+    let out = mods.drain();
+    assert!(out.iter().any(|o| matches!(o, Output::Server(ServerAction::OpenMenu { title, pos, .. }) if title == "Iron Press" && *pos == press)), "{out:?}");
+    assert_eq!(mods.storage_slots(dim, press).map(|s| s.len()), Some(9));
+    assert_eq!(mods.machine_positions(dim), vec![press]);
+    // Paper counts the player's items and gives a nugget with the mod's bytes.
+    assert!(mods.use_block(&steve, at, "minecraft:iron_block", "minecraft:paper"));
+    let out = mods.drain();
+    assert!(out.iter().any(|o| matches!(o, Output::Tell { text, .. } if text == "You carry 8 items")));
+    assert!(out.iter().any(|o| matches!(o, Output::Server(ServerAction::Give { stack, .. })
+        if stack.item == "minecraft:iron_nugget" && stack.data.get("iron_press") == Some(&vec![7]))));
+
+    // A second later (its timer): the first ingot comes in, unpowered it waits.
+    for t in 1..=21 {
+        mods.server_tick(t);
+    }
+    let held = mods.storage_slots(dim, press).unwrap();
+    assert_eq!(held[0].as_ref(), Some(&marked), "what the mod can't see stays on the stack");
+    // Powered, it presses it into nuggets and pushes them into the hopper below.
+    with_machines(&mut mods, |m| m.redstone = 15);
+    for t in 22..=41 {
+        mods.server_tick(t);
+    }
+    let view: Box<dyn std::any::Any> = mods.take_world().unwrap();
+    let view = view.downcast::<Machines>().unwrap();
+    let hopper = &view.containers[1].1;
+    let nuggets = hopper[0].as_ref().expect("nuggets below");
+    assert_eq!((nuggets.item.as_str(), nuggets.count), ("minecraft:iron_nugget", 9));
+    assert_eq!(nuggets.data.get("iron_press"), Some(&1u32.to_le_bytes().to_vec()));
+    assert_eq!(view.containers[0].1[1].as_ref().map(|s| s.count), Some(1), "one more ingot pulled");
+    mods.lend_world(view);
+
+    // Saved with the world: the storage, its energy and the waiting timer.
+    let saved = mods.block_data_json();
+    assert!(saved.contains("\"storages\"") && saved.contains("\"ticks\""), "{saved}");
+    let mut again = Mods::load(&[mods_dir().join("iron_press.hmod")], |_| true, |_| false);
+    again.set_block_data_json(&saved);
+    assert_eq!(again.storage_slots(dim, press), mods.storage_slots(dim, press));
+
+    // A neighbour changing clanks.
+    mods.drain();
+    with_machines(&mut mods, |m| m.blocks.push(((2, 64, 2), "minecraft:stone".into())));
+    mods.server_tick(42);
+    assert!(mods.drain().iter().any(|o| matches!(o, Output::Server(ServerAction::Console { line }) if line.contains("playsound minecraft:block.anvil.land"))));
+
+    // No TNT near a press; elsewhere it goes.
+    assert!(mods.place_block(&steve, BlockPos { x: 3, y: 64, z: 2 }, "minecraft:tnt"));
+    assert!(!mods.place_block(&steve, BlockPos { x: 30, y: 64, z: 2 }, "minecraft:tnt"));
+    assert!(!mods.place_block(&steve, BlockPos { x: 3, y: 64, z: 2 }, "minecraft:stone"));
+
+    // A blaze rod in the air hastens the mobs around.
+    mods.drain();
+    assert!(mods.use_item(&steve, &stack("minecraft:blaze_rod", 1), false));
+    let out = mods.drain();
+    assert!(out.iter().any(|o| matches!(o, Output::Server(ServerAction::Console { line })
+        if line == "effect give 00000000-0000-0000-0000-00000000000a minecraft:speed 10 1")), "{out:?}");
+    assert!(out.iter().any(|o| matches!(o, Output::Server(ServerAction::Console { line }) if line.contains("particle minecraft:flame"))));
+    assert!(!mods.use_item(&steve, &stack("minecraft:stick", 1), false));
 }
 
 // `world.set-data`: a mod's bytes stay on the block, survive saving the world, and go with the block

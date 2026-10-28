@@ -103,9 +103,12 @@ pub enum Capability {
     /// The recipes and items the game knows, for recipe viewers
     /// (interface `recipes`).
     Recipes,
+    /// The mobs of the loaded level, and the server's commands for
+    /// entities, effects, particles and sounds (server mods).
+    Entities,
 }
 impl Capability {
-    pub const ALL: [Capability; 12] = [
+    pub const ALL: [Capability; 13] = [
         Capability::GameRead,
         Capability::Chat,
         Capability::Hud,
@@ -118,12 +121,13 @@ impl Capability {
         Capability::Players,
         Capability::World,
         Capability::Recipes,
+        Capability::Entities,
     ];
     /// Whether a server mod may have it: the others act on a local player.
     pub fn on_server(self) -> bool {
         matches!(
             self,
-            Capability::Storage | Capability::Players | Capability::World
+            Capability::Storage | Capability::Players | Capability::World | Capability::Entities
         )
     }
     /// The WIT interface it grants, in `horizon:mods`.
@@ -141,6 +145,7 @@ impl Capability {
             Capability::Players => "players",
             Capability::World => "world",
             Capability::Recipes => "recipes",
+            Capability::Entities => "entities",
         }
     }
     /// May change in any release: a mod uses it only with
@@ -165,8 +170,9 @@ impl Capability {
             Capability::Input => {
                 "see the keys you hold and your clicks, take over the use button on its own items and the mouse wheel, and add keys"
             }
-            Capability::Players => "see who is on the server and message them",
-            Capability::World => "read and change the world's blocks",
+            Capability::Players => "see who is on the server, message them and change their inventories",
+            Capability::World => "read and change the world's blocks, and keep items, energy and fluids on them",
+            Capability::Entities => "find, spawn, hurt and move mobs and players, give effects, show particles and play sounds",
             Capability::Recipes => {
                 "read the game's recipes and items and which recipes you know, place recipes in your crafting grid and, in creative mode, give you items"
             }
@@ -187,6 +193,10 @@ impl Capability {
         // A recipe viewer's panel is part of capability `ui`.
         if interface == "browser" {
             return Ok(Some(Capability::Ui));
+        }
+        // Items, energy and fluids on blocks are part of capability `world`.
+        if interface == "storages" {
+            return Ok(Some(Capability::World));
         }
         Capability::ALL
             .into_iter()
@@ -211,6 +221,7 @@ impl fmt::Display for Capability {
             Capability::Players => "players",
             Capability::World => "world",
             Capability::Recipes => "recipes",
+            Capability::Entities => "entities",
         };
         f.write_str(name)
     }

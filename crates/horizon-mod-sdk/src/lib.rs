@@ -199,8 +199,27 @@ pub mod server {
         Argument, ArgumentKind, ArgumentValue, BlockPos, Guest as __Guest, Registration,
         ServerCommand,
     };
-    pub use horizon::mods::players::{self, GameMode, Player};
+    pub use horizon::mods::entities::{self, Entity};
+    pub use horizon::mods::players::{self, GameMode, ItemStack, Player};
+    pub use horizon::mods::storages::{self, FluidStack, StorageShape};
     pub use horizon::mods::world::{self, BlockChange};
+
+    impl ItemStack {
+        /// A plain stack of `count` `item`s, with no bytes of the mod's.
+        pub fn new(item: &str, count: u32) -> Self {
+            Self {
+                item: item.to_owned(),
+                count,
+                data: Vec::new(),
+                components: Vec::new(),
+            }
+        }
+        /// The same stack carrying the mod's own bytes.
+        pub fn with_data(mut self, data: Vec<u8>) -> Self {
+            self.data = data;
+            self
+        }
+    }
 
     /// The server's calls into a mod. Only the hooks [`Registration`] asks
     /// for are called; the others may stay as their defaults.
@@ -242,6 +261,22 @@ pub mod server {
         fn use_block(&mut self, _player: &Player, _pos: BlockPos, _state: &str, _item: &str) -> bool {
             false
         }
+        /// Before `player` places `item` at `pos` (the block it would go in),
+        /// when [`Registration::blocks`] is set: true refuses it.
+        fn place_block(&mut self, _player: &Player, _pos: BlockPos, _item: &str) -> bool {
+            false
+        }
+        /// `player` right-clicks the air holding `stack`, when
+        /// [`Registration::blocks`] is set: true means the mod handled it.
+        fn use_item(&mut self, _player: &Player, _stack: &ItemStack, _off_hand: bool) -> bool {
+            false
+        }
+        /// The tick [`world::schedule_tick`] asked for, the block still
+        /// `state`, when [`Registration::blocks`] is set.
+        fn block_tick(&mut self, _dimension: &str, _pos: BlockPos, _state: &str) {}
+        /// A neighbour (`from`) of a block the mod keeps data or a storage
+        /// on changed, when [`Registration::blocks`] is set.
+        fn neighbor_changed(&mut self, _dimension: &str, _pos: BlockPos, _state: &str, _from: BlockPos) {}
     }
 
     impl Registration {
@@ -404,7 +439,7 @@ macro_rules! export_server_mod {
     ($t:ty) => {
         const _: () = {
             use ::std::cell::RefCell;
-            use $crate::server::{Args, ArgumentValue, BlockPos, Player, Registration, ServerMod};
+            use $crate::server::{Args, ArgumentValue, BlockPos, ItemStack, Player, Registration, ServerMod};
             ::std::thread_local! {
                 static STATE: RefCell<Option<$t>> = const { RefCell::new(None) };
             }
@@ -462,6 +497,38 @@ macro_rules! export_server_mod {
                     let mut out = false;
                     with(|m| out = m.use_block(&player, BlockPos { x, y, z }, &state, &item));
                     out
+                }
+                fn place_block(player: Player, x: i32, y: i32, z: i32, item: String) -> bool {
+                    let mut out = false;
+                    with(|m| out = m.place_block(&player, BlockPos { x, y, z }, &item));
+                    out
+                }
+                fn use_item(player: Player, stack: ItemStack, off_hand: bool) -> bool {
+                    let mut out = false;
+                    with(|m| out = m.use_item(&player, &stack, off_hand));
+                    out
+                }
+                fn block_tick(dimension: String, x: i32, y: i32, z: i32, state: String) {
+                    with(|m| m.block_tick(&dimension, BlockPos { x, y, z }, &state))
+                }
+                fn neighbor_changed(
+                    dimension: String,
+                    x: i32,
+                    y: i32,
+                    z: i32,
+                    state: String,
+                    from_x: i32,
+                    from_y: i32,
+                    from_z: i32,
+                ) {
+                    with(|m| {
+                        m.neighbor_changed(
+                            &dimension,
+                            BlockPos { x, y, z },
+                            &state,
+                            BlockPos { x: from_x, y: from_y, z: from_z },
+                        )
+                    })
                 }
             }
             #[cfg(target_arch = "wasm32")]

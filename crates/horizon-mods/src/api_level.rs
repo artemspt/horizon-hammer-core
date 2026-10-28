@@ -7,13 +7,13 @@
 //! version's level so the launcher can tell before it installs.
 
 /// The newest level this Horizon serves.
-pub const LEVEL: u32 = 9;
+pub const LEVEL: u32 = 10;
 
 /// Every function the game offers mods, as `interface.function`, with its
 /// level. Level 0 is the contract of Horizon 0.2.67 to 0.2.69. A new
 /// function takes the next level and raises [`LEVEL`] (the `api_reference`
 /// test fails until it is listed here).
-pub const FUNCTIONS: [(&str, u32); 50] = [
+pub const FUNCTIONS: [(&str, u32); 81] = [
     ("log.write", 0),
     ("game.get-player", 0),
     ("game.get-clock", 0),
@@ -64,6 +64,37 @@ pub const FUNCTIONS: [(&str, u32); 50] = [
     ("world.get-data", 9),
     ("world.set-data", 9),
     ("world.data-positions", 9),
+    ("players.inventory", 10),
+    ("players.selected-slot", 10),
+    ("players.give", 10),
+    ("players.set-slot", 10),
+    ("players.take", 10),
+    ("world.schedule-tick", 10),
+    ("world.redstone-power", 10),
+    ("storages.declare", 10),
+    ("storages.remove", 10),
+    ("storages.shape", 10),
+    ("storages.items", 10),
+    ("storages.set-item", 10),
+    ("storages.insert-item", 10),
+    ("storages.extract-item", 10),
+    ("storages.energy", 10),
+    ("storages.insert-energy", 10),
+    ("storages.extract-energy", 10),
+    ("storages.set-energy", 10),
+    ("storages.fluids", 10),
+    ("storages.insert-fluid", 10),
+    ("storages.extract-fluid", 10),
+    ("storages.set-fluid", 10),
+    ("storages.open-menu", 10),
+    ("entities.near", 10),
+    ("entities.spawn", 10),
+    ("entities.hurt", 10),
+    ("entities.kill", 10),
+    ("entities.teleport", 10),
+    ("entities.effect", 10),
+    ("entities.particle", 10),
+    ("entities.sound", 10),
 ];
 
 /// What the game's program carries so the launcher can read its level

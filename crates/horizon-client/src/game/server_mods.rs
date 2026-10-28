@@ -62,6 +62,19 @@ impl Game<'_> {
     ) -> bool {
         false
     }
+    pub(super) fn mods_refuse_place(
+        &mut self,
+        _host: &mut LanHost,
+        _conn: u32,
+        _clicked: [i32; 3],
+        _face: [i32; 3],
+        _off_hand: bool,
+    ) -> bool {
+        false
+    }
+    pub(super) fn mods_take_item_use(&mut self, _host: &mut LanHost, _conn: u32, _off_hand: bool) -> bool {
+        false
+    }
 }
 
 #[cfg(feature = "mods")]
@@ -74,7 +87,7 @@ mod run {
         text::{self, Text},
     };
     use horizon_mods::{
-        ArgumentKind, BlockPos, GameMode, Output, ServerCommand, ServerPlayer, WorldView,
+        ArgumentKind, BlockPos, GameMode, HostStack, Output, ServerCommand, ServerPlayer, WorldView,
     };
     use horizon_protocol::packets::play::{self, Clientbound as C};
     use horizon_world::registry::{BlockRegistry, BlockStateId};
@@ -90,6 +103,8 @@ mod run {
         registry: &'static BlockRegistry,
         biomes: std::sync::Arc<horizon_client::biome::Biomes>,
         dims: Vec<(&'static str, ChunkMap)>,
+        /// Redstone, stack sizes, vanilla containers and mobs.
+        more: crate::game::mod_machines::Lent,
     }
     impl WorldView for LentWorld {
         fn block(&self, dimension: &str, x: i32, y: i32, z: i32) -> Option<String> {
@@ -112,6 +127,21 @@ mod run {
             crate::game::render_control::parse_state(self.registry, state)
                 .map(drop)
                 .map_err(|e| format!("{state}: {e}"))
+        }
+        fn redstone(&self, dimension: &str, x: i32, y: i32, z: i32) -> Option<u8> {
+            self.more.redstone(dimension, x, y, z)
+        }
+        fn max_stack(&self, item: &str) -> Option<u32> {
+            self.more.max_stack(item)
+        }
+        fn container(&self, dimension: &str, x: i32, y: i32, z: i32) -> Option<Vec<Option<HostStack>>> {
+            self.more.container(dimension, x, y, z)
+        }
+        fn set_container(&mut self, dimension: &str, x: i32, y: i32, z: i32, slots: Vec<Option<HostStack>>) -> bool {
+            self.more.set_container(dimension, x, y, z, slots)
+        }
+        fn mobs(&self, dimension: &str) -> Vec<horizon_mods::EntityInfo> {
+            self.more.mobs(dimension)
         }
     }
 
@@ -266,8 +296,10 @@ mod run {
             if !self.mods.server {
                 return;
             }
+            self.sync_mod_menus();
             let players = self.server_players(None);
-            let snapshot = self.mod_snapshot_with(players.clone());
+            let mut snapshot = self.mod_snapshot_with(players.clone());
+            snapshot.inventories = self.mod_inventories();
             self.mods.mods.set_snapshot(snapshot);
             self.lend_world();
             let before = std::mem::take(&mut self.mods.players);
@@ -327,6 +359,7 @@ mod run {
             self.mods.players = players;
             self.show_mod_output();
             self.apply_mod_block_writes();
+            self.apply_mod_actions();
         }
 
         /// Players' command trees list the running server mods' commands
@@ -349,6 +382,7 @@ mod run {
             if !self.mods.world {
                 return;
             }
+            let more = self.lend_more();
             let mut dims = vec![(self.dim.id(), std::mem::take(&mut self.world.chunks))];
             for (dim, chunks) in self.levels.parked_chunks() {
                 dims.push((dim.id(), std::mem::take(chunks)));
@@ -359,6 +393,7 @@ mod run {
                 registry,
                 biomes,
                 dims,
+                more,
             }));
         }
 
@@ -380,6 +415,7 @@ mod run {
                     *chunks = dims.swap_remove(i).1;
                 }
             }
+            self.return_lent(lent.more);
         }
 
         /// Makes the blocks server mods set in the level in place, in order,
@@ -507,6 +543,71 @@ mod run {
                 g.lend_world();
                 let at = BlockPos { x: pos[0], y: pos[1], z: pos[2] };
                 let taken = g.mods.mods.use_block(&player, at, &state, &item);
+                g.return_world();
+                g.show_mod_output();
+                taken
+            })
+            .unwrap_or(false)
+        }
+
+        /// Asks server mods before guest `conn` places the held block item
+        /// against `clicked` on `face` (`block-events.place-block`): true when
+        /// one refuses it. The block it would go in: the clicked one when
+        /// that can be replaced (grass, snow), else the one beside it.
+        pub(in crate::game) fn mods_refuse_place(
+            &mut self,
+            host: &mut LanHost,
+            conn: u32,
+            clicked: [i32; 3],
+            face: [i32; 3],
+            off_hand: bool,
+        ) -> bool {
+            if !self.hears_players() {
+                return false;
+            }
+            let Some(player) = self.guest_server_player(host, conn) else {
+                return false;
+            };
+            self.as_guest(host, conn, |g| {
+                let slot = if off_hand { crate::game::shield::OFFHAND_SLOT } else { g.selected };
+                let Some(item) = g.stack_in(slot).map(|s| s.item.clone()) else {
+                    return false;
+                };
+                if g.res.items().get(&item).is_none_or(|i| i.block.is_none()) {
+                    return false;
+                }
+                let at = g.world.block(clicked[0], clicked[1], clicked[2]);
+                let target = if g.res.facts().get(at).replaceable {
+                    clicked
+                } else {
+                    [clicked[0] + face[0], clicked[1] + face[1], clicked[2] + face[2]]
+                };
+                g.lend_world();
+                let at = BlockPos { x: target[0], y: target[1], z: target[2] };
+                let refused = g.mods.mods.place_block(&player, at, &item);
+                g.return_world();
+                g.show_mod_output();
+                refused
+            })
+            .unwrap_or(false)
+        }
+
+        /// Asks server mods before vanilla uses guest `conn`'s held item on
+        /// the air (`block-events.use-item`): true when one took it.
+        pub(in crate::game) fn mods_take_item_use(&mut self, host: &mut LanHost, conn: u32, off_hand: bool) -> bool {
+            if !self.hears_players() {
+                return false;
+            }
+            let Some(player) = self.guest_server_player(host, conn) else {
+                return false;
+            };
+            self.as_guest(host, conn, |g| {
+                let slot = if off_hand { crate::game::shield::OFFHAND_SLOT } else { g.selected };
+                let Some(stack) = g.stack_in(slot).map(crate::game::mod_machines::host_stack) else {
+                    return false;
+                };
+                g.lend_world();
+                let taken = g.mods.mods.use_item(&player, &stack, off_hand);
                 g.return_world();
                 g.show_mod_output();
                 taken
@@ -752,6 +853,11 @@ mod run {
                         log::warn!(
                             "Horizon: mod {name} set more blocks than wait for their level: {over} dropped"
                         );
+                    }
+                }
+                Output::Server(action) => {
+                    if self.mods.actions.len() < MAX_QUEUED_WRITES {
+                        self.mods.actions.push(action);
                     }
                 }
                 _ => {}
