@@ -6,7 +6,7 @@
 use super::{Dim, Game};
 use horizon_client::containers::BlockEntity;
 use horizon_client::items::ItemStack;
-use horizon_client::lan::menu::{Slots, VEHICLE_KEY_Y};
+use horizon_client::lan::menu::{MOD_MENU_KEY_Y, Slots};
 use horizon_client::text::Text;
 use horizon_mods::{EntityInfo, HostStack, ServerAction};
 use horizon_world::nbt::{self, JavaString, Limits, Tag};
@@ -17,8 +17,8 @@ const CUSTOM_DATA: &str = "minecraft:custom_data";
 /// Where mods' bytes sit in `minecraft:custom_data`: mod id → bytes.
 const MODS_KEY: &str = "horizon_mods";
 /// The placeholder container a storage's window edits lives under a key no
-/// block has (as a vehicle's does, so no reach check); its z counts down
-/// from -1 so it never meets a vehicle's entity id.
+/// block has (`MOD_MENU_KEY_Y`: the reach checked is to the storage itself,
+/// in `sync_mod_menus`); its z counts down from -1.
 const MENU_KEY_X: i32 = i32::MAX - 17;
 
 /// A storage's window open for a player.
@@ -401,7 +401,7 @@ impl Game<'_> {
             .map(|g| (g.conn, g.dimension.clone()));
         if let Some((conn, level)) = guest {
             self.mods.next_menu += 1;
-            let key = (MENU_KEY_X, VEHICLE_KEY_Y, -self.mods.next_menu);
+            let key = (MENU_KEY_X, MOD_MENU_KEY_Y, -self.mods.next_menu);
             let kind = if items.len() == 5 {
                 "minecraft:hopper".to_owned()
             } else {
@@ -429,11 +429,18 @@ impl Game<'_> {
     /// storage, what the mod changed into the window; closed ones go.
     pub(super) fn sync_mod_menus(&mut self) {
         for mut m in std::mem::take(&mut self.mods.menus) {
-            let open = self.lan.as_ref().is_some_and(|h| {
+            // ChestBlockEntity.stillValid: the player in the storage's level, within 8 blocks of it.
+            let (px, py, pz) = (f64::from(m.pos.0) + 0.5, f64::from(m.pos.1) + 0.5, f64::from(m.pos.2) + 0.5);
+            let shown_to = self.lan.as_ref().and_then(|h| {
                 h.hub
                     .guests
                     .iter()
-                    .any(|g| g.conn == m.conn && g.menu.as_ref().is_some_and(|menu| menu.pos == Some(m.key)))
+                    .find(|g| g.conn == m.conn && g.menu.as_ref().is_some_and(|menu| menu.pos == Some(m.key)))
+            });
+            let open = shown_to.is_some();
+            let near = shown_to.is_some_and(|g| {
+                let d = (g.position[0] - px).powi(2) + (g.position[1] - py).powi(2) + (g.position[2] - pz).powi(2);
+                g.dimension == m.dimension && d <= 64.0
             });
             let shown: Option<Vec<Option<HostStack>>> = self.level_world(&m.level).and_then(|w| {
                 match w.block_entities.get(&m.key) {
@@ -458,7 +465,7 @@ impl Game<'_> {
                 }
                 _ => false,
             };
-            if open && alive {
+            if open && alive && near {
                 self.mods.menus.push(m);
                 continue;
             }
