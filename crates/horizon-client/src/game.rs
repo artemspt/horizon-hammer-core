@@ -9056,6 +9056,7 @@ impl Game<'_> {
         book.to_be_displayed.retain(|r| index.contains(r));
         self.dim = dim;
         self.world_root = save_root.clone();
+        self.load_mod_block_data();
         self.world_flat = horizon_client::save::WorldGen::read(&save_root).is_some_and(|w| w.flat);
         self.block_ticks = Ticks::new(self.level.seed as i32);
         self.tick_chunks.clear();
@@ -11452,6 +11453,7 @@ impl Game<'_> {
         self.store_owner();
         self.level.write(&self.world_root)?;
         self.save_world_state();
+        self.save_mod_block_data();
         self.message = Some(("Saved the game".into(), Instant::now()));
         Ok(())
     }

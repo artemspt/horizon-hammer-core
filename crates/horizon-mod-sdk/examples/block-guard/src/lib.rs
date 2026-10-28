@@ -1,8 +1,10 @@
 //! Example Horizon server mod for `block-events` (`docs/mods.md`): the
 //! server asks it before it acts on a block. Nobody breaks a diamond block,
 //! and a right click with a stick tells the player what the block is
-//! instead of using it (a door stays shut, a chest closed).
-use horizon_mod_sdk::server::{BlockPos, Player, Registration, ServerMod, players};
+//! instead of using it (a door stays shut, a chest closed), and counts how
+//! often each block was read: a number kept on the block (`world.set-data`),
+//! saved with the world and gone with the block.
+use horizon_mod_sdk::server::{BlockPos, Player, Registration, ServerMod, players, world};
 
 struct BlockGuard;
 
@@ -26,7 +28,13 @@ impl ServerMod for BlockGuard {
         if item != "minecraft:stick" {
             return false;
         }
-        players::tell(&player.id, &format!("{} {} {}: {state}", pos.x, pos.y, pos.z));
+        let (dim, x, y, z) = (player.dimension.as_str(), pos.x, pos.y, pos.z);
+        let reads = world::get_data(dim, x, y, z)
+            .and_then(|d| d.try_into().ok())
+            .map_or(0, u32::from_le_bytes)
+            + 1;
+        let _ = world::set_data(dim, x, y, z, &reads.to_le_bytes());
+        players::tell(&player.id, &format!("{x} {y} {z}: {state} (read {reads} times)"));
         true
     }
 }

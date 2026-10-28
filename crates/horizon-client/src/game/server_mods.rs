@@ -48,6 +48,8 @@ impl Game<'_> {
         false
     }
     pub(super) fn apply_mod_block_writes(&mut self) {}
+    pub(super) fn load_mod_block_data(&mut self) {}
+    pub(super) fn save_mod_block_data(&mut self) {}
     pub(super) fn mods_refuse_break(&mut self, _host: &mut LanHost, _conn: u32, _pos: [i32; 3]) -> bool {
         false
     }
@@ -408,6 +410,41 @@ mod run {
                         b.z
                     );
                 }
+            }
+        }
+
+        /// Where server mods' bytes on blocks live: beside the world's data.
+        fn mod_block_data_path(&self) -> Option<std::path::PathBuf> {
+            (!self.world_root.as_os_str().is_empty())
+                .then(|| self.world_root.join("horizon-mods").join("block-data.json"))
+        }
+        /// The world opened: its server mods' bytes on blocks.
+        pub(in crate::game) fn load_mod_block_data(&mut self) {
+            let json = self
+                .mod_block_data_path()
+                .and_then(|p| std::fs::read_to_string(p).ok())
+                .unwrap_or_default();
+            self.mods.mods.set_block_data_json(&json);
+        }
+        /// The world is saved: its server mods' bytes on blocks with it, by
+        /// the game that runs them (a window beside its server thread has
+        /// none, and must not write over the server's).
+        pub(in crate::game) fn save_mod_block_data(&mut self) {
+            if !self.mods.server {
+                return;
+            }
+            let Some(path) = self.mod_block_data_path() else {
+                return;
+            };
+            let json = self.mods.mods.block_data_json();
+            if json == r#"{"mods":{}}"# && !path.exists() {
+                return;
+            }
+            if let Some(dir) = path.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            if let Err(e) = std::fs::write(&path, json) {
+                log::warn!("Horizon: server mods' block data not saved: {e}");
             }
         }
 

@@ -450,6 +450,35 @@ struct State {
     storage_budget: u64,
     limits: StoreLimits,
     world: WorldSlot,
+    /// Every server mod's bytes on blocks, shared (each reads its own).
+    block_data: BlockDataSlot,
+}
+
+/// Server mods' bytes on blocks (`world.get-data`, `world.set-data`): mod id
+/// → `"dimension x y z"` → the block they were set on (its id, without
+/// properties) and the bytes as hex. The game saves it with the world.
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct BlockData {
+    pub mods: std::collections::BTreeMap<String, std::collections::BTreeMap<String, (String, String)>>,
+}
+type BlockDataSlot = Arc<Mutex<BlockData>>;
+const BLOCK_DATA_BYTES: usize = 4096;
+const BLOCK_DATA_POSITIONS: usize = 65536;
+
+fn block_key(dimension: &str, x: i32, y: i32, z: i32) -> String {
+    format!("{dimension} {x} {y} {z}")
+}
+/// `minecraft:furnace[lit=true]` → `minecraft:furnace`.
+fn block_id(state: &str) -> &str {
+    state.split('[').next().unwrap_or(state)
+}
+fn to_hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+fn from_hex(hex: &str) -> Vec<u8> {
+    (0..hex.len() / 2)
+        .filter_map(|i| u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).ok())
+        .collect()
 }
 
 /// The installed mods and the engine running them. `Mods::default()` is
@@ -461,6 +490,8 @@ pub struct Mods {
     snapshot: Arc<Snapshot>,
     out: Vec<Output>,
     world: WorldSlot,
+    /// Server mods' bytes on blocks, saved with the world by the game.
+    block_data: BlockDataSlot,
     /// Moves on whenever a mod starts or stops: the game resends the server
     /// mods' commands to players when it changes.
     generation: u64,
@@ -479,6 +510,19 @@ impl Mods {
         self.event_bus.post(event);
     }
 
+    /// Server mods' bytes on blocks, as JSON, for the game to save with the world.
+    pub fn block_data_json(&self) -> String {
+        let data = self.block_data.lock().map(|d| d.clone()).unwrap_or_default();
+        serde_json::to_string(&data).unwrap_or_default()
+    }
+    /// Puts back the bytes [`Mods::block_data_json`] saved (an unreadable or
+    /// empty text: none), when a world opens.
+    pub fn set_block_data_json(&mut self, json: &str) {
+        let data = serde_json::from_str(json).unwrap_or_default();
+        if let Ok(mut slot) = self.block_data.lock() {
+            *slot = data;
+        }
+    }
     /// Changes whenever the running mods (so their commands) change.
     pub fn generation(&self) -> u64 {
         self.generation
@@ -646,6 +690,7 @@ impl Mods {
             .collect();
         let snapshot = self.snapshot.clone();
         let world = self.world.clone();
+        let block_data = self.block_data.clone();
         let (engine, linker) = self.engine()?;
         let component =
             Component::new(engine, wasm).map_err(|e| format!("not a component: {e}"))?;
@@ -687,6 +732,7 @@ impl Mods {
                 .instances(16)
                 .build(),
             world,
+            block_data,
         };
         let mut store = Store::new(engine, state);
         store.limiter(|s| &mut s.limits);
@@ -1736,7 +1782,69 @@ impl chat::Host for State {
         });
     }
 }
+impl State {
+    /// The block id at a position as the lent world shows it: none where no
+    /// chunk is loaded (or no world is lent).
+    fn block_at(&self, dimension: &str, x: i32, y: i32, z: i32) -> Option<String> {
+        let view = self.world.lock().ok()?;
+        let state = view.as_ref()?.block(dimension, x, y, z)?;
+        Some(block_id(&state).to_owned())
+    }
+}
 impl mod_world::Host for State {
+    fn get_data(&mut self, dimension: String, x: i32, y: i32, z: i32) -> Option<Vec<u8>> {
+        let now = self.block_at(&dimension, x, y, z)?;
+        let key = block_key(&dimension, x, y, z);
+        let mut data = self.block_data.lock().ok()?;
+        let mine = data.mods.get_mut(&self.id)?;
+        let (on, hex) = mine.get(&key)?;
+        if *on != now {
+            // The block it was set on is gone: so is the data.
+            mine.remove(&key);
+            return None;
+        }
+        Some(from_hex(hex))
+    }
+    fn set_data(&mut self, dimension: String, x: i32, y: i32, z: i32, data: Vec<u8>) -> Result<(), String> {
+        if data.len() > BLOCK_DATA_BYTES {
+            return Err(format!("{} bytes: at most {BLOCK_DATA_BYTES}", data.len()));
+        }
+        let now = self
+            .block_at(&dimension, x, y, z)
+            .ok_or_else(|| format!("no chunk loaded at {x} {y} {z} in {dimension}"))?;
+        let key = block_key(&dimension, x, y, z);
+        let mut all = self.block_data.lock().map_err(|_| "block data unavailable".to_string())?;
+        let mine = all.mods.entry(self.id.clone()).or_default();
+        if data.is_empty() {
+            mine.remove(&key);
+            return Ok(());
+        }
+        if now == "minecraft:air" {
+            return Err(format!("no block at {x} {y} {z}: data needs one"));
+        }
+        if !mine.contains_key(&key) && mine.len() >= BLOCK_DATA_POSITIONS {
+            return Err(format!("at most {BLOCK_DATA_POSITIONS} positions per mod"));
+        }
+        mine.insert(key, (now, to_hex(&data)));
+        Ok(())
+    }
+    fn data_positions(&mut self, dimension: String) -> Vec<(i32, i32, i32)> {
+        let Ok(all) = self.block_data.lock() else {
+            return Vec::new();
+        };
+        let Some(mine) = all.mods.get(&self.id) else {
+            return Vec::new();
+        };
+        mine.keys()
+            .filter_map(|k| {
+                let mut w = k.rsplitn(4, ' ');
+                let z = w.next()?.parse().ok()?;
+                let y = w.next()?.parse().ok()?;
+                let x = w.next()?.parse().ok()?;
+                (w.next()? == dimension).then_some((x, y, z))
+            })
+            .collect()
+    }
     fn get_block(&mut self, dimension: String, x: i32, y: i32, z: i32) -> Option<String> {
         let view = self.world.lock().ok()?;
         view.as_ref()?.block(&dimension, x, y, z)

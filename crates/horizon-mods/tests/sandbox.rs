@@ -258,8 +258,10 @@ experimental = ["ui", "render", "input", "recipes"]
         needed(imports(&wasm).unwrap().iter().map(String::as_str)).0
     };
     assert_eq!(level("coords_hud.hmod"), 0);
-    // The UI guest draws far terrain (`render.set-far-terrain`).
-    assert_eq!(level("horizon_mods_test_ui_guest.hmod"), LEVEL);
+    // The UI guest replaces the inventory (`ui.replace-screen`, level 8).
+    assert_eq!(level("horizon_mods_test_ui_guest.hmod"), 8);
+    // Block Guard keeps data on blocks (`world.set-data`): the newest level.
+    assert_eq!(level("block_guard.hmod"), LEVEL);
 }
 
 #[test]
@@ -526,6 +528,76 @@ fn ui_screens_settings_and_events() {
     assert!(mods.screen(0).is_none());
 }
 
+/// A world of a few blocks for `world.get-data` / `set-data`.
+struct FewBlocks(Vec<((i32, i32, i32), String)>);
+impl horizon_mods::WorldView for FewBlocks {
+    fn block(&self, _dimension: &str, x: i32, y: i32, z: i32) -> Option<String> {
+        let found = self.0.iter().find(|(p, _)| *p == (x, y, z));
+        Some(found.map_or_else(|| "minecraft:air".to_owned(), |(_, s)| s.clone()))
+    }
+    fn biome(&self, _dimension: &str, _x: i32, _y: i32, _z: i32) -> Option<String> {
+        Some("minecraft:plains".into())
+    }
+    fn has_dimension(&self, dimension: &str) -> bool {
+        dimension == "minecraft:overworld"
+    }
+    fn check_state(&self, _state: &str) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+// `world.set-data`: a mod's bytes stay on the block, survive saving the world, and go with the block
+#[test]
+fn block_data_lives_and_dies_with_the_block() {
+    let steve = ServerPlayer {
+        id: "00000000-0000-0000-0000-000000000001".into(),
+        name: "Steve".into(),
+        x: 0.5,
+        y: 64.0,
+        z: 0.5,
+        dimension: "minecraft:overworld".into(),
+        game_mode: GameMode::Survival,
+        health: 20.0,
+    };
+    let at = BlockPos { x: 1, y: 64, z: 2 };
+    let door = |open: bool| FewBlocks(vec![((1, 64, 2), format!("minecraft:oak_door[open={open}]"))]);
+    let read = |mods: &mut Mods| -> String {
+        assert!(mods.use_block(&steve, at, "minecraft:oak_door", "minecraft:stick"));
+        mods.drain()
+            .into_iter()
+            .find_map(|o| match o {
+                Output::Tell { text, .. } => Some(text),
+                _ => None,
+            })
+            .expect("a line")
+    };
+    let mut mods = Mods::load(&[mods_dir().join("block_guard.hmod")], |_| true, |_| false);
+    mods.set_snapshot(Snapshot {
+        players: vec![steve.clone()],
+        ..Snapshot::default()
+    });
+    mods.lend_world(Box::new(door(false)));
+    assert!(read(&mut mods).ends_with("(read 1 times)"));
+    assert!(read(&mut mods).ends_with("(read 2 times)"));
+    // A changed property is the same block: the count stays.
+    mods.lend_world(Box::new(door(true)));
+    assert!(read(&mut mods).ends_with("(read 3 times)"));
+    // Saved with the world and back in a fresh game.
+    let saved = mods.block_data_json();
+    assert!(saved.contains("block_guard"));
+    let mut again = Mods::load(&[mods_dir().join("block_guard.hmod")], |_| true, |_| false);
+    again.set_snapshot(Snapshot {
+        players: vec![steve.clone()],
+        ..Snapshot::default()
+    });
+    again.set_block_data_json(&saved);
+    again.lend_world(Box::new(door(true)));
+    assert!(read(&mut again).ends_with("(read 4 times)"));
+    // Another block there now: the data went with the door.
+    again.lend_world(Box::new(FewBlocks(vec![((1, 64, 2), "minecraft:stone".into())])));
+    assert!(read(&mut again).ends_with("(read 1 times)"));
+}
+
 // `/hmod reload`: the mods that are on start again from their files, all of them or one by id
 #[test]
 fn hmod_reload_restarts_mods() {
@@ -576,7 +648,7 @@ fn block_events_refuse_and_take() {
     assert!(mods
         .drain()
         .iter()
-        .any(|o| matches!(o, Output::Tell { text, .. } if text == "1 64 2: minecraft:oak_door[open=false]")));
+        .any(|o| matches!(o, Output::Tell { text, .. } if text.starts_with("1 64 2: minecraft:oak_door[open=false]"))));
     assert!(!mods.use_block(&steve, at, "minecraft:oak_door[open=false]", "minecraft:air"));
     // A server mod that didn't register `blocks` is not asked.
     let mut beacons = Mods::load(&[mods_dir().join("beacons.hmod")], |_| true, |_| false);

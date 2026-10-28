@@ -699,6 +699,9 @@ Capability `world`, server mods only (manifest `api = "0.3"`, experimental): the
 | `get-block` | `func(dimension: string, x: s32, y: s32, z: s32) -> option<string>` | The block state at a position in a dimension (`minecraft:overworld`, ...), as `minecraft:oak_log[axis=y]`, as of this call: none where the server has no chunk loaded there. |
 | `get-biome` | `func(dimension: string, x: s32, y: s32, z: s32) -> option<string>` | The biome at a position (`minecraft:plains`, ...), as the server stores it (one per 4 x 4 x 4 cell): none where no chunk is loaded. |
 | `set-blocks` | `func(dimension: string, blocks: list<block-change>) -> result<_, string>` | Sets blocks as `/setblock` does: the old block entity removed, neighbours and shapes updated, light, and every player told. Every state is checked now (an error queues nothing); the changes are made in order after this call returns, before that dimension's next tick; one in a chunk not loaded then is skipped. At most 4096 per call. |
+| `get-data` | `func(dimension: string, x: s32, y: s32, z: s32) -> option<list<u8>>` | The mod's own bytes on the block at a position, as `set-data` left them: none when it kept none there, where no chunk is loaded, or when the block is no longer the one they were set on (broken or replaced since; its properties may change, a furnace lit or not). Only this mod's data: every mod has its own. |
+| `set-data` | `func(dimension: string, x: s32, y: s32, z: s32, data: list<u8>) -> result<_, string>` | Keeps `data` (up to 4096 bytes) on the block at a position: saved with the world, gone once that block is broken or replaced. Empty `data` removes it. Err where no chunk is loaded, on air, for too much, or past 65536 positions per mod. |
+| `data-positions` | `func(dimension: string) -> list<tuple<s32, s32, s32>>` | Every position in `dimension` where the mod keeps data (some may be stale until read: `get-data` says), for a tick over its machines. |
 
 ## `server-events`
 

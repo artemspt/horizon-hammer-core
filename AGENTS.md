@@ -23,6 +23,21 @@ The project has a working WASM mod system in `crates/horizon-mods/` with:
 
 ## Changelog
 
+### 2025-10-28 - Data on blocks (`world.get-data` / `set-data` / `data-positions`, API level 9)
+
+#### Added
+- **WIT `world.get-data(dim, x, y, z)`, `world.set-data(dim, x, y, z, bytes)`, `world.data-positions(dim)`** (capability
+  `world`, server mods) - a mod's own bytes (up to 4096) on a block position: each mod sees only its own; saved with the
+  world; gone once the block is broken or replaced (the block id is checked on read, properties may change: a furnace
+  lit or not). The base for block entities / machines: `data-positions` + `tick` = a loop over the mod's machines
+- **`runtime.rs`** - `BlockData` (mod id → `"dim x y z"` → block id + hex bytes), shared by every mod's store;
+  `Mods::block_data_json`, `Mods::set_block_data_json`
+- **`api_level.rs`** - the three functions at level 9, `LEVEL = 9`
+- **Game** - `game/server_mods.rs` `load_mod_block_data` (world opens, `game.rs` beside `world_root`), `save_mod_block_data`
+  (`save_game`, only the game that runs server mods): `<world>/horizon-mods/block-data.json`
+- **Example** `block-guard` counts how often a block was read with a stick, kept on the block
+- **Tests** - `block_data_lives_and_dies_with_the_block` (count, property change, save and load, replaced block)
+
 ### 2025-10-28 - Hot reload in the game (`/hmod`)
 
 #### Added
