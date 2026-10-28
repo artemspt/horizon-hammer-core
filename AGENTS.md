@@ -23,6 +23,20 @@ The project has a working WASM mod system in `crates/horizon-mods/` with:
 
 ## Changelog
 
+### 2025-10-28 - Network for mods (capability `net`, API level 11)
+
+#### Added
+- **WIT `client-net.send`**, **`client-net-events.received`** (client mods), **`server-net.send`/`broadcast`**,
+  **`server-net-events.received`** (server mods); worlds `client-net-host`, `server-net-host`; capability `net` for both
+  sides (`of_import`: `client-net` and `server-net`)
+- **Runtime** - `runtime/net.rs`: `NET_PREFIX` (`horizon_net:`), 32 KiB a message, 64 a call; `Output::NetToServer`,
+  `ServerAction::Net`; `Mods::client_net_received`, `server_net_received`
+- **Game** - the window sends serverbound custom payloads (`mods.rs`), hears clientbound ones (`remote.rs`); the server
+  hears them (`lan_actions.rs` → `server_mods.rs` `guest_net_received`) and sends (`mod_machines.rs` `mod_net_send`);
+  in-frame straight between the window's mods
+- **SDK** - `Mod::net_received`, `ServerMod::net_received`, `client_net`, `server::server_net`
+- **Example** `iron-press` answers `iron_press/ping`
+
 ### 2025-10-28 - Events with priority and cancel (`game-events`)
 
 #### Added

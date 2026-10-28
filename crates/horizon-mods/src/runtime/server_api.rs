@@ -79,6 +79,12 @@ pub enum ServerAction {
         pos: (i32, i32, i32),
         title: String,
     },
+    /// `server-net.send` (one player) or `broadcast` (none: everyone).
+    Net {
+        player: Option<String>,
+        channel: String,
+        data: Vec<u8>,
+    },
 }
 
 /// Slots in a player's inventory as `players.inventory` numbers them.

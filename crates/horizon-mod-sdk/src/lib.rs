@@ -38,9 +38,10 @@ wit_bindgen::generate!({
 });
 
 pub use exports::horizon::mods::events::{Guest as __Guest, Registration};
+pub use exports::horizon::mods::client_net_events::Guest as __ClientNetGuest;
 pub use exports::horizon::mods::ui_events::Guest as __UiEventsGuest;
 pub use horizon::mods::{
-    browser, chat, command, game, hud, input, log, recipes, render, storage, ui,
+    browser, chat, client_net, command, game, hud, input, log, recipes, render, storage, ui,
 };
 
 /// The game's calls into a mod. Only the hooks [`Registration`] asks for
@@ -68,6 +69,8 @@ pub trait Mod: Sized + 'static {
     /// The player opened the mod's settings page (capability `ui`): call
     /// [`ui::set_settings`] for fresh widgets.
     fn ui_settings_opened(&mut self) {}
+    /// A message from the server's mods on `channel` (capability `net`).
+    fn net_received(&mut self, _channel: &str, _data: &[u8]) {}
 }
 
 impl Registration {
@@ -163,6 +166,11 @@ macro_rules! export_mod {
                     with(|m| $crate::Mod::ui_settings_opened(m))
                 }
             }
+            impl $crate::__ClientNetGuest for Export {
+                fn received(channel: String, data: Vec<u8>) {
+                    with(|m| $crate::Mod::net_received(m, &channel, &data))
+                }
+            }
             // Only WebAssembly has the component's exports: a host build (cargo test or
             // clippy on the workspace) checks the mod without them, which macOS
             // couldn't link (its exported-symbols list cuts names at the `#`).
@@ -196,6 +204,8 @@ pub mod server {
 
     pub use exports::horizon::mods::block_events::Guest as __BlockGuest;
     pub use exports::horizon::mods::game_events::Guest as __EventsGuest;
+    pub use exports::horizon::mods::server_net_events::Guest as __ServerNetGuest;
+    pub use horizon::mods::server_net;
     pub use exports::horizon::mods::server_events::{
         Argument, ArgumentKind, ArgumentValue, BlockPos, Guest as __Guest, Registration,
         ServerCommand,
@@ -299,6 +309,8 @@ pub mod server {
         fn explosion(&mut self, _dimension: &str, _x: f64, _y: f64, _z: f64, _power: f32) -> bool {
             false
         }
+        /// A message from `player`'s client mods on `channel` (capability `net`).
+        fn net_received(&mut self, _player: &Player, _channel: &str, _data: &[u8]) {}
     }
 
     impl Registration {
@@ -551,6 +563,11 @@ macro_rules! export_server_mod {
                             BlockPos { x: from_x, y: from_y, z: from_z },
                         )
                     })
+                }
+            }
+            impl $crate::server::__ServerNetGuest for Export {
+                fn received(player: Player, channel: String, data: Vec<u8>) {
+                    with(|m| m.net_received(&player, &channel, &data))
                 }
             }
             impl $crate::server::__EventsGuest for Export {

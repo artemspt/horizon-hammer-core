@@ -2607,6 +2607,9 @@ impl Game<'_> {
                     self.selected = p.slot as usize;
                 }
             }
+            C::CustomPayload(p) if Self::mod_net_channel(&p.channel) => {
+                self.mod_net_received(&p.channel, &p.data);
+            }
             C::ContainerSetContent(p) => {
                 if let Some(r) = self.remote.as_mut() {
                     r.state_id = p.state;

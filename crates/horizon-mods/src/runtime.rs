@@ -20,7 +20,9 @@ use wasmtime::{
 };
 
 mod events;
+mod net;
 mod server_api;
+pub use net::{NET_BYTES, NET_PREFIX};
 pub use server_api::{
     EntityInfo, HostStack, INVENTORY_SLOTS, ScheduledTick, ServerAction, Storage, Tank,
 };
@@ -67,6 +69,22 @@ mod events_bindings {
     });
 }
 use events_bindings::EventsHost;
+/// Capability `net`'s exports, each a world of its own as `ui-events` is.
+mod client_net_bindings {
+    wasmtime::component::bindgen!({
+        path: "../horizon-mod-sdk/wit",
+        world: "client-net-host",
+    });
+}
+mod server_net_bindings {
+    wasmtime::component::bindgen!({
+        path: "../horizon-mod-sdk/wit",
+        world: "server-net-host",
+        with: {
+            "horizon:mods/players": super::server_bindings::horizon::mods::players,
+        },
+    });
+}
 /// Capability `ui`'s world beyond `horizon-mod` (docs/mods.md): a second
 /// world, so mods built before it (no `ui-events` export) still instantiate
 /// as `horizon-mod` and simply hear nothing of their widgets.
@@ -287,6 +305,8 @@ pub enum Output {
     /// A server mod's change to players, windows or entities, made by the
     /// game at the tick's end.
     Server(ServerAction),
+    /// `client-net.send`: a message to the server's mods.
+    NetToServer { channel: String, data: Vec<u8> },
 }
 
 /// The game's world as capability `world` reads it during a call: the
@@ -388,6 +408,9 @@ struct Running {
     blocks: Option<BlockHost>,
     /// A server mod's `game-events` export; none for one built before it.
     events: Option<EventsHost>,
+    /// Capability `net`'s exports, on each side.
+    net_client: Option<client_net_bindings::ClientNetHost>,
+    net_server: Option<server_net_bindings::ServerNetHost>,
     hooks: Hooks,
     /// It imports `game.raycast`.
     raycasts: bool,
@@ -714,6 +737,8 @@ impl Mods {
                 .map_err(|e| e.to_string())?;
             server_bindings::horizon::mods::entities::add_to_linker::<State, HasSelf<State>>(&mut linker, |s| s)
                 .map_err(|e| e.to_string())?;
+            server_bindings::horizon::mods::server_net::add_to_linker::<State, HasSelf<State>>(&mut linker, |s| s)
+                .map_err(|e| e.to_string())?;
             players::add_to_linker::<State, HasSelf<State>>(&mut linker, |s| s)
                 .map_err(|e| e.to_string())?;
             mod_world::add_to_linker::<State, HasSelf<State>>(&mut linker, |s| s)
@@ -823,6 +848,8 @@ impl Mods {
         let instance = linker
             .instantiate(&mut store, &component)
             .map_err(|e| reason(&e))?;
+        let net_client = client_net_bindings::ClientNetHost::new(&mut store, &instance).ok();
+        let net_server = server_net_bindings::ServerNetHost::new(&mut store, &instance).ok();
         let (mut hooks, ui, blocks, events) = if server {
             let exports = HorizonServerMod::new(&mut store, &instance).map_err(|e| reason(&e))?;
             // `block-events` is a server mod built since it; older ones are not asked.
@@ -871,6 +898,8 @@ impl Mods {
         self.out.append(&mut store.data_mut().out);
         Ok(Some(Running {
             events,
+            net_client,
+            net_server,
             store,
             ui,
             blocks,

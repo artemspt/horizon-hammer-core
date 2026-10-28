@@ -91,6 +91,9 @@ pub(super) struct ModsState {
     pub(super) player_health: std::collections::HashMap<String, f32>,
     #[cfg(feature = "mods")]
     pub(super) game_events: Vec<super::mod_machines::PendingEvent>,
+    /// `client-net` messages of the in-frame window, for its server mods.
+    #[cfg(feature = "mods")]
+    pub(super) net_inbox: Vec<(String, Vec<u8>)>,
     /// `command.run` lines for this window's own world, run on the next tick:
     /// run at once, their chat lines would reach the mods while their output
     /// is still being shown, and a mod answering its own lines would recurse.
@@ -278,6 +281,10 @@ pub(super) fn content_root(
 /// A build without the `mods` feature: no mod runs.
 #[cfg(not(feature = "mods"))]
 impl Game<'_> {
+    pub(super) fn mod_net_channel(_channel: &str) -> bool {
+        false
+    }
+    pub(super) fn mod_net_received(&mut self, _channel: &str, _data: &[u8]) {}
     /// Says why the installed and dev mods don't run.
     pub(super) fn start_mods(&mut self) {
         let dir = Self::options_path().with_file_name(mod_list::DIR);
@@ -672,6 +679,16 @@ impl Game<'_> {
         self.mods.mods.frame(elapsed.as_secs_f32());
         self.show_mod_output();
     }
+    /// A custom payload channel of capability `net` (`horizon_net:...`).
+    pub(super) fn mod_net_channel(channel: &str) -> bool {
+        channel.starts_with(horizon_mods::NET_PREFIX)
+    }
+    /// A message from the server's mods to this window's client mods.
+    pub(super) fn mod_net_received(&mut self, channel: &str, data: &[u8]) {
+        let channel = channel.strip_prefix(horizon_mods::NET_PREFIX).unwrap_or(channel);
+        self.mods.mods.client_net_received(channel, data);
+        self.show_mod_output();
+    }
     /// `/command` typed in chat: true when a mod owns it.
     pub(super) fn mod_command(&mut self, command: &str) -> bool {
         if let Some(hmod) = horizon_mods::hmod_command::parse(command) {
@@ -744,6 +761,20 @@ impl Game<'_> {
                 | Output::SetBlocks { .. }
                 | Output::Server(_)) => {
                     self.route_server_output(host.as_deref_mut(), server);
+                    continue;
+                }
+                Output::NetToServer { channel, data } => {
+                    if self.remote.is_some() {
+                        self.send(horizon_protocol::packets::play::Serverbound::CustomPayload(
+                            horizon_protocol::packets::configuration::CustomPayload {
+                                channel: format!("{}{channel}", horizon_mods::NET_PREFIX),
+                                data,
+                            },
+                        ));
+                    } else {
+                        // In-frame: this window's own server mods hear it at the tick.
+                        self.mods.net_inbox.push((channel, data));
+                    }
                     continue;
                 }
                 Output::OpenScreen { owner } => {

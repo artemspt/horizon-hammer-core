@@ -5,6 +5,6 @@ description = "An iron block becomes a press: right click it with an empty hand.
 authors = ["Horizon Hammer Core"]
 api = "0.3"
 side = "server"
-capabilities = ["players", "world", "entities"]
+capabilities = ["players", "world", "entities", "net"]
 events = ["explosion", "entity-died"]
 priority = 10

@@ -123,9 +123,12 @@ pub enum Capability {
     /// The mobs of the loaded level, and the server's commands for
     /// entities, effects, particles and sounds (server mods).
     Entities,
+    /// Messages between a mod's client and server halves (interfaces
+    /// `client-net` and `server-net`).
+    Net,
 }
 impl Capability {
-    pub const ALL: [Capability; 13] = [
+    pub const ALL: [Capability; 14] = [
         Capability::GameRead,
         Capability::Chat,
         Capability::Hud,
@@ -139,6 +142,7 @@ impl Capability {
         Capability::World,
         Capability::Recipes,
         Capability::Entities,
+        Capability::Net,
     ];
     /// Whether a server mod may have it: the others act on a local player.
     pub fn on_server(self) -> bool {
@@ -163,6 +167,8 @@ impl Capability {
             Capability::World => "world",
             Capability::Recipes => "recipes",
             Capability::Entities => "entities",
+            // And `server-net` (`of_import`).
+            Capability::Net => "client-net",
         }
     }
     /// May change in any release: a mod uses it only with
@@ -190,6 +196,7 @@ impl Capability {
             Capability::Players => "see who is on the server, message them and change their inventories",
             Capability::World => "read and change the world's blocks, and keep items, energy and fluids on them",
             Capability::Entities => "find, spawn, hurt and move mobs and players, give effects, show particles and play sounds",
+            Capability::Net => "send messages between your game and the server's mods",
             Capability::Recipes => {
                 "read the game's recipes and items and which recipes you know, place recipes in your crafting grid and, in creative mode, give you items"
             }
@@ -215,6 +222,9 @@ impl Capability {
         if interface == "storages" {
             return Ok(Some(Capability::World));
         }
+        if interface == "client-net" || interface == "server-net" {
+            return Ok(Some(Capability::Net));
+        }
         Capability::ALL
             .into_iter()
             .filter(|c| *c != Capability::Registries)
@@ -239,6 +249,7 @@ impl fmt::Display for Capability {
             Capability::World => "world",
             Capability::Recipes => "recipes",
             Capability::Entities => "entities",
+            Capability::Net => "net",
         };
         f.write_str(name)
     }
@@ -284,7 +295,7 @@ impl Manifest {
         if let Some(c) = m
             .capabilities
             .iter()
-            .find(|c| c.on_server() != server && **c != Capability::Storage)
+            .find(|c| c.on_server() != server && !matches!(c, Capability::Storage | Capability::Net))
         {
             let side = if server { "client" } else { "server" };
             return Err(format!("{MANIFEST}: capability {c} is for {side} mods"));

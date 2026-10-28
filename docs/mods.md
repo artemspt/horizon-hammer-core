@@ -598,6 +598,17 @@ cancelled spawn removes the mob, a cancelled hurt gives the mob its health
 back (the knockback stays). An interface used only for its types
 (`entities.{entity}` in these events) needs no capability.
 
+**Network (capability `net`, level 11).** A client mod and a server mod
+talk on channels they agree on (`[a-z0-9_./-]`, 1-64 characters: put the
+mod's id in it). A client mod's `client-net.send(channel, data)` reaches
+every server mod's `server-net-events.received(player, channel, data)`; a
+server mod's `server-net.send(player, channel, data)` or `broadcast` reaches
+the client mods' `client-net-events.received`. Up to 32 KiB a message and
+64 a call. On the wire each is a custom payload `horizon_net:<channel>`, so
+single player's own server, LAN and dedicated servers carry it alike, and
+in-frame it goes straight between the window's mods. `iron-press` answers a
+ping on `iron_press/ping` with `iron_press/pong`.
+
 **Where they run.** The game that simulates the world starts the server mods
 that are on, and only that one:
 

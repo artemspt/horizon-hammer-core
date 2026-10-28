@@ -247,7 +247,7 @@ id = "too_new"
 name = "Too New"
 version = "0.1.0"
 api = "0.1"
-capabilities = ["game-read", "chat", "hud", "storage", "command", "ui", "render", "input", "recipes"]
+capabilities = ["game-read", "chat", "hud", "storage", "command", "ui", "render", "input", "recipes", "net"]
 experimental = ["ui", "render", "input", "recipes"]
 "#;
     std::fs::write(dir.join("horizon-mod.toml"), manifest).unwrap();
@@ -735,6 +735,12 @@ fn iron_press_runs_a_machine() {
     };
     mods.entity_died(dim, &zombie, Some(&steve.id));
     assert!(mods.drain().iter().any(|o| matches!(o, Output::Tell { text, .. } if text == "You defeated minecraft:zombie")));
+
+    // net: a client mod's ping is answered on the mod's own channel.
+    mods.server_net_received(&steve, "iron_press/ping", b"?");
+    let out = mods.drain();
+    assert!(out.iter().any(|o| matches!(o, Output::Server(ServerAction::Net { player: Some(p), channel, data })
+        if *p == steve.id && channel == "iron_press/pong" && *data == 1u32.to_le_bytes().to_vec())), "{out:?}");
 }
 
 // `world.set-data`: a mod's bytes stay on the block, survive saving the world, and go with the block

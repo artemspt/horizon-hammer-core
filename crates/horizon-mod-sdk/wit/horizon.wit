@@ -1025,6 +1025,44 @@ world events-host {
     export game-events;
 }
 
+/// Capability `net` for a client mod: its own messages to the server's
+/// mods, over the connection (single player's own server included). A
+/// channel is `[a-z0-9_./-]`, 1 to 64 characters; mods agree on it (use the
+/// mod's id in it). Each message is up to 32 KiB, 64 per call.
+interface client-net {
+    /// Sends `data` on `channel` to the server's mods (`server-net-events`).
+    /// Err for a bad channel or too much; on a server that isn't Horizon's
+    /// the message is dropped there.
+    send: func(channel: string, data: list<u8>) -> result<_, string>;
+}
+/// What a client mod with capability `net` hears from the server's mods.
+interface client-net-events {
+    /// A message the server's mods sent on `channel`.
+    received: func(channel: string, data: list<u8>);
+}
+/// Capability `net` for a server mod: messages to players' client mods.
+interface server-net {
+    /// Sends `data` on `channel` to one player's client mods. Err for a bad
+    /// channel, too much, or a player not online.
+    send: func(player: string, channel: string, data: list<u8>) -> result<_, string>;
+    /// The same to every player.
+    broadcast: func(channel: string, data: list<u8>) -> result<_, string>;
+}
+/// What a server mod with capability `net` hears from players' client mods.
+interface server-net-events {
+    use players.{player};
+    /// A message `player`'s client mods sent on `channel`.
+    received: func(player: player, channel: string, data: list<u8>);
+}
+/// The game's side of `client-net-events`.
+world client-net-host {
+    export client-net-events;
+}
+/// The game's side of `server-net-events`.
+world server-net-host {
+    export server-net-events;
+}
+
 /// A client mod: runs in the player's game.
 world horizon-mod {
     import log;
@@ -1033,6 +1071,7 @@ world horizon-mod {
     import hud;
     import storage;
     import command;
+    import client-net;
     export events;
 }
 
@@ -1051,6 +1090,7 @@ world horizon-server-block-mod {
     include horizon-server-mod;
     export block-events;
     export game-events;
+    export server-net-events;
 }
 
 world horizon-server-mod {
@@ -1060,6 +1100,7 @@ world horizon-server-mod {
     import %world;
     import storages;
     import entities;
+    import server-net;
     export server-events;
 }
 
@@ -1074,6 +1115,7 @@ world horizon-ui-mod {
     import recipes;
     import browser;
     export ui-events;
+    export client-net-events;
 }
 
 /// The game's side of `horizon-ui-mod` beyond `horizon-mod`.

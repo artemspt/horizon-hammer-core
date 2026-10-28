@@ -20,6 +20,7 @@ The contract between Horizon and its mods: the WIT package `horizon:mods@0.1.0`,
 | `world` | [`world`](#world) | read and change the world's blocks, and keep items, energy and fluids on them |
 | `recipes` | [`recipes`](#recipes) | read the game's recipes and items and which recipes you know, place recipes in your crafting grid and, in creative mode, give you items |
 | `entities` | [`entities`](#entities) | find, spawn, hurt and move mobs and players, give effects, show particles and play sounds |
+| `net` | [`client-net`](#client-net) | send messages between your game and the server's mods |
 
 ## World `events-host`
 
@@ -28,11 +29,25 @@ The game's side of `game-events`.
 - Imports (what the game offers): `players`, `entities`
 - Exports (what the mod provides): `game-events`
 
+## World `client-net-host`
+
+The game's side of `client-net-events`.
+
+- Imports (what the game offers): 
+- Exports (what the mod provides): `client-net-events`
+
+## World `server-net-host`
+
+The game's side of `server-net-events`.
+
+- Imports (what the game offers): `players`
+- Exports (what the mod provides): `server-net-events`
+
 ## World `horizon-mod`
 
 A client mod: runs in the player's game.
 
-- Imports (what the game offers): `log`, `game`, `chat`, `hud`, `storage`, `command`
+- Imports (what the game offers): `log`, `game`, `chat`, `hud`, `storage`, `command`, `client-net`
 - Exports (what the mod provides): `events`
 
 ## World `block-host`
@@ -44,22 +59,22 @@ A server mod (manifest `side = "server"`, `api = "0.3"`, experimental): runs whe
 
 ## World `horizon-server-mod`
 
-- Imports (what the game offers): `log`, `storage`, `players`, `world`, `storages`, `entities`
+- Imports (what the game offers): `log`, `storage`, `players`, `world`, `storages`, `entities`, `server-net`
 - Exports (what the mod provides): `server-events`
 
 ## World `horizon-server-block-mod`
 
 What the SDK builds a server mod as: `horizon-server-mod` and the block hooks.
 
-- Imports (what the game offers): `log`, `storage`, `players`, `world`, `storages`, `entities`
-- Exports (what the mod provides): `block-events`, `game-events`, `server-events`
+- Imports (what the game offers): `log`, `storage`, `players`, `world`, `storages`, `entities`, `server-net`
+- Exports (what the mod provides): `block-events`, `game-events`, `server-net-events`, `server-events`
 
 ## World `horizon-ui-mod`
 
 A mod with widgets (capability `ui`): the SDK builds every mod against this world. Mods built for `horizon-mod` alone (no `ui-events` export) still load and simply hear nothing of their widgets.
 
-- Imports (what the game offers): `ui`, `render`, `input`, `recipes`, `browser`, `log`, `game`, `chat`, `hud`, `storage`, `command`
-- Exports (what the mod provides): `ui-events`, `events`
+- Imports (what the game offers): `ui`, `render`, `input`, `recipes`, `browser`, `log`, `game`, `chat`, `hud`, `storage`, `command`, `client-net`
+- Exports (what the mod provides): `ui-events`, `client-net-events`, `events`
 
 ## World `ui-host`
 
@@ -936,3 +951,48 @@ What happens to entities and the world, for server mods that list the event in t
 | `player-hurt` | `func(player: player, amount: f32)` | A player lost `amount` health this tick. |
 | `item-picked-up` | `func(player: player, stack: item-stack)` | A player picked up `stack` from the ground. |
 | `explosion` | `func(dimension: string, x: f64, y: f64, z: f64, power: f32) -> bool` | An explosion of `power` (TNT: 4) is about to go off: true stops it, with no damage and no blocks broken. Asked as it happens. |
+
+## `client-net`
+
+Access: capability `net`.
+
+Capability `net` for a client mod: its own messages to the server's mods, over the connection (single player's own server included). A channel is `[a-z0-9_./-]`, 1 to 64 characters; mods agree on it (use the mod's id in it). Each message is up to 32 KiB, 64 per call.
+
+| Function | Signature | What it does |
+| --- | --- | --- |
+| `send` | `func(channel: string, data: list<u8>) -> result<_, string>` | Sends `data` on `channel` to the server's mods (`server-net-events`). Err for a bad channel or too much; on a server that isn't Horizon's the message is dropped there. |
+
+## `client-net-events`
+
+Access: exported by the mod: the game calls it.
+
+What a client mod with capability `net` hears from the server's mods.
+
+| Function | Signature | What it does |
+| --- | --- | --- |
+| `received` | `func(channel: string, data: list<u8>)` | A message the server's mods sent on `channel`. |
+
+## `server-net`
+
+Access: capability `net`.
+
+Capability `net` for a server mod: messages to players' client mods.
+
+| Function | Signature | What it does |
+| --- | --- | --- |
+| `send` | `func(player: string, channel: string, data: list<u8>) -> result<_, string>` | Sends `data` on `channel` to one player's client mods. Err for a bad channel, too much, or a player not online. |
+| `broadcast` | `func(channel: string, data: list<u8>) -> result<_, string>` | The same to every player. |
+
+## `server-net-events`
+
+Access: exported by the mod: the game calls it.
+
+What a server mod with capability `net` hears from players' client mods.
+
+### type `player`
+
+`type player = player`
+
+| Function | Signature | What it does |
+| --- | --- | --- |
+| `received` | `func(player: player, channel: string, data: list<u8>)` | A message `player`'s client mods sent on `channel`. |

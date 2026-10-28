@@ -10,8 +10,8 @@
 //! hastens the mobs around, paper counts your items, and whoever kills a
 //! mob hears of it.
 use horizon_mod_sdk::server::{
-    BlockPos, Entity, ItemStack, Player, Registration, ServerMod, StorageShape, entities, players, storages,
-    world,
+    BlockPos, Entity, ItemStack, Player, Registration, ServerMod, StorageShape, entities, players,
+    server_net, storages, world,
 };
 
 struct IronPress;
@@ -143,6 +143,18 @@ impl ServerMod for IronPress {
             let d = |a: i32, b: f64| f64::from(a) + 0.5 - b;
             d(px, x).powi(2) + d(py, y).powi(2) + d(pz, z).powi(2) <= 64.0
         })
+    }
+
+    /// A client mod asks on `iron_press/ping`: the server answers on
+    /// `iron_press/pong` with how many ingots its presses pressed.
+    fn net_received(&mut self, player: &Player, channel: &str, _data: &[u8]) {
+        if channel == "iron_press/ping" {
+            let total: u32 = world::data_positions(&player.dimension)
+                .into_iter()
+                .map(|(x, y, z)| pressed(&player.dimension, BlockPos { x, y, z }))
+                .sum();
+            let _ = server_net::send(&player.id, "iron_press/pong", &total.to_le_bytes());
+        }
     }
 
     fn entity_died(&mut self, _dimension: &str, entity: &Entity, killer: Option<&str>) {

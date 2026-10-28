@@ -316,6 +316,7 @@ impl Game<'_> {
                     pos,
                     title,
                 } => self.open_mod_menu(&player, dimension, pos, &title),
+                ServerAction::Net { player, channel, data } => self.mod_net_send(player.as_deref(), &channel, data),
             }
         }
     }
@@ -344,6 +345,33 @@ impl Game<'_> {
             self.as_guest(&mut host, conn, f);
         }
         self.lan = Some(host);
+    }
+
+    /// `server-net`: a message to one player's client mods, or everyone's.
+    fn mod_net_send(&mut self, player: Option<&str>, channel: &str, data: Vec<u8>) {
+        let local = self.options.execution_role.is_client() && self.remote.is_none() && self.player.is_some();
+        if local && player.is_none_or(|p| p == self.player_uuid_string()) {
+            self.mod_net_received(channel, &data);
+        }
+        let Some(host) = self.lan.as_mut() else {
+            return;
+        };
+        let packet = horizon_protocol::packets::play::Clientbound::CustomPayload(
+            horizon_protocol::packets::configuration::CustomPayload {
+                channel: format!("{}{channel}", horizon_mods::NET_PREFIX),
+                data,
+            },
+        );
+        let conns: Vec<u32> = host
+            .hub
+            .guests
+            .iter()
+            .filter(|g| g.placed && player.is_none_or(|p| p == uuid_string(g.uuid)))
+            .map(|g| g.conn)
+            .collect();
+        for conn in conns {
+            host.hub.send_to(conn, &packet);
+        }
     }
 
     /// A vanilla command as the server console, its feedback dropped.

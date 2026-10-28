@@ -80,6 +80,7 @@ impl Game<'_> {
     pub(super) fn mod_explosion(&mut self, _center: [f64; 3], _power: f32) -> bool {
         false
     }
+    pub(super) fn guest_net_received(&mut self, _host: &mut LanHost, _conn: u32, _channel: &str, _data: &[u8]) {}
 }
 
 #[cfg(feature = "mods")]
@@ -321,6 +322,12 @@ mod run {
                 self.mods.mods.player_joined(p);
             }
             self.mod_game_events(&players);
+            // In-frame: the window's own client mods' messages.
+            if let Some(me) = players.first().filter(|_| self.lan_acting.is_none() && self.player.is_some()) {
+                for (channel, data) in std::mem::take(&mut self.mods.net_inbox) {
+                    self.mods.mods.server_net_received(me, &channel, &data);
+                }
+            }
             for event in std::mem::take(&mut self.mods.events) {
                 let who = |w: &Who| {
                     let id = match w {
@@ -619,6 +626,21 @@ mod run {
                 taken
             })
             .unwrap_or(false)
+        }
+
+        /// A `client-net` message from guest `conn`'s client mods.
+        pub(in crate::game) fn guest_net_received(&mut self, host: &mut LanHost, conn: u32, channel: &str, data: &[u8]) {
+            if !self.hears_players() || data.len() > horizon_mods::NET_BYTES {
+                return;
+            }
+            let Some(player) = self.guest_server_player(host, conn) else {
+                return;
+            };
+            let channel = channel.strip_prefix(horizon_mods::NET_PREFIX).unwrap_or(channel);
+            self.lend_world();
+            self.mods.mods.server_net_received(&player, channel, data);
+            self.return_world();
+            self.route_mod_output(Some(host));
         }
 
         /// A player broke (or placed) `state` at `pos`: the player acting now.

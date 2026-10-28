@@ -102,6 +102,9 @@ fn access(interface: &str, exported: bool) -> String {
     if interface == "storages" {
         return "capability `world`".into();
     }
+    if interface == "client-net" || interface == "server-net" {
+        return "capability `net`".into();
+    }
     match Capability::ALL.iter().find(|c| c.interface() == interface) {
         Some(c) => format!("capability `{c}`"),
         None => "not granted by any capability".into(),

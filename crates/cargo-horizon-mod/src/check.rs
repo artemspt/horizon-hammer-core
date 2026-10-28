@@ -290,7 +290,9 @@ fn play(path: &Path, report: &mut Report) -> Result<(), String> {
                 ServerAction::Take { player, item, count } => format!("took {count} {item} from {player}"),
                 ServerAction::Console { line } => format!("server command: /{line}"),
                 ServerAction::OpenMenu { player, title, .. } => format!("opened window {title:?} for {player}"),
+                ServerAction::Net { channel, data, .. } => format!("sent {} byte(s) on {channel}", data.len()),
             },
+            Output::NetToServer { channel, data } => format!("sent {} byte(s) on {channel}", data.len()),
         });
     }
     let shapes = mods.hud_shapes().count();
