@@ -75,6 +75,11 @@ impl Game<'_> {
     pub(super) fn mods_take_item_use(&mut self, _host: &mut LanHost, _conn: u32, _off_hand: bool) -> bool {
         false
     }
+    pub(super) fn mod_mob_died(&mut self, _m: &horizon_client::mobs::Mob, _killer: Option<Option<u32>>) {}
+    pub(super) fn mod_picked_up(&mut self, _uuid: u128, _stack: &horizon_client::items::ItemStack, _count: u32) {}
+    pub(super) fn mod_explosion(&mut self, _center: [f64; 3], _power: f32) -> bool {
+        false
+    }
 }
 
 #[cfg(feature = "mods")]
@@ -315,6 +320,7 @@ mod run {
             {
                 self.mods.mods.player_joined(p);
             }
+            self.mod_game_events(&players);
             for event in std::mem::take(&mut self.mods.events) {
                 let who = |w: &Who| {
                     let id = match w {
@@ -378,7 +384,7 @@ mod run {
 
         /// Lends the levels' chunks to capability `world` for the calls up to
         /// [`Game::return_world`], when a running server mod has it.
-        fn lend_world(&mut self) {
+        pub(in crate::game) fn lend_world(&mut self) {
             if !self.mods.world {
                 return;
             }
@@ -398,7 +404,7 @@ mod run {
         }
 
         /// Puts back the chunks [`Game::lend_world`] lent.
-        fn return_world(&mut self) {
+        pub(in crate::game) fn return_world(&mut self) {
             let Some(view) = self.mods.mods.take_world() else {
                 return;
             };

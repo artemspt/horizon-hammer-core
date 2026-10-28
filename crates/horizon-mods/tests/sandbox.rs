@@ -721,6 +721,20 @@ fn iron_press_runs_a_machine() {
         if line == "effect give 00000000-0000-0000-0000-00000000000a minecraft:speed 10 1")), "{out:?}");
     assert!(out.iter().any(|o| matches!(o, Output::Server(ServerAction::Console { line }) if line.contains("particle minecraft:flame"))));
     assert!(!mods.use_item(&steve, &stack("minecraft:stick", 1), false));
+
+    // game-events: explosions near a press fizzle; a kill is told to the killer.
+    assert!(mods.wants_event("explosion") && !mods.wants_event("entity-spawned"));
+    assert!(mods.explosion(dim, (2.0, 64.0, 2.0), 4.0));
+    assert!(!mods.explosion(dim, (40.0, 64.0, 2.0), 4.0));
+    mods.drain();
+    let zombie = EntityInfo {
+        id: "00000000-0000-0000-0000-00000000000a".into(),
+        kind: "minecraft:zombie".into(),
+        pos: (2.0, 64.0, 2.0),
+        health: 0.0,
+    };
+    mods.entity_died(dim, &zombie, Some(&steve.id));
+    assert!(mods.drain().iter().any(|o| matches!(o, Output::Tell { text, .. } if text == "You defeated minecraft:zombie")));
 }
 
 // `world.set-data`: a mod's bytes stay on the block, survive saving the world, and go with the block

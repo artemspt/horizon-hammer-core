@@ -8802,6 +8802,10 @@ impl Game<'_> {
     /// blocks are kept without mobGriefing, else the mob_explosion_drop_decay
     /// rule picks decay).
     fn explode(&mut self, center: [f64; 3], radius: f32) -> Result<()> {
+        // A server mod may stop it (game-events.explosion).
+        if self.mod_explosion(center, radius) {
+            return Ok(());
+        }
         let interaction = if !self.ui.rules.bool("mob_griefing") {
             explosion::BlockInteraction::Keep
         } else if self.ui.rules.bool("mob_explosion_drop_decay") {

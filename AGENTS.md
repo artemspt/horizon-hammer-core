@@ -23,6 +23,21 @@ The project has a working WASM mod system in `crates/horizon-mods/` with:
 
 ## Changelog
 
+### 2025-10-28 - Events with priority and cancel (`game-events`)
+
+#### Added
+- **WIT `game-events`** (a server mod's export, world `events-host`): `entity-spawned`, `entity-hurt` (cancel: removed /
+  health back), `entity-died` (killer), `player-hurt`, `item-picked-up`, `explosion` (cancel: asked as it goes off)
+- **Manifest** `events = [...]` (checked against `manifest::EVENTS`, server mods only) and `priority`: asked highest
+  first, the first cancel ends the asking
+- **Runtime** - `runtime/events.rs`; `Mods::wants_event` so the game finds nothing nobody hears. An interface imported
+  for its types only needs no capability (load check and `component_imports`)
+- **Game** - `mod_machines.rs` `mod_game_events` (each level's mobs' health and the players' compared at the tick's end),
+  `mod_mob_died` (`creatures.rs` `mob_died`), `mod_picked_up` (`lan_actions.rs` guest pickups), `mod_explosion`
+  (`game.rs` `explode`)
+- **SDK** - `ServerMod::entity_spawned`, `entity_hurt`, `entity_died`, `player_hurt`, `item_picked_up`, `explosion`
+- **Example** `iron-press`: explosions near a press fizzle, a killer hears of the kill
+
 ### 2025-10-28 - Machines: items, storages, windows, timers, redstone, entities (API level 10)
 
 #### Added

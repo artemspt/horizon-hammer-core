@@ -5,10 +5,12 @@
 //! charges from redstone, presses an ingot into 9 nuggets marked with how
 //! many it pressed (bytes on the stack) and pushes them into a container
 //! below: chests, hoppers and other mods' storages alike. A neighbour
-//! changing clanks (`entities.sound`), TNT can't go near a press, a blaze
-//! rod in the air hastens the mobs around, and paper counts your items.
+//! changing clanks (`entities.sound`), TNT can't go near a press and
+//! explosions near one fizzle (`game-events`), a blaze rod in the air
+//! hastens the mobs around, paper counts your items, and whoever kills a
+//! mob hears of it.
 use horizon_mod_sdk::server::{
-    BlockPos, ItemStack, Player, Registration, ServerMod, StorageShape, entities, players, storages,
+    BlockPos, Entity, ItemStack, Player, Registration, ServerMod, StorageShape, entities, players, storages,
     world,
 };
 
@@ -134,6 +136,19 @@ impl ServerMod for IronPress {
         }
         let _ = entities::particle(dim, "minecraft:flame", x, y + 1.0, z, 0.5, 0.5, 0.5, 0.01, 20);
         true
+    }
+
+    fn explosion(&mut self, dimension: &str, x: f64, y: f64, z: f64, _power: f32) -> bool {
+        world::data_positions(dimension).into_iter().any(|(px, py, pz)| {
+            let d = |a: i32, b: f64| f64::from(a) + 0.5 - b;
+            d(px, x).powi(2) + d(py, y).powi(2) + d(pz, z).powi(2) <= 64.0
+        })
+    }
+
+    fn entity_died(&mut self, _dimension: &str, entity: &Entity, killer: Option<&str>) {
+        if let Some(killer) = killer {
+            players::tell(killer, &format!("You defeated {}", entity.kind));
+        }
     }
 }
 horizon_mod_sdk::export_server_mod!(IronPress);

@@ -3038,14 +3038,18 @@ impl Game<'_> {
         for i in near.into_iter().rev() {
             let (stack, item_id) = (self.dropped[i].stack.clone(), self.dropped[i].id);
             let before = stack.count;
+            let picked = stack.clone();
+            let uuid = host.hub.guests.iter().find(|g| g.conn == conn).map_or(0, |g| g.uuid);
             let rest = self.as_guest(host, conn, |g| g.give(stack)).flatten();
             match rest {
                 None => {
                     let item = self.dropped.remove(i);
                     self.guest_pickup(host, id, item);
                     taken.push((item_id, before));
+                    self.mod_picked_up(uuid, &picked, before);
                 }
                 Some(rest) if rest.count < before => {
+                    self.mod_picked_up(uuid, &picked, before - rest.count);
                     self.guest_pickup(host, id, self.dropped[i].clone());
                     self.dropped[i].stack = rest;
                     taken.push((item_id, before - self.dropped[i].stack.count));

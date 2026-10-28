@@ -19,6 +19,7 @@ use wasmtime::{
     component::{Component, HasSelf, Linker},
 };
 
+mod events;
 mod server_api;
 pub use server_api::{
     EntityInfo, HostStack, INVENTORY_SLOTS, ScheduledTick, ServerAction, Storage, Tank,
@@ -54,6 +55,18 @@ mod block_bindings {
     });
 }
 use block_bindings::BlockHost;
+/// `game-events` beyond `horizon-server-mod`, as `block-events` is.
+mod events_bindings {
+    wasmtime::component::bindgen!({
+        path: "../horizon-mod-sdk/wit",
+        world: "events-host",
+        with: {
+            "horizon:mods/players": super::server_bindings::horizon::mods::players,
+            "horizon:mods/entities": super::server_bindings::horizon::mods::entities,
+        },
+    });
+}
+use events_bindings::EventsHost;
 /// Capability `ui`'s world beyond `horizon-mod` (docs/mods.md): a second
 /// world, so mods built before it (no `ui-events` export) still instantiate
 /// as `horizon-mod` and simply hear nothing of their widgets.
@@ -373,6 +386,8 @@ struct Running {
     ui: Option<UiHost>,
     /// A server mod's `block-events` export; none for one built before it.
     blocks: Option<BlockHost>,
+    /// A server mod's `game-events` export; none for one built before it.
+    events: Option<EventsHost>,
     hooks: Hooks,
     /// It imports `game.raycast`.
     raycasts: bool,
@@ -753,8 +768,18 @@ impl Mods {
         let component =
             Component::new(engine, wasm).map_err(|e| format!("not a component: {e}"))?;
         let ty = component.component_type();
+        // An interface imported for its types alone (`use entities.{entity}`
+        // in an export) calls nothing, so it needs no capability.
+        use wasmtime::component::types::ComponentItem;
+        let calls = |item: &ComponentItem| match item {
+            ComponentItem::ComponentInstance(i) => i
+                .exports(engine)
+                .any(|(_, e)| matches!(e.ty, ComponentItem::ComponentFunc(_))),
+            _ => true,
+        };
         let imports: Vec<String> = ty
             .imports(engine)
+            .filter(|(_, item)| calls(&item.ty))
             .map(|(name, _)| name.to_string())
             .collect();
         m.check_imports(imports.iter().map(String::as_str))?;
@@ -798,7 +823,7 @@ impl Mods {
         let instance = linker
             .instantiate(&mut store, &component)
             .map_err(|e| reason(&e))?;
-        let (mut hooks, ui, blocks) = if server {
+        let (mut hooks, ui, blocks, events) = if server {
             let exports = HorizonServerMod::new(&mut store, &instance).map_err(|e| reason(&e))?;
             // `block-events` is a server mod built since it; older ones are not asked.
             let blocks = BlockHost::new(&mut store, &instance).ok();
@@ -806,7 +831,8 @@ impl Mods {
                 .horizon_mods_server_events()
                 .call_init(&mut store)
                 .map_err(|e| reason(&e))??;
-            (Hooks::Server(exports, r), None, blocks)
+            let events = EventsHost::new(&mut store, &instance).ok();
+            (Hooks::Server(exports, r), None, blocks, events)
         } else {
             let exports = HorizonMod::new(&mut store, &instance).map_err(|e| reason(&e))?;
             // `ui-events` is a mod built since `ui`'s; older mods have no export
@@ -816,7 +842,7 @@ impl Mods {
                 .horizon_mods_events()
                 .call_init(&mut store)
                 .map_err(|e| reason(&e))??;
-            (Hooks::Client(exports, r), ui, None)
+            (Hooks::Client(exports, r), ui, None, None)
         };
         let free = |c: &str| {
             let free = !reserved(c) && !taken.iter().any(|t| t == c);
@@ -844,6 +870,7 @@ impl Mods {
         self.generation += 1;
         self.out.append(&mut store.data_mut().out);
         Ok(Some(Running {
+            events,
             store,
             ui,
             blocks,

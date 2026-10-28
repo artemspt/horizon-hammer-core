@@ -83,6 +83,14 @@ pub(super) struct ModsState {
     /// Every item's stack size, for server mods' calls, made once.
     #[cfg(feature = "mods")]
     pub(super) max_stacks: Option<std::sync::Arc<std::collections::HashMap<String, u32>>>,
+    /// `game-events`: each level's living mobs' health at the last tick's
+    /// end, the players' too, and what happened since, to tell.
+    #[cfg(feature = "mods")]
+    pub(super) mob_health: std::collections::HashMap<String, std::collections::HashMap<u32, f32>>,
+    #[cfg(feature = "mods")]
+    pub(super) player_health: std::collections::HashMap<String, f32>,
+    #[cfg(feature = "mods")]
+    pub(super) game_events: Vec<super::mod_machines::PendingEvent>,
     /// `command.run` lines for this window's own world, run on the next tick:
     /// run at once, their chat lines would reach the mods while their output
     /// is still being shown, and a mod answering its own lines would recurse.

@@ -21,6 +21,13 @@ The contract between Horizon and its mods: the WIT package `horizon:mods@0.1.0`,
 | `recipes` | [`recipes`](#recipes) | read the game's recipes and items and which recipes you know, place recipes in your crafting grid and, in creative mode, give you items |
 | `entities` | [`entities`](#entities) | find, spawn, hurt and move mobs and players, give effects, show particles and play sounds |
 
+## World `events-host`
+
+The game's side of `game-events`.
+
+- Imports (what the game offers): `players`, `entities`
+- Exports (what the mod provides): `game-events`
+
 ## World `horizon-mod`
 
 A client mod: runs in the player's game.
@@ -45,7 +52,7 @@ A server mod (manifest `side = "server"`, `api = "0.3"`, experimental): runs whe
 What the SDK builds a server mod as: `horizon-server-mod` and the block hooks.
 
 - Imports (what the game offers): `log`, `storage`, `players`, `world`, `storages`, `entities`
-- Exports (what the mod provides): `block-events`, `server-events`
+- Exports (what the mod provides): `block-events`, `game-events`, `server-events`
 
 ## World `horizon-ui-mod`
 
@@ -902,3 +909,30 @@ Asked before the server acts on a block: what a server mod answers decides it (m
 | `use-item` | `func(player: player, stack: item-stack, off-hand: bool) -> bool` | `player` right-clicks the air holding `stack` (`off-hand`: in the off hand). True: the mod handled it and vanilla does not use the item. |
 | `block-tick` | `func(dimension: string, x: s32, y: s32, z: s32, state: string)` | The tick `world.schedule-tick` asked for, the block still `state`. |
 | `neighbor-changed` | `func(dimension: string, x: s32, y: s32, z: s32, state: string, from-x: s32, from-y: s32, from-z: s32)` | A block next to one this mod keeps data or a storage on changed, found at the tick's start: `state` is the mod's block, `from-*` the neighbour. |
+
+## `game-events`
+
+Access: exported by the mod: the game calls it.
+
+What happens to entities and the world, for server mods that list the event in their manifest (`events = ["entity-hurt", ...]`). Mods are asked in order of their manifest `priority` (higher first, then load order); for an event that can be cancelled, the first mod that answers true cancels it and the mods after it are not asked. Every event but `explosion` is found at the end of the server tick it happened in, in the level ticked last (single player: the owner's), so a cancel undoes it there: a spawned mob is removed, a hurt mob gets its health back. A server mod built before this interface has no such export and is not asked.
+
+### type `player`
+
+`type player = player`
+
+### type `item-stack`
+
+`type item-stack = item-stack`
+
+### type `entity`
+
+`type entity = entity`
+
+| Function | Signature | What it does |
+| --- | --- | --- |
+| `entity-spawned` | `func(dimension: string, entity: entity) -> bool` | A mob appeared (natural spawn, egg, breeding, `/summon`, another mod). True removes it. |
+| `entity-hurt` | `func(dimension: string, entity: entity, amount: f32) -> bool` | A mob lost `amount` health this tick and lives. True gives it back. |
+| `entity-died` | `func(dimension: string, entity: entity, killer: option<string>)` | A mob died; `killer` is the player who last hurt it, if one did. |
+| `player-hurt` | `func(player: player, amount: f32)` | A player lost `amount` health this tick. |
+| `item-picked-up` | `func(player: player, stack: item-stack)` | A player picked up `stack` from the ground. |
+| `explosion` | `func(dimension: string, x: f64, y: f64, z: f64, power: f32) -> bool` | An explosion of `power` (TNT: 4) is about to go off: true stops it, with no damage and no blocks broken. Asked as it happens. |

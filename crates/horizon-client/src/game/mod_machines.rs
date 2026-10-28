@@ -444,3 +444,163 @@ impl Game<'_> {
     }
 
 }
+
+/// What the game saw for `game-events` during a tick, told at its end.
+pub(super) enum PendingEvent {
+    Died {
+        dimension: String,
+        entity: EntityInfo,
+        killer: Option<String>,
+    },
+    Picked {
+        player: String,
+        stack: HostStack,
+    },
+}
+
+impl Game<'_> {
+    fn mob_info(&self, m: &horizon_client::mobs::Mob) -> Option<EntityInfo> {
+        let uuid = self.persist.uuids.get(&m.id)?;
+        Some(EntityInfo {
+            id: uuid_string(uuid_words(*uuid)),
+            kind: m.kind.id.clone(),
+            pos: (m.position.x, m.position.y, m.position.z),
+            health: m.health,
+        })
+    }
+    fn hears_events(&self, event: &str) -> bool {
+        self.mods.server && self.remote.is_none() && self.mods.mods.wants_event(event)
+    }
+
+    /// `LivingEntity.die`: for `entity-died` at the tick's end. `killer`:
+    /// the player who last hurt it (None inside: the host).
+    pub(super) fn mod_mob_died(&mut self, m: &horizon_client::mobs::Mob, killer: Option<Option<u32>>) {
+        if !self.hears_events("entity-died") {
+            return;
+        }
+        let Some(entity) = self.mob_info(m) else {
+            return;
+        };
+        let killer = killer.and_then(|by| match by {
+            None => Some(self.player_uuid_string()),
+            Some(conn) => self
+                .lan
+                .iter()
+                .flat_map(|h| &h.hub.guests)
+                .find(|g| g.conn == conn)
+                .map(|g| uuid_string(g.uuid)),
+        });
+        self.mods.game_events.push(PendingEvent::Died {
+            dimension: self.dim.id().to_owned(),
+            entity,
+            killer,
+        });
+    }
+
+    /// A guest picked up `count` of `stack`: for `item-picked-up`.
+    pub(super) fn mod_picked_up(&mut self, uuid: u128, stack: &ItemStack, count: u32) {
+        if count == 0 || !self.hears_events("item-picked-up") {
+            return;
+        }
+        let mut stack = host_stack(stack);
+        stack.count = count;
+        self.mods.game_events.push(PendingEvent::Picked {
+            player: uuid_string(uuid),
+            stack,
+        });
+    }
+
+    /// Asked as an explosion goes off: true when a server mod stops it.
+    pub(super) fn mod_explosion(&mut self, center: [f64; 3], power: f32) -> bool {
+        if !self.hears_events("explosion") {
+            return false;
+        }
+        self.lend_world();
+        let stop = self
+            .mods
+            .mods
+            .explosion(self.dim.id(), (center[0], center[1], center[2]), power);
+        self.return_world();
+        self.show_mod_output();
+        stop
+    }
+
+    /// The tick's end, the world lent: mobs that appeared or were hurt in
+    /// the level in place, players hurt, and what was queued.
+    pub(super) fn mod_game_events(&mut self, players: &[horizon_mods::ServerPlayer]) {
+        let dim = self.dim.id();
+        if self.hears_events("entity-spawned") || self.hears_events("entity-hurt") {
+            let now: HashMap<u32, f32> = self
+                .mobs
+                .iter()
+                .filter(|m| m.alive() && !m.removed)
+                .map(|m| (m.id, m.health))
+                .collect();
+            if let Some(before) = self.mods.mob_health.insert(dim.to_owned(), now.clone()) {
+                let mut spawned = Vec::new();
+                let mut hurt = Vec::new();
+                for (id, health) in &now {
+                    match before.get(id) {
+                        None => spawned.push(*id),
+                        Some(&was) if was > health + 1e-4 => hurt.push((*id, was)),
+                        _ => {}
+                    }
+                }
+                spawned.sort_unstable();
+                hurt.sort_unstable_by_key(|h| h.0);
+                for id in spawned {
+                    let Some(info) = self.mobs.iter().find(|m| m.id == id).and_then(|m| self.mob_info(m)) else {
+                        continue;
+                    };
+                    if self.mods.mods.entity_spawned(dim, &info)
+                        && let Some(m) = self.mobs.iter_mut().find(|m| m.id == id)
+                    {
+                        m.removed = true;
+                    }
+                }
+                for (id, was) in hurt {
+                    let Some(info) = self.mobs.iter().find(|m| m.id == id).and_then(|m| self.mob_info(m)) else {
+                        continue;
+                    };
+                    let amount = was - info.health;
+                    if self.mods.mods.entity_hurt(dim, &info, amount)
+                        && let Some(m) = self.mobs.iter_mut().find(|m| m.id == id)
+                    {
+                        m.health = was;
+                        if let Some(h) = self.mods.mob_health.get_mut(dim) {
+                            h.insert(id, was);
+                        }
+                    }
+                }
+            }
+        } else {
+            self.mods.mob_health.clear();
+        }
+        if self.hears_events("player-hurt") {
+            for p in players {
+                let was = self.mods.player_health.insert(p.id.clone(), p.health);
+                if let Some(was) = was
+                    && was > p.health + 1e-4
+                {
+                    self.mods.mods.player_hurt(p, was - p.health);
+                }
+            }
+        } else {
+            self.mods.player_health.clear();
+        }
+        for event in std::mem::take(&mut self.mods.game_events) {
+            match event {
+                PendingEvent::Died {
+                    dimension,
+                    entity,
+                    killer,
+                } => self.mods.mods.entity_died(&dimension, &entity, killer.as_deref()),
+                PendingEvent::Picked { player, stack } => {
+                    if let Some(p) = players.iter().find(|p| p.id == player) {
+                        self.mods.mods.item_picked_up(p, &stack);
+                    }
+                }
+            }
+        }
+    }
+}

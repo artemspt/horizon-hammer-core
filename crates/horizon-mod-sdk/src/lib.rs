@@ -195,6 +195,7 @@ pub mod server {
     });
 
     pub use exports::horizon::mods::block_events::Guest as __BlockGuest;
+    pub use exports::horizon::mods::game_events::Guest as __EventsGuest;
     pub use exports::horizon::mods::server_events::{
         Argument, ArgumentKind, ArgumentValue, BlockPos, Guest as __Guest, Registration,
         ServerCommand,
@@ -277,6 +278,27 @@ pub mod server {
         /// A neighbour (`from`) of a block the mod keeps data or a storage
         /// on changed, when [`Registration::blocks`] is set.
         fn neighbor_changed(&mut self, _dimension: &str, _pos: BlockPos, _state: &str, _from: BlockPos) {}
+
+        /// `game-events`, for the events the manifest lists (`events =
+        /// ["entity-hurt", ...]`), in order of `priority`. A mob appeared:
+        /// true removes it.
+        fn entity_spawned(&mut self, _dimension: &str, _entity: &Entity) -> bool {
+            false
+        }
+        /// A mob lost `amount` health and lives: true gives it back.
+        fn entity_hurt(&mut self, _dimension: &str, _entity: &Entity, _amount: f32) -> bool {
+            false
+        }
+        /// A mob died; `killer` is the player who last hurt it.
+        fn entity_died(&mut self, _dimension: &str, _entity: &Entity, _killer: Option<&str>) {}
+        /// A player lost `amount` health.
+        fn player_hurt(&mut self, _player: &Player, _amount: f32) {}
+        /// A player picked up `stack`.
+        fn item_picked_up(&mut self, _player: &Player, _stack: &ItemStack) {}
+        /// An explosion of `power` is about to go off: true stops it.
+        fn explosion(&mut self, _dimension: &str, _x: f64, _y: f64, _z: f64, _power: f32) -> bool {
+            false
+        }
     }
 
     impl Registration {
@@ -439,7 +461,7 @@ macro_rules! export_server_mod {
     ($t:ty) => {
         const _: () = {
             use ::std::cell::RefCell;
-            use $crate::server::{Args, ArgumentValue, BlockPos, ItemStack, Player, Registration, ServerMod};
+            use $crate::server::{Args, ArgumentValue, BlockPos, Entity, ItemStack, Player, Registration, ServerMod};
             ::std::thread_local! {
                 static STATE: RefCell<Option<$t>> = const { RefCell::new(None) };
             }
@@ -529,6 +551,32 @@ macro_rules! export_server_mod {
                             BlockPos { x: from_x, y: from_y, z: from_z },
                         )
                     })
+                }
+            }
+            impl $crate::server::__EventsGuest for Export {
+                fn entity_spawned(dimension: String, entity: Entity) -> bool {
+                    let mut out = false;
+                    with(|m| out = m.entity_spawned(&dimension, &entity));
+                    out
+                }
+                fn entity_hurt(dimension: String, entity: Entity, amount: f32) -> bool {
+                    let mut out = false;
+                    with(|m| out = m.entity_hurt(&dimension, &entity, amount));
+                    out
+                }
+                fn entity_died(dimension: String, entity: Entity, killer: Option<String>) {
+                    with(|m| m.entity_died(&dimension, &entity, killer.as_deref()))
+                }
+                fn player_hurt(player: Player, amount: f32) {
+                    with(|m| m.player_hurt(&player, amount))
+                }
+                fn item_picked_up(player: Player, stack: ItemStack) {
+                    with(|m| m.item_picked_up(&player, &stack))
+                }
+                fn explosion(dimension: String, x: f64, y: f64, z: f64, power: f32) -> bool {
+                    let mut out = false;
+                    with(|m| out = m.explosion(&dimension, x, y, z, power));
+                    out
                 }
             }
             #[cfg(target_arch = "wasm32")]

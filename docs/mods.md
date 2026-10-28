@@ -586,6 +586,18 @@ sandbox: the example is
   `/summon`, `/damage`, `/kill`, `/tp`, `/effect`, `/particle` and
   `/playsound`, run as the server console at the tick's end (ids are UUIDs).
 
+**Events (`game-events`).** A server mod hears the events its manifest
+lists, `events = ["entity-spawned", "entity-hurt", "entity-died",
+"player-hurt", "item-picked-up", "explosion"]`, in order of `priority =
+<n>` (higher first, then load order). For one that can be cancelled the
+first mod answering true cancels it, and the mods after it are not asked
+(NeoForge's `EventPriority` and `setCanceled`). `explosion` is asked as it
+goes off (true: no damage, no blocks broken). The others are found at the
+end of the tick they happened in, in the level the server ticks last: a
+cancelled spawn removes the mob, a cancelled hurt gives the mob its health
+back (the knockback stays). An interface used only for its types
+(`entities.{entity}` in these events) needs no capability.
+
 **Where they run.** The game that simulates the world starts the server mods
 that are on, and only that one:
 

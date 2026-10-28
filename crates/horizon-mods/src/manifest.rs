@@ -58,7 +58,24 @@ pub struct Manifest {
     /// accepted here, so the manifest keeps loading once it is promoted.
     #[serde(default)]
     pub experimental: Vec<Capability>,
+    /// The `game-events` a server mod hears ([`EVENTS`]).
+    #[serde(default)]
+    pub events: Vec<String>,
+    /// Mods with a higher one hear events first (and may cancel them for
+    /// the rest); equal ones go in load order.
+    #[serde(default)]
+    pub priority: i32,
 }
+
+/// The events of `game-events`, as a manifest's `events` names them.
+pub const EVENTS: [&str; 6] = [
+    "entity-spawned",
+    "entity-hurt",
+    "entity-died",
+    "player-hurt",
+    "item-picked-up",
+    "explosion",
+];
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -239,6 +256,12 @@ impl Manifest {
                 "{MANIFEST}: id {:?} is not [a-z0-9_]{{1,64}}",
                 m.id
             ));
+        }
+        if let Some(e) = m.events.iter().find(|e| !EVENTS.contains(&e.as_str())) {
+            return Err(format!("{MANIFEST}: no event {e:?} (events are {})", EVENTS.join(", ")));
+        }
+        if !m.events.is_empty() && m.side == Side::Client {
+            return Err(format!("{MANIFEST}: events are for server mods"));
         }
         if !APIS.contains(&m.api.as_str()) {
             return Err(format!(
@@ -436,9 +459,15 @@ pub fn component_imports(component: &[u8]) -> Result<Vec<String>, String> {
     else {
         return Err("a WIT package, not a component".into());
     };
+    // An interface imported for its types alone (`use entities.{entity}` in
+    // an export) calls nothing, so it needs no capability.
     let names = resolve.worlds[world]
         .imports
         .iter()
+        .filter(|(_, item)| match item {
+            WorldItem::Interface { id, .. } => !resolve.interfaces[*id].functions.is_empty(),
+            _ => true,
+        })
         .map(|(key, item)| match (key, item) {
             (WorldKey::Interface(id), _) | (_, WorldItem::Interface { id, .. }) => resolve
                 .id_of(*id)

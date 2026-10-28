@@ -6,3 +6,5 @@ authors = ["Horizon Hammer Core"]
 api = "0.3"
 side = "server"
 capabilities = ["players", "world", "entities"]
+events = ["explosion", "entity-died"]
+priority = 10

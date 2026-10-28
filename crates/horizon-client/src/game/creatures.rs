@@ -783,6 +783,7 @@ impl Game<'_> {
     /// LivingEntity.die / dropAllDeathLoot.
     fn mob_died(&mut self, m: &Mob) {
         let killer = self.last_hurt_by_player.remove(&m.id);
+        self.mod_mob_died(m, killer);
         let by_player = killer.is_some() || m.ai.last_hurt_by_player > 0;
         let mut dying = m.clone();
         // LivingEntity.die: the death is heard, and a sculk catalyst nearby

@@ -109,7 +109,7 @@ fn hex(bytes: &[u8]) -> String {
 }
 
 /// `stack` as mod `me` sees it.
-pub(super) fn to_guest(stack: &HostStack, me: &str) -> players::ItemStack {
+pub(in crate::runtime) fn to_guest(stack: &HostStack, me: &str) -> players::ItemStack {
     let others: BTreeMap<String, String> = stack
         .data
         .iter()

@@ -991,6 +991,40 @@ interface block-events {
     neighbor-changed: func(dimension: string, x: s32, y: s32, z: s32, state: string, from-x: s32, from-y: s32, from-z: s32);
 }
 
+/// What happens to entities and the world, for server mods that list the
+/// event in their manifest (`events = ["entity-hurt", ...]`). Mods are
+/// asked in order of their manifest `priority` (higher first, then load
+/// order); for an event that can be cancelled, the first mod that answers
+/// true cancels it and the mods after it are not asked. Every event but
+/// `explosion` is found at the end of the server tick it happened in, in the
+/// level ticked last (single player: the owner's), so a cancel undoes it
+/// there: a spawned mob is removed, a hurt mob gets its health back. A server
+/// mod built before this interface has no such export and is not asked.
+interface game-events {
+    use players.{player, item-stack};
+    use entities.{entity};
+
+    /// A mob appeared (natural spawn, egg, breeding, `/summon`, another
+    /// mod). True removes it.
+    entity-spawned: func(dimension: string, entity: entity) -> bool;
+    /// A mob lost `amount` health this tick and lives. True gives it back.
+    entity-hurt: func(dimension: string, entity: entity, amount: f32) -> bool;
+    /// A mob died; `killer` is the player who last hurt it, if one did.
+    entity-died: func(dimension: string, entity: entity, killer: option<string>);
+    /// A player lost `amount` health this tick.
+    player-hurt: func(player: player, amount: f32);
+    /// A player picked up `stack` from the ground.
+    item-picked-up: func(player: player, stack: item-stack);
+    /// An explosion of `power` (TNT: 4) is about to go off: true stops it,
+    /// with no damage and no blocks broken. Asked as it happens.
+    explosion: func(dimension: string, x: f64, y: f64, z: f64, power: f32) -> bool;
+}
+
+/// The game's side of `game-events`.
+world events-host {
+    export game-events;
+}
+
 /// A client mod: runs in the player's game.
 world horizon-mod {
     import log;
@@ -1016,6 +1050,7 @@ world block-host {
 world horizon-server-block-mod {
     include horizon-server-mod;
     export block-events;
+    export game-events;
 }
 
 world horizon-server-mod {
