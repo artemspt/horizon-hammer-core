@@ -1,6 +1,6 @@
 //! Mod dependency resolution
 
-use crate::container::{ModContainer, ModDependency};
+use crate::container::ModContainer;
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug)]

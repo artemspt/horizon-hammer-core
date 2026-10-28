@@ -377,7 +377,7 @@ impl Game<'_> {
         // In-frame, the window runs server mods too: their names, free text
         // here (the server parses their arguments).
         let server = self.mods.mods.server_commands().map(|c| c.name.as_str());
-        let mut names = self.mods.mods.commands().chain(server).peekable();
+        let mut names = self.mods.mods.commands().chain(server).chain(self.hmod_name()).peekable();
         self.mods.tree = names
             .peek()
             .is_some()
@@ -385,9 +385,19 @@ impl Game<'_> {
         self.merge_remote_tree();
     }
 
+    /// `/hmod` for the chat's suggestions, once any mod is installed.
+    fn hmod_name(&self) -> Option<&'static str> {
+        (!self.mods.mods.entries().is_empty()).then_some("hmod")
+    }
     /// The server's command tree with the mods' commands, for the chat.
     pub(super) fn merge_remote_tree(&mut self) {
-        let names: Vec<String> = self.mods.mods.commands().map(str::to_owned).collect();
+        let names: Vec<String> = self
+            .mods
+            .mods
+            .commands()
+            .chain(self.hmod_name())
+            .map(str::to_owned)
+            .collect();
         self.mods.remote_tree = self
             .remote
             .as_ref()

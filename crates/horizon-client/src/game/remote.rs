@@ -5388,7 +5388,9 @@ impl Game<'_> {
             KeyCode::KeyE => {
                 // The inventory opens without telling the server.
                 self.recipe_ui.reset_screen();
-                if self.creative {
+                if self.open_replaced_screen("minecraft:inventory") {
+                    // A mod shows its own screen in the inventory's place (ui.replace-screen).
+                } else if self.creative {
                     self.screen = Screen::Creative;
                     self.creative_screen.reopen();
                 } else {

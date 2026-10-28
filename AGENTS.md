@@ -23,6 +23,16 @@ The project has a working WASM mod system in `crates/horizon-mods/` with:
 
 ## Changelog
 
+### 2025-10-28 - Fixes: the inventory key and `/hmod` in default single player
+
+#### Fixed
+- **`ui.replace-screen`** now works in default single player (server thread), LAN and on servers: the inventory key
+  there goes through `game/remote.rs` `remote_key`, which now asks `open_replaced_screen` first (before, only the
+  `--in-frame` path in `game.rs` did)
+- **`/hmod`** is in the chat's command suggestions once any mod is installed (`game/mods.rs` `hmod_name`): it no longer
+  shows red as an unknown command
+- `dependency.rs` - unused import
+
 ### 2025-10-28 - Data on blocks (`world.get-data` / `set-data` / `data-positions`, API level 9)
 
 #### Added
