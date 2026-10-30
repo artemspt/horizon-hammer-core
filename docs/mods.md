@@ -370,7 +370,8 @@ experimental = []            # experimental capabilities it uses, e.g. ["ui"]
 ```
 
 Unknown keys are refused, so a typo is an error, not a silently ignored
-permission. An experimental capability (today `ui`, `render` and `input`) may change in any release
+permission. An experimental capability (today `ui`, `render`, `input`, `recipes` and the
+server's `worldgen`) may change in any release
 ([stability](api/stability.md)): a mod uses it only by naming it in
 `experimental` as well, so nobody depends on it by accident.
 
@@ -484,6 +485,7 @@ its component targets the WIT world `horizon-server-mod` instead of
 | `players` (level 10) | `players` | `inventory(id)`: 41 slots; `selected-slot(id)`; `give`, `set-slot`, `take`: made at the tick's end |
 | `storages` (level 10) | `world` | items, energy (FE) and fluids (mB) on blocks, for every mod to move in and out; vanilla containers answer the item calls; `open-menu`: a chest-like window on a storage |
 | `entities` (level 10) | `entities` | `near(dimension, x, y, z, radius)`: the mobs around; `spawn`, `hurt`, `kill`, `teleport`, `effect`, `particle`, `sound`: the server's own commands, at the tick's end |
+| `worldgen` (level 12) | `worldgen` | `set-surface-rule(biome, surface)`: the block the game puts at the top of that biome's terrain, e.g. `minecraft:stone`; the last rule for a biome wins. Experimental: `experimental = ["worldgen"]` |
 
 | Hook (export `server-events`) | When |
 |---|---|
@@ -608,6 +610,15 @@ the client mods' `client-net-events.received`. Up to 32 KiB a message and
 single player's own server, LAN and dedicated servers carry it alike, and
 in-frame it goes straight between the window's mods. `iron-press` answers a
 ping on `iron_press/ping` with `iron_press/pong`.
+
+**World generation (capability `worldgen`, level 12).** A server mod's
+`worldgen.set-surface-rule(biome, surface)` names the block the game puts at
+the top of that biome's terrain, as `minecraft:diamond_block`: the game sets
+it when the mod starts, keeps it while the mod runs and sets it again when the
+mod reloads, and chunks built after it show it. The terrain worker reads a
+snapshot the game publishes, so no worker ever calls into a mod. The last rule
+for a biome wins, and a reload drops the rules of the version it replaces.
+Today it is one surface layer per biome, not a whole surface-rule tree.
 
 **Where they run.** The game that simulates the world starts the server mods
 that are on, and only that one:

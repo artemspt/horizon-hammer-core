@@ -82,9 +82,11 @@ impl Slots {
         // A vehicle's container is kept under a key, not a block: the game
         // checks its reach to the vehicle (`isChestVehicleStillValid`).
         self.valid(world)
-            && blocks
-                .iter()
-                .all(|k| k.1 == VEHICLE_KEY_Y || k.1 == MOD_MENU_KEY_Y || guest.within_block_range([k.0, k.1, k.2], 4.0))
+            && blocks.iter().all(|k| {
+                k.1 == VEHICLE_KEY_Y
+                    || k.1 == MOD_MENU_KEY_Y
+                    || guest.within_block_range([k.0, k.1, k.2], 4.0)
+            })
     }
     /// Container slot `n`.
     pub fn get(self, world: &World, guest: &Guest, mut n: usize) -> Option<ItemStack> {

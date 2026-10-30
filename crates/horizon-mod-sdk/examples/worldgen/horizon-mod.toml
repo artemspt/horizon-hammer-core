@@ -1,0 +1,9 @@
+id = "worldgen"
+name = "Worldgen"
+version = "0.1.0"
+description = "Plains are surfaced with diamond blocks: a world generation rule set once at init."
+authors = ["Horizon Hammer Core"]
+api = "0.3"
+side = "server"
+capabilities = ["worldgen"]
+experimental = ["worldgen"]

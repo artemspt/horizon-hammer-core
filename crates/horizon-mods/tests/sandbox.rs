@@ -3,7 +3,7 @@
 //! that misbehaves on command. Needs `rustup target add wasm32-unknown-unknown`.
 use horizon_mods::{
     BlockPos, Clock, Corner, EntityInfo, GameMode, HeldItem, Hit, HostStack, Mods, Output, Package,
-    Player, Runs, ServerAction, ServerPlayer, Shape, Snapshot, Status,
+    Player, ResourceLocation, Runs, ServerAction, ServerPlayer, Shape, Snapshot, Status,
     manifest::componentize,
     testing::{Script, TestGame},
 };
@@ -53,6 +53,8 @@ fn mods_dir() -> &'static Path {
                 "-p",
                 "iron-press",
                 "-p",
+                "worldgen",
+                "-p",
                 "horizon-mods-test-guest",
                 "-p",
                 "horizon-mods-test-ui-guest",
@@ -79,6 +81,7 @@ fn mods_dir() -> &'static Path {
             ("beacons", example("beacons")),
             ("block_guard", example("block-guard")),
             ("iron_press", example("iron-press")),
+            ("worldgen", example("worldgen")),
             ("horizon_mods_test_guest", GUEST_MANIFEST.to_string()),
             ("horizon_mods_test_ui_guest", UI_MANIFEST.to_string()),
         ];
@@ -265,8 +268,34 @@ experimental = ["ui", "render", "input", "recipes"]
     assert_eq!(level("horizon_mods_test_ui_guest.hmod"), 8);
     // Block Guard keeps data on blocks (`world.set-data`, level 9).
     assert_eq!(level("block_guard.hmod"), 9);
-    // The Iron Press uses storages, timers and entities: the newest level.
-    assert_eq!(level("iron_press.hmod"), LEVEL);
+    // The Iron Press uses storages, timers, entities and net: level 11.
+    assert_eq!(level("iron_press.hmod"), 11);
+    // Worldgen sets a surface rule (`worldgen.set-surface-rule`): the newest.
+    assert_eq!(level("worldgen.hmod"), LEVEL);
+}
+
+#[test]
+fn worldgen_rule_reaches_the_game() {
+    let mut mods = load("worldgen.hmod");
+    assert_eq!(mods.entries()[0].status, Status::Running);
+    // `init` sets the rule; this is how the game hears of it and puts it in
+    // its `WorldgenModifierManager` (the terrain worker reads a snapshot).
+    let rule = mods.drain().into_iter().find_map(|output| match output {
+        Output::Server(ServerAction::Worldgen { id, biome, surface }) => Some((id, biome, surface)),
+        _ => None,
+    });
+    let Some((id, biome, surface)) = rule else {
+        panic!("the worldgen example sets no surface rule");
+    };
+    assert_eq!(id, "worldgen");
+    assert_eq!(biome, "minecraft:plains");
+    assert_eq!(surface, "minecraft:diamond_block");
+    let id = ResourceLocation::parse(&format!("{id}:worldgen")).unwrap();
+    mods.worldgen_mut().set_surface_rule(id, biome, surface);
+    assert_eq!(
+        mods.worldgen().surface_block_for("minecraft:plains", 0),
+        Some("minecraft:diamond_block")
+    );
 }
 
 #[test]
@@ -579,10 +608,26 @@ impl horizon_mods::WorldView for Machines {
     fn max_stack(&self, item: &str) -> Option<u32> {
         (item != "minecraft:nothing").then_some(64)
     }
-    fn container(&self, _dimension: &str, x: i32, y: i32, z: i32) -> Option<Vec<Option<HostStack>>> {
-        self.containers.iter().find(|(p, _)| *p == (x, y, z)).map(|(_, s)| s.clone())
+    fn container(
+        &self,
+        _dimension: &str,
+        x: i32,
+        y: i32,
+        z: i32,
+    ) -> Option<Vec<Option<HostStack>>> {
+        self.containers
+            .iter()
+            .find(|(p, _)| *p == (x, y, z))
+            .map(|(_, s)| s.clone())
     }
-    fn set_container(&mut self, _dimension: &str, x: i32, y: i32, z: i32, slots: Vec<Option<HostStack>>) -> bool {
+    fn set_container(
+        &mut self,
+        _dimension: &str,
+        x: i32,
+        y: i32,
+        z: i32,
+        slots: Vec<Option<HostStack>>,
+    ) -> bool {
         match self.containers.iter_mut().find(|(p, _)| *p == (x, y, z)) {
             Some((_, at)) if at.len() == slots.len() => {
                 *at = slots;
@@ -642,7 +687,10 @@ fn iron_press_runs_a_machine() {
         inventories: vec![(
             steve.id.clone(),
             0,
-            vec![Some(stack("minecraft:paper", 3)), Some(stack("minecraft:stone", 5))],
+            vec![
+                Some(stack("minecraft:paper", 3)),
+                Some(stack("minecraft:stone", 5)),
+            ],
         )],
         ..Snapshot::default()
     });
@@ -671,16 +719,25 @@ fn iron_press_runs_a_machine() {
     // Paper counts the player's items and gives a nugget with the mod's bytes.
     assert!(mods.use_block(&steve, at, "minecraft:iron_block", "minecraft:paper"));
     let out = mods.drain();
-    assert!(out.iter().any(|o| matches!(o, Output::Tell { text, .. } if text == "You carry 8 items")));
-    assert!(out.iter().any(|o| matches!(o, Output::Server(ServerAction::Give { stack, .. })
-        if stack.item == "minecraft:iron_nugget" && stack.data.get("iron_press") == Some(&vec![7]))));
+    assert!(
+        out.iter()
+            .any(|o| matches!(o, Output::Tell { text, .. } if text == "You carry 8 items"))
+    );
+    assert!(out.iter().any(
+        |o| matches!(o, Output::Server(ServerAction::Give { stack, .. })
+        if stack.item == "minecraft:iron_nugget" && stack.data.get("iron_press") == Some(&vec![7]))
+    ));
 
     // A second later (its timer): the first ingot comes in, unpowered it waits.
     for t in 1..=21 {
         mods.server_tick(t);
     }
     let held = mods.storage_slots(dim, press).unwrap();
-    assert_eq!(held[0].as_ref(), Some(&marked), "what the mod can't see stays on the stack");
+    assert_eq!(
+        held[0].as_ref(),
+        Some(&marked),
+        "what the mod can't see stays on the stack"
+    );
     // Powered, it presses it into nuggets and pushes them into the hopper below.
     with_machines(&mut mods, |m| m.redstone = 15);
     for t in 22..=41 {
@@ -690,21 +747,39 @@ fn iron_press_runs_a_machine() {
     let view = view.downcast::<Machines>().unwrap();
     let hopper = &view.containers[1].1;
     let nuggets = hopper[0].as_ref().expect("nuggets below");
-    assert_eq!((nuggets.item.as_str(), nuggets.count), ("minecraft:iron_nugget", 9));
-    assert_eq!(nuggets.data.get("iron_press"), Some(&1u32.to_le_bytes().to_vec()));
-    assert_eq!(view.containers[0].1[1].as_ref().map(|s| s.count), Some(1), "one more ingot pulled");
+    assert_eq!(
+        (nuggets.item.as_str(), nuggets.count),
+        ("minecraft:iron_nugget", 9)
+    );
+    assert_eq!(
+        nuggets.data.get("iron_press"),
+        Some(&1u32.to_le_bytes().to_vec())
+    );
+    assert_eq!(
+        view.containers[0].1[1].as_ref().map(|s| s.count),
+        Some(1),
+        "one more ingot pulled"
+    );
     mods.lend_world(view);
 
     // Saved with the world: the storage, its energy and the waiting timer.
     let saved = mods.block_data_json();
-    assert!(saved.contains("\"storages\"") && saved.contains("\"ticks\""), "{saved}");
+    assert!(
+        saved.contains("\"storages\"") && saved.contains("\"ticks\""),
+        "{saved}"
+    );
     let mut again = Mods::load(&[mods_dir().join("iron_press.hmod")], |_| true, |_| false);
     again.set_block_data_json(&saved);
-    assert_eq!(again.storage_slots(dim, press), mods.storage_slots(dim, press));
+    assert_eq!(
+        again.storage_slots(dim, press),
+        mods.storage_slots(dim, press)
+    );
 
     // A neighbour changing clanks.
     mods.drain();
-    with_machines(&mut mods, |m| m.blocks.push(((2, 64, 2), "minecraft:stone".into())));
+    with_machines(&mut mods, |m| {
+        m.blocks.push(((2, 64, 2), "minecraft:stone".into()))
+    });
     mods.server_tick(42);
     assert!(mods.drain().iter().any(|o| matches!(o, Output::Server(ServerAction::Console { line }) if line.contains("playsound minecraft:block.anvil.land"))));
 
@@ -717,8 +792,13 @@ fn iron_press_runs_a_machine() {
     mods.drain();
     assert!(mods.use_item(&steve, &stack("minecraft:blaze_rod", 1), false));
     let out = mods.drain();
-    assert!(out.iter().any(|o| matches!(o, Output::Server(ServerAction::Console { line })
-        if line == "effect give 00000000-0000-0000-0000-00000000000a minecraft:speed 10 1")), "{out:?}");
+    assert!(
+        out.iter().any(
+            |o| matches!(o, Output::Server(ServerAction::Console { line })
+        if line == "effect give 00000000-0000-0000-0000-00000000000a minecraft:speed 10 1")
+        ),
+        "{out:?}"
+    );
     assert!(out.iter().any(|o| matches!(o, Output::Server(ServerAction::Console { line }) if line.contains("particle minecraft:flame"))));
     assert!(!mods.use_item(&steve, &stack("minecraft:stick", 1), false));
 
@@ -734,13 +814,20 @@ fn iron_press_runs_a_machine() {
         health: 0.0,
     };
     mods.entity_died(dim, &zombie, Some(&steve.id));
-    assert!(mods.drain().iter().any(|o| matches!(o, Output::Tell { text, .. } if text == "You defeated minecraft:zombie")));
+    assert!(mods.drain().iter().any(
+        |o| matches!(o, Output::Tell { text, .. } if text == "You defeated minecraft:zombie")
+    ));
 
     // net: a client mod's ping is answered on the mod's own channel.
     mods.server_net_received(&steve, "iron_press/ping", b"?");
     let out = mods.drain();
-    assert!(out.iter().any(|o| matches!(o, Output::Server(ServerAction::Net { player: Some(p), channel, data })
-        if *p == steve.id && channel == "iron_press/pong" && *data == 1u32.to_le_bytes().to_vec())), "{out:?}");
+    assert!(
+        out.iter().any(
+            |o| matches!(o, Output::Server(ServerAction::Net { player: Some(p), channel, data })
+        if *p == steve.id && channel == "iron_press/pong" && *data == 1u32.to_le_bytes().to_vec())
+        ),
+        "{out:?}"
+    );
 }
 
 // `world.set-data`: a mod's bytes stay on the block, survive saving the world, and go with the block
@@ -757,7 +844,12 @@ fn block_data_lives_and_dies_with_the_block() {
         health: 20.0,
     };
     let at = BlockPos { x: 1, y: 64, z: 2 };
-    let door = |open: bool| FewBlocks(vec![((1, 64, 2), format!("minecraft:oak_door[open={open}]"))]);
+    let door = |open: bool| {
+        FewBlocks(vec![(
+            (1, 64, 2),
+            format!("minecraft:oak_door[open={open}]"),
+        )])
+    };
     let read = |mods: &mut Mods| -> String {
         assert!(mods.use_block(&steve, at, "minecraft:oak_door", "minecraft:stick"));
         mods.drain()
@@ -791,7 +883,10 @@ fn block_data_lives_and_dies_with_the_block() {
     again.lend_world(Box::new(door(true)));
     assert!(read(&mut again).ends_with("(read 4 times)"));
     // Another block there now: the data went with the door.
-    again.lend_world(Box::new(FewBlocks(vec![((1, 64, 2), "minecraft:stone".into())])));
+    again.lend_world(Box::new(FewBlocks(vec![(
+        (1, 64, 2),
+        "minecraft:stone".into(),
+    )])));
     assert!(read(&mut again).ends_with("(read 1 times)"));
 }
 
@@ -799,7 +894,10 @@ fn block_data_lives_and_dies_with_the_block() {
 #[test]
 fn hmod_reload_restarts_mods() {
     let mut mods = Mods::load(
-        &[mods_dir().join("horizon_mods_test_ui_guest.hmod"), mods_dir().join("block_guard.hmod")],
+        &[
+            mods_dir().join("horizon_mods_test_ui_guest.hmod"),
+            mods_dir().join("block_guard.hmod"),
+        ],
         |id| id == "test_ui_guest",
         |_| false,
     );
@@ -838,15 +936,29 @@ fn block_events_refuse_and_take() {
     let at = BlockPos { x: 1, y: 64, z: 2 };
     // A guarded block stays, and the player is told why; stone breaks as usual.
     assert!(mods.break_block(&steve, at, "minecraft:diamond_block"));
-    assert!(mods.drain().iter().any(|o| matches!(o, Output::Tell { text, .. } if text == "This block is guarded")));
+    assert!(
+        mods.drain()
+            .iter()
+            .any(|o| matches!(o, Output::Tell { text, .. } if text == "This block is guarded"))
+    );
     assert!(!mods.break_block(&steve, at, "minecraft:stone"));
     // A stick reads the block instead of using it; anything else is vanilla's.
-    assert!(mods.use_block(&steve, at, "minecraft:oak_door[open=false]", "minecraft:stick"));
+    assert!(mods.use_block(
+        &steve,
+        at,
+        "minecraft:oak_door[open=false]",
+        "minecraft:stick"
+    ));
     assert!(mods
         .drain()
         .iter()
         .any(|o| matches!(o, Output::Tell { text, .. } if text.starts_with("1 64 2: minecraft:oak_door[open=false]"))));
-    assert!(!mods.use_block(&steve, at, "minecraft:oak_door[open=false]", "minecraft:air"));
+    assert!(!mods.use_block(
+        &steve,
+        at,
+        "minecraft:oak_door[open=false]",
+        "minecraft:air"
+    ));
     // A server mod that didn't register `blocks` is not asked.
     let mut beacons = Mods::load(&[mods_dir().join("beacons.hmod")], |_| true, |_| false);
     assert!(!beacons.break_block(&steve, at, "minecraft:diamond_block"));
@@ -862,7 +974,10 @@ fn ui_replaces_the_inventory() {
     // Replacing opens nothing yet: the game shows it when the player opens the inventory.
     assert!(mods.screen(0).is_none());
     assert!(mods.show_replacement(0, "minecraft:inventory"));
-    assert_eq!(mods.screen(0).expect("the replacement").title, "Guest's inventory");
+    assert_eq!(
+        mods.screen(0).expect("the replacement").title,
+        "Guest's inventory"
+    );
     assert!(!mods.show_replacement(0, "minecraft:crafting_table"));
     // A screen this Horizon can't replace is the call's error, and changes nothing.
     assert!(mods.command("ui_replace bad"));

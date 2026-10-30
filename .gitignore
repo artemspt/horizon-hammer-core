@@ -1,6 +1,8 @@
 /.local/
 /target/
+# Standalone test mods build their own wasm next to their sources.
 /mods/test_core/target
+/mods/test_worldgen/target
 **/__pycache__/
 *.py[cod]
 /.venv/

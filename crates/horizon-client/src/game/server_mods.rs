@@ -50,7 +50,12 @@ impl Game<'_> {
     pub(super) fn apply_mod_block_writes(&mut self) {}
     pub(super) fn load_mod_block_data(&mut self) {}
     pub(super) fn save_mod_block_data(&mut self) {}
-    pub(super) fn mods_refuse_break(&mut self, _host: &mut LanHost, _conn: u32, _pos: [i32; 3]) -> bool {
+    pub(super) fn mods_refuse_break(
+        &mut self,
+        _host: &mut LanHost,
+        _conn: u32,
+        _pos: [i32; 3],
+    ) -> bool {
         false
     }
     pub(super) fn mods_take_use(
@@ -72,15 +77,38 @@ impl Game<'_> {
     ) -> bool {
         false
     }
-    pub(super) fn mods_take_item_use(&mut self, _host: &mut LanHost, _conn: u32, _off_hand: bool) -> bool {
+    pub(super) fn mods_take_item_use(
+        &mut self,
+        _host: &mut LanHost,
+        _conn: u32,
+        _off_hand: bool,
+    ) -> bool {
         false
     }
-    pub(super) fn mod_mob_died(&mut self, _m: &horizon_client::mobs::Mob, _killer: Option<Option<u32>>) {}
-    pub(super) fn mod_picked_up(&mut self, _uuid: u128, _stack: &horizon_client::items::ItemStack, _count: u32) {}
+    pub(super) fn mod_mob_died(
+        &mut self,
+        _m: &horizon_client::mobs::Mob,
+        _killer: Option<Option<u32>>,
+    ) {
+    }
+    pub(super) fn mod_picked_up(
+        &mut self,
+        _uuid: u128,
+        _stack: &horizon_client::items::ItemStack,
+        _count: u32,
+    ) {
+    }
     pub(super) fn mod_explosion(&mut self, _center: [f64; 3], _power: f32) -> bool {
         false
     }
-    pub(super) fn guest_net_received(&mut self, _host: &mut LanHost, _conn: u32, _channel: &str, _data: &[u8]) {}
+    pub(super) fn guest_net_received(
+        &mut self,
+        _host: &mut LanHost,
+        _conn: u32,
+        _channel: &str,
+        _data: &[u8],
+    ) {
+    }
 }
 
 #[cfg(feature = "mods")]
@@ -140,10 +168,23 @@ mod run {
         fn max_stack(&self, item: &str) -> Option<u32> {
             self.more.max_stack(item)
         }
-        fn container(&self, dimension: &str, x: i32, y: i32, z: i32) -> Option<Vec<Option<HostStack>>> {
+        fn container(
+            &self,
+            dimension: &str,
+            x: i32,
+            y: i32,
+            z: i32,
+        ) -> Option<Vec<Option<HostStack>>> {
             self.more.container(dimension, x, y, z)
         }
-        fn set_container(&mut self, dimension: &str, x: i32, y: i32, z: i32, slots: Vec<Option<HostStack>>) -> bool {
+        fn set_container(
+            &mut self,
+            dimension: &str,
+            x: i32,
+            y: i32,
+            z: i32,
+            slots: Vec<Option<HostStack>>,
+        ) -> bool {
             self.more.set_container(dimension, x, y, z, slots)
         }
         fn mobs(&self, dimension: &str) -> Vec<horizon_mods::EntityInfo> {
@@ -323,7 +364,10 @@ mod run {
             }
             self.mod_game_events(&players);
             // In-frame: the window's own client mods' messages.
-            if let Some(me) = players.first().filter(|_| self.lan_acting.is_none() && self.player.is_some()) {
+            if let Some(me) = players
+                .first()
+                .filter(|_| self.lan_acting.is_none() && self.player.is_some())
+            {
                 for (channel, data) in std::mem::take(&mut self.mods.net_inbox) {
                     self.mods.mods.server_net_received(me, &channel, &data);
                 }
@@ -501,7 +545,9 @@ mod run {
         fn guest_server_player(&self, host: &LanHost, conn: u32) -> Option<ServerPlayer> {
             let uuid = host.hub.guests.iter().find(|g| g.conn == conn)?.uuid;
             let id = uuid_string(uuid);
-            self.server_players(Some(host)).into_iter().find(|p| p.id == id)
+            self.server_players(Some(host))
+                .into_iter()
+                .find(|p| p.id == id)
         }
 
         /// Asks server mods before guest `conn` starts breaking the block at
@@ -522,7 +568,11 @@ mod run {
             self.as_guest(host, conn, |g| {
                 let state = g.state_string(g.world.block(pos[0], pos[1], pos[2]));
                 g.lend_world();
-                let at = BlockPos { x: pos[0], y: pos[1], z: pos[2] };
+                let at = BlockPos {
+                    x: pos[0],
+                    y: pos[1],
+                    z: pos[2],
+                };
                 let refused = g.mods.mods.break_block(&player, at, &state);
                 g.return_world();
                 g.show_mod_output();
@@ -549,12 +599,20 @@ mod run {
             };
             self.as_guest(host, conn, |g| {
                 let state = g.state_string(g.world.block(pos[0], pos[1], pos[2]));
-                let slot = if off_hand { crate::game::shield::OFFHAND_SLOT } else { g.selected };
+                let slot = if off_hand {
+                    crate::game::shield::OFFHAND_SLOT
+                } else {
+                    g.selected
+                };
                 let item = g
                     .stack_in(slot)
                     .map_or_else(|| "minecraft:air".to_owned(), |s| s.item.to_string());
                 g.lend_world();
-                let at = BlockPos { x: pos[0], y: pos[1], z: pos[2] };
+                let at = BlockPos {
+                    x: pos[0],
+                    y: pos[1],
+                    z: pos[2],
+                };
                 let taken = g.mods.mods.use_block(&player, at, &state, &item);
                 g.return_world();
                 g.show_mod_output();
@@ -582,7 +640,11 @@ mod run {
                 return false;
             };
             self.as_guest(host, conn, |g| {
-                let slot = if off_hand { crate::game::shield::OFFHAND_SLOT } else { g.selected };
+                let slot = if off_hand {
+                    crate::game::shield::OFFHAND_SLOT
+                } else {
+                    g.selected
+                };
                 let Some(item) = g.stack_in(slot).map(|s| s.item.clone()) else {
                     return false;
                 };
@@ -593,10 +655,18 @@ mod run {
                 let target = if g.res.facts().get(at).replaceable {
                     clicked
                 } else {
-                    [clicked[0] + face[0], clicked[1] + face[1], clicked[2] + face[2]]
+                    [
+                        clicked[0] + face[0],
+                        clicked[1] + face[1],
+                        clicked[2] + face[2],
+                    ]
                 };
                 g.lend_world();
-                let at = BlockPos { x: target[0], y: target[1], z: target[2] };
+                let at = BlockPos {
+                    x: target[0],
+                    y: target[1],
+                    z: target[2],
+                };
                 let refused = g.mods.mods.place_block(&player, at, &item);
                 g.return_world();
                 g.show_mod_output();
@@ -607,7 +677,12 @@ mod run {
 
         /// Asks server mods before vanilla uses guest `conn`'s held item on
         /// the air (`block-events.use-item`): true when one took it.
-        pub(in crate::game) fn mods_take_item_use(&mut self, host: &mut LanHost, conn: u32, off_hand: bool) -> bool {
+        pub(in crate::game) fn mods_take_item_use(
+            &mut self,
+            host: &mut LanHost,
+            conn: u32,
+            off_hand: bool,
+        ) -> bool {
             if !self.hears_players() {
                 return false;
             }
@@ -615,8 +690,13 @@ mod run {
                 return false;
             };
             self.as_guest(host, conn, |g| {
-                let slot = if off_hand { crate::game::shield::OFFHAND_SLOT } else { g.selected };
-                let Some(stack) = g.stack_in(slot).map(crate::game::mod_machines::host_stack) else {
+                let slot = if off_hand {
+                    crate::game::shield::OFFHAND_SLOT
+                } else {
+                    g.selected
+                };
+                let Some(stack) = g.stack_in(slot).map(crate::game::mod_machines::host_stack)
+                else {
                     return false;
                 };
                 g.lend_world();
@@ -629,14 +709,22 @@ mod run {
         }
 
         /// A `client-net` message from guest `conn`'s client mods.
-        pub(in crate::game) fn guest_net_received(&mut self, host: &mut LanHost, conn: u32, channel: &str, data: &[u8]) {
+        pub(in crate::game) fn guest_net_received(
+            &mut self,
+            host: &mut LanHost,
+            conn: u32,
+            channel: &str,
+            data: &[u8],
+        ) {
             if !self.hears_players() || data.len() > horizon_mods::NET_BYTES {
                 return;
             }
             let Some(player) = self.guest_server_player(host, conn) else {
                 return;
             };
-            let channel = channel.strip_prefix(horizon_mods::NET_PREFIX).unwrap_or(channel);
+            let channel = channel
+                .strip_prefix(horizon_mods::NET_PREFIX)
+                .unwrap_or(channel);
             self.lend_world();
             self.mods.mods.server_net_received(&player, channel, data);
             self.return_world();
@@ -722,13 +810,16 @@ mod run {
                         if rows.is_empty() {
                             vec!["No mods (server)".to_owned()]
                         } else {
-                            std::iter::once("Mods (server):".to_owned()).chain(rows).collect()
+                            std::iter::once("Mods (server):".to_owned())
+                                .chain(rows)
+                                .collect()
                         }
                     }
                     HmodCommand::Reload(only) => {
-                        let done = self.mods.mods.reload(only.as_deref(), |c| {
-                            super::super::mods::vanilla_command(c)
-                        });
+                        let done = self
+                            .mods
+                            .mods
+                            .reload(only.as_deref(), super::super::mods::vanilla_command);
                         self.mods.server = self.mods.mods.runs_server();
                         self.mods.world = self.mods.mods.wants_world();
                         if done.is_empty() {
@@ -748,7 +839,9 @@ mod run {
                 host.hub.send_to(
                     conn,
                     &C::SystemChat(play::SystemChat {
-                        content: component_nbt(&Text::literal(line).with_color(text::GRAY).component()),
+                        content: component_nbt(
+                            &Text::literal(line).with_color(text::GRAY).component(),
+                        ),
                         overlay: false,
                     }),
                 );
@@ -883,10 +976,8 @@ mod run {
                         );
                     }
                 }
-                Output::Server(action) => {
-                    if self.mods.actions.len() < MAX_QUEUED_WRITES {
-                        self.mods.actions.push(action);
-                    }
+                Output::Server(action) if self.mods.actions.len() < MAX_QUEUED_WRITES => {
+                    self.mods.actions.push(action);
                 }
                 _ => {}
             }

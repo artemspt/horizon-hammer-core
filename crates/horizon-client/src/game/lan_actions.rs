@@ -3042,7 +3042,12 @@ impl Game<'_> {
             let (stack, item_id) = (self.dropped[i].stack.clone(), self.dropped[i].id);
             let before = stack.count;
             let picked = stack.clone();
-            let uuid = host.hub.guests.iter().find(|g| g.conn == conn).map_or(0, |g| g.uuid);
+            let uuid = host
+                .hub
+                .guests
+                .iter()
+                .find(|g| g.conn == conn)
+                .map_or(0, |g| g.uuid);
             let rest = self.as_guest(host, conn, |g| g.give(stack)).flatten();
             match rest {
                 None => {

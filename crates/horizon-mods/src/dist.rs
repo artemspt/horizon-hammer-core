@@ -1,8 +1,9 @@
 //! Distribution side (like NeoForge's Dist)
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Dist {
     /// Client side (single player window or multiplayer client)
+    #[default]
     Client,
     /// Dedicated server side
     DedicatedServer,
@@ -19,13 +20,6 @@ impl Dist {
 
     pub fn is_dedicated_server(&self) -> bool {
         matches!(self, Dist::DedicatedServer)
-    }
-}
-
-impl Default for Dist {
-    fn default() -> Self {
-        // Most mods default to client
-        Dist::Client
     }
 }
 

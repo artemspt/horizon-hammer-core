@@ -866,6 +866,15 @@ interface entities {
     sound: func(dimension: string, sound: string, x: f64, y: f64, z: f64, volume: f32, pitch: f32) -> result<_, string>;
 }
 
+/// Capability `worldgen`, server mods only (experimental): world generation
+/// modifiers. Today one surface block per biome, applied to the chunks the
+/// game decorates while the rule is set.
+interface worldgen {
+    /// The block the game puts at the top of `biome`'s terrain, e.g.
+    /// `minecraft:stone`. The last rule for a biome wins.
+    set-surface-rule: func(biome: string, surface: string) -> result<_, string>;
+}
+
 /// What the server calls in a server mod (manifest `api = "0.3"`,
 /// experimental). Only the hooks `init` asks for are ever called. The player
 /// in each event is as the server saw them when it happened.
@@ -1100,6 +1109,7 @@ world horizon-server-mod {
     import %world;
     import storages;
     import entities;
+    import worldgen;
     import server-net;
     export server-events;
 }

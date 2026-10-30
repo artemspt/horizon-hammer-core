@@ -37,6 +37,7 @@ members = [
     "crates/horizon-mod-sdk/examples/beacons",
     "crates/horizon-mod-sdk/examples/block-guard",
     "crates/horizon-mod-sdk/examples/iron-press",
+    "crates/horizon-mod-sdk/examples/worldgen",
     "mods/official/fps-overlay",
     "mods/official/keystrokes",
     "mods/official/far-view",

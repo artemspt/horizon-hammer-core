@@ -1,0 +1,8 @@
+id = "test_worldgen"
+name = "Test Worldgen Mod"
+version = "0.1.0"
+description = "Tests worldgen surface rules"
+api = "0.3"
+side = "server"
+capabilities = ["worldgen"]
+experimental = ["worldgen"]

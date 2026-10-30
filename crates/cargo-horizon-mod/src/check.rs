@@ -285,14 +285,31 @@ fn play(path: &Path, report: &mut Report) -> Result<(), String> {
                 format!("shook the camera: {strength:.2} for {seconds:.1} s")
             }
             Output::Server(action) => match action {
-                ServerAction::Give { player, stack } => format!("gave {player} {} {}", stack.count, stack.item),
-                ServerAction::SetSlot { player, slot, .. } => format!("set slot {slot} of {player}"),
-                ServerAction::Take { player, item, count } => format!("took {count} {item} from {player}"),
+                ServerAction::Give { player, stack } => {
+                    format!("gave {player} {} {}", stack.count, stack.item)
+                }
+                ServerAction::SetSlot { player, slot, .. } => {
+                    format!("set slot {slot} of {player}")
+                }
+                ServerAction::Take {
+                    player,
+                    item,
+                    count,
+                } => format!("took {count} {item} from {player}"),
                 ServerAction::Console { line } => format!("server command: /{line}"),
-                ServerAction::OpenMenu { player, title, .. } => format!("opened window {title:?} for {player}"),
-                ServerAction::Net { channel, data, .. } => format!("sent {} byte(s) on {channel}", data.len()),
+                ServerAction::OpenMenu { player, title, .. } => {
+                    format!("opened window {title:?} for {player}")
+                }
+                ServerAction::Net { channel, data, .. } => {
+                    format!("sent {} byte(s) on {channel}", data.len())
+                }
+                ServerAction::Worldgen { biome, surface, .. } => {
+                    format!("set worldgen surface {biome} to {surface}")
+                }
             },
-            Output::NetToServer { channel, data } => format!("sent {} byte(s) on {channel}", data.len()),
+            Output::NetToServer { channel, data } => {
+                format!("sent {} byte(s) on {channel}", data.len())
+            }
         });
     }
     let shapes = mods.hud_shapes().count();

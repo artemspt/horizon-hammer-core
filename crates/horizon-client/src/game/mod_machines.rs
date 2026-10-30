@@ -36,10 +36,18 @@ pub(super) struct ModMenu {
 /// `UUID.toString()`.
 fn uuid_string(u: u128) -> String {
     let h = format!("{u:032x}");
-    format!("{}-{}-{}-{}-{}", &h[..8], &h[8..12], &h[12..16], &h[16..20], &h[20..])
+    format!(
+        "{}-{}-{}-{}-{}",
+        &h[..8],
+        &h[8..12],
+        &h[12..16],
+        &h[16..20],
+        &h[20..]
+    )
 }
 fn uuid_words(w: [i32; 4]) -> u128 {
-    w.iter().fold(0u128, |u, &x| (u << 32) | u128::from(x as u32))
+    w.iter()
+        .fold(0u128, |u, &x| (u << 32) | u128::from(x as u32))
 }
 
 /// A game stack as server mods see it: their bytes out of
@@ -68,7 +76,8 @@ pub(super) fn host_stack(stack: &ItemStack) -> HostStack {
         Vec::new()
     } else {
         s.count = 1;
-        nbt::write_network(&horizon_items::item_nbt::item_to_nbt(&s), Limits::default()).unwrap_or_default()
+        nbt::write_network(&horizon_items::item_nbt::item_to_nbt(&s), Limits::default())
+            .unwrap_or_default()
     };
     HostStack {
         item: s.item.to_string(),
@@ -107,9 +116,10 @@ pub(super) fn game_stack(h: &HostStack) -> Option<ItemStack> {
             Some((_, Tag::Compound(c))) => {
                 c.insert(JavaString::from(MODS_KEY), Tag::Compound(mods));
             }
-            _ => d
-                .other
-                .push((CUSTOM_DATA.into(), Tag::compound([(MODS_KEY, Tag::Compound(mods))]))),
+            _ => d.other.push((
+                CUSTOM_DATA.into(),
+                Tag::compound([(MODS_KEY, Tag::Compound(mods))]),
+            )),
         }
     }
     Some(s)
@@ -121,7 +131,11 @@ fn inventory_slots(
     armor: &[Option<ItemStack>; 4],
     offhand: &Option<ItemStack>,
 ) -> Vec<Option<HostStack>> {
-    let mut out: Vec<Option<HostStack>> = inventory.iter().take(36).map(|s| s.as_ref().map(host_stack)).collect();
+    let mut out: Vec<Option<HostStack>> = inventory
+        .iter()
+        .take(36)
+        .map(|s| s.as_ref().map(host_stack))
+        .collect();
     out.resize(36, None);
     out.extend(armor.iter().rev().map(|s| s.as_ref().map(host_stack)));
     out.push(offhand.as_ref().map(host_stack));
@@ -149,11 +163,24 @@ impl Lent {
         let (_, map) = self.containers.iter().find(|(d, _)| *d == dimension)?;
         map.get(&pos)
     }
-    pub(super) fn container(&self, dimension: &str, x: i32, y: i32, z: i32) -> Option<Vec<Option<HostStack>>> {
+    pub(super) fn container(
+        &self,
+        dimension: &str,
+        x: i32,
+        y: i32,
+        z: i32,
+    ) -> Option<Vec<Option<HostStack>>> {
         let slots = self.entity(dimension, (x, y, z))?.slots();
         (!slots.is_empty()).then(|| slots.iter().map(|s| s.as_ref().map(host_stack)).collect())
     }
-    pub(super) fn set_container(&mut self, dimension: &str, x: i32, y: i32, z: i32, slots: Vec<Option<HostStack>>) -> bool {
+    pub(super) fn set_container(
+        &mut self,
+        dimension: &str,
+        x: i32,
+        y: i32,
+        z: i32,
+        slots: Vec<Option<HostStack>>,
+    ) -> bool {
         let Some((_, map)) = self.containers.iter_mut().find(|(d, _)| *d == dimension) else {
             return false;
         };
@@ -191,11 +218,17 @@ impl Game<'_> {
     /// Each player's held slot and inventory, for `players.inventory`.
     pub(super) fn mod_inventories(&self) -> Vec<(String, u32, Vec<Option<HostStack>>)> {
         let mut out = Vec::new();
-        if self.options.execution_role.is_client() && self.remote.is_none() && self.player.is_some() {
+        if self.options.execution_role.is_client() && self.remote.is_none() && self.player.is_some()
+        {
             let slots = inventory_slots(&self.inventory, &self.armor, &self.offhand);
             out.push((self.player_uuid_string(), self.selected as u32, slots));
         }
-        for g in self.lan.iter().flat_map(|h| &h.hub.guests).filter(|g| g.placed) {
+        for g in self
+            .lan
+            .iter()
+            .flat_map(|h| &h.hub.guests)
+            .filter(|g| g.placed)
+        {
             let slots = inventory_slots(&g.inventory, &g.armor, &g.offhand);
             out.push((uuid_string(g.uuid), g.selected as u32, slots));
         }
@@ -210,7 +243,8 @@ impl Game<'_> {
         let mut redstone = HashMap::new();
         for (x, y, z) in self.mods.mods.machine_positions(dim) {
             let pos = horizon_core::position::BlockPos::new(x, y, z);
-            let power = self.with_level(|b, level, ticks| b.best_neighbor_signal(level, ticks, pos));
+            let power =
+                self.with_level(|b, level, ticks| b.best_neighbor_signal(level, ticks, pos));
             redstone.insert((dim.to_owned(), x, y, z), power.clamp(0, 15) as u8);
         }
         let max_stacks = self
@@ -271,7 +305,11 @@ impl Game<'_> {
                         self.on_mod_player(&player, |g| g.give_or_drop(s));
                     }
                 }
-                ServerAction::SetSlot { player, slot, stack } => {
+                ServerAction::SetSlot {
+                    player,
+                    slot,
+                    stack,
+                } => {
                     let s = stack.as_ref().and_then(game_stack);
                     self.on_mod_player(&player, |g| match slot {
                         0..=35 => {
@@ -284,7 +322,11 @@ impl Game<'_> {
                         _ => {}
                     });
                 }
-                ServerAction::Take { player, item, count } => {
+                ServerAction::Take {
+                    player,
+                    item,
+                    count,
+                } => {
                     self.on_mod_player(&player, |g| {
                         let mut left = count;
                         let slots = g
@@ -309,14 +351,52 @@ impl Game<'_> {
                         }
                     });
                 }
-                ServerAction::Console { line } => self.mod_console(&line),
+                ServerAction::Console { line } => {
+                    if let Some(rest) = line.strip_prefix("effect give ") {
+                        let mut parts = rest.split_whitespace();
+                        let target = parts.next();
+                        let effect = parts.next();
+                        let seconds = parts
+                            .next()
+                            .and_then(|s| s.parse::<u32>().ok())
+                            .unwrap_or(1);
+                        let amplifier =
+                            parts.next().and_then(|s| s.parse::<u8>().ok()).unwrap_or(0);
+                        if let (Some(target), Some(effect)) = (target, effect) {
+                            self.mods.mods.mob_effect_applied(
+                                target.to_owned(),
+                                effect.to_owned(),
+                                seconds,
+                                amplifier,
+                            );
+                        }
+                    }
+                    self.mod_console(&line);
+                }
                 ServerAction::OpenMenu {
                     player,
                     dimension,
                     pos,
                     title,
-                } => self.open_mod_menu(&player, dimension, pos, &title),
-                ServerAction::Net { player, channel, data } => self.mod_net_send(player.as_deref(), &channel, data),
+                } => {
+                    self.mods.mods.container_opened(&player, &title);
+                    self.open_mod_menu(&player, dimension, pos, &title);
+                }
+                ServerAction::Net {
+                    player,
+                    channel,
+                    data,
+                } => self.mod_net_send(player.as_deref(), &channel, data),
+                ServerAction::Worldgen { id, biome, surface } => {
+                    let rule = horizon_mods::ResourceLocation::parse(&format!("{id}:worldgen"))
+                        .expect("a mod id is a registry namespace");
+                    self.mods
+                        .mods
+                        .worldgen_mut()
+                        .set_surface_rule(rule, biome, surface);
+                    #[cfg(feature = "mods")]
+                    horizon_client::mod_worldgen::publish(&self.mods.mods);
+                }
             }
         }
     }
@@ -349,7 +429,9 @@ impl Game<'_> {
 
     /// `server-net`: a message to one player's client mods, or everyone's.
     fn mod_net_send(&mut self, player: Option<&str>, channel: &str, data: Vec<u8>) {
-        let local = self.options.execution_role.is_client() && self.remote.is_none() && self.player.is_some();
+        let local = self.options.execution_role.is_client()
+            && self.remote.is_none()
+            && self.player.is_some();
         if local && player.is_none_or(|p| p == self.player_uuid_string()) {
             self.mod_net_received(channel, &data);
         }
@@ -384,7 +466,13 @@ impl Game<'_> {
 
     /// `storages.open-menu`: a chest-like window on a placeholder holding
     /// the storage's slots, copied back each tick ([`Game::sync_mod_menus`]).
-    fn open_mod_menu(&mut self, player: &str, dimension: String, pos: (i32, i32, i32), title: &str) {
+    fn open_mod_menu(
+        &mut self,
+        player: &str,
+        dimension: String,
+        pos: (i32, i32, i32),
+        title: &str,
+    ) {
         let Some(items) = self.mods.mods.storage_slots(&dimension, pos) else {
             return;
         };
@@ -407,11 +495,19 @@ impl Game<'_> {
             } else {
                 format!("minecraft:generic_9x{}", items.len() / 9)
             };
-            let stacks: Vec<Option<ItemStack>> = items.iter().map(|s| s.as_ref().and_then(game_stack)).collect();
+            let stacks: Vec<Option<ItemStack>> = items
+                .iter()
+                .map(|s| s.as_ref().and_then(game_stack))
+                .collect();
             if let Some(world) = self.level_world(&level) {
-                world.block_entities.insert(key, BlockEntity::Chest(stacks.clone()));
-                let title = horizon_client::lan::data::component_nbt(&Text::literal(title.to_owned()).component());
-                host.hub.open_container(conn, &kind, title, key, Slots::Block(key), stacks);
+                world
+                    .block_entities
+                    .insert(key, BlockEntity::Chest(stacks.clone()));
+                let title = horizon_client::lan::data::component_nbt(
+                    &Text::literal(title.to_owned()).component(),
+                );
+                host.hub
+                    .open_container(conn, &kind, title, key, Slots::Block(key), stacks);
                 self.mods.menus.push(ModMenu {
                     conn,
                     key,
@@ -430,32 +526,44 @@ impl Game<'_> {
     pub(super) fn sync_mod_menus(&mut self) {
         for mut m in std::mem::take(&mut self.mods.menus) {
             // ChestBlockEntity.stillValid: the player in the storage's level, within 8 blocks of it.
-            let (px, py, pz) = (f64::from(m.pos.0) + 0.5, f64::from(m.pos.1) + 0.5, f64::from(m.pos.2) + 0.5);
+            let (px, py, pz) = (
+                f64::from(m.pos.0) + 0.5,
+                f64::from(m.pos.1) + 0.5,
+                f64::from(m.pos.2) + 0.5,
+            );
             let shown_to = self.lan.as_ref().and_then(|h| {
-                h.hub
-                    .guests
-                    .iter()
-                    .find(|g| g.conn == m.conn && g.menu.as_ref().is_some_and(|menu| menu.pos == Some(m.key)))
+                h.hub.guests.iter().find(|g| {
+                    g.conn == m.conn && g.menu.as_ref().is_some_and(|menu| menu.pos == Some(m.key))
+                })
             });
             let open = shown_to.is_some();
             let near = shown_to.is_some_and(|g| {
-                let d = (g.position[0] - px).powi(2) + (g.position[1] - py).powi(2) + (g.position[2] - pz).powi(2);
+                let d = (g.position[0] - px).powi(2)
+                    + (g.position[1] - py).powi(2)
+                    + (g.position[2] - pz).powi(2);
                 g.dimension == m.dimension && d <= 64.0
             });
-            let shown: Option<Vec<Option<HostStack>>> = self.level_world(&m.level).and_then(|w| {
-                match w.block_entities.get(&m.key) {
-                    Some(BlockEntity::Chest(items)) => Some(items.iter().map(|s| s.as_ref().map(host_stack)).collect()),
-                    _ => None,
-                }
-            });
+            let shown: Option<Vec<Option<HostStack>>> =
+                self.level_world(&m.level)
+                    .and_then(|w| match w.block_entities.get(&m.key) {
+                        Some(BlockEntity::Chest(items)) => {
+                            Some(items.iter().map(|s| s.as_ref().map(host_stack)).collect())
+                        }
+                        _ => None,
+                    });
             let stored = self.mods.mods.storage_slots(&m.dimension, m.pos);
             let alive = match (shown, stored) {
                 (Some(shown), Some(stored)) if shown.len() == stored.len() => {
                     if shown != m.last {
-                        self.mods.mods.set_storage_slots(&m.dimension, m.pos, shown.clone());
+                        self.mods
+                            .mods
+                            .set_storage_slots(&m.dimension, m.pos, shown.clone());
                         m.last = shown;
                     } else if stored != m.last {
-                        let stacks: Vec<Option<ItemStack>> = stored.iter().map(|s| s.as_ref().and_then(game_stack)).collect();
+                        let stacks: Vec<Option<ItemStack>> = stored
+                            .iter()
+                            .map(|s| s.as_ref().and_then(game_stack))
+                            .collect();
                         if let Some(w) = self.level_world(&m.level) {
                             w.block_entities.insert(m.key, BlockEntity::Chest(stacks));
                         }
@@ -477,7 +585,6 @@ impl Game<'_> {
             }
         }
     }
-
 }
 
 /// What the game saw for `game-events` during a tick, told at its end.
@@ -509,7 +616,11 @@ impl Game<'_> {
 
     /// `LivingEntity.die`: for `entity-died` at the tick's end. `killer`:
     /// the player who last hurt it (None inside: the host).
-    pub(super) fn mod_mob_died(&mut self, m: &horizon_client::mobs::Mob, killer: Option<Option<u32>>) {
+    pub(super) fn mod_mob_died(
+        &mut self,
+        m: &horizon_client::mobs::Mob,
+        killer: Option<Option<u32>>,
+    ) {
         if !self.hears_events("entity-died") {
             return;
         }
@@ -551,10 +662,10 @@ impl Game<'_> {
             return false;
         }
         self.lend_world();
-        let stop = self
-            .mods
-            .mods
-            .explosion(self.dim.id(), (center[0], center[1], center[2]), power);
+        let stop =
+            self.mods
+                .mods
+                .explosion(self.dim.id(), (center[0], center[1], center[2]), power);
         self.return_world();
         self.show_mod_output();
         stop
@@ -584,7 +695,12 @@ impl Game<'_> {
                 spawned.sort_unstable();
                 hurt.sort_unstable_by_key(|h| h.0);
                 for id in spawned {
-                    let Some(info) = self.mobs.iter().find(|m| m.id == id).and_then(|m| self.mob_info(m)) else {
+                    let Some(info) = self
+                        .mobs
+                        .iter()
+                        .find(|m| m.id == id)
+                        .and_then(|m| self.mob_info(m))
+                    else {
                         continue;
                     };
                     if self.mods.mods.entity_spawned(dim, &info)
@@ -594,7 +710,12 @@ impl Game<'_> {
                     }
                 }
                 for (id, was) in hurt {
-                    let Some(info) = self.mobs.iter().find(|m| m.id == id).and_then(|m| self.mob_info(m)) else {
+                    let Some(info) = self
+                        .mobs
+                        .iter()
+                        .find(|m| m.id == id)
+                        .and_then(|m| self.mob_info(m))
+                    else {
                         continue;
                     };
                     let amount = was - info.health;
@@ -629,7 +750,10 @@ impl Game<'_> {
                     dimension,
                     entity,
                     killer,
-                } => self.mods.mods.entity_died(&dimension, &entity, killer.as_deref()),
+                } => self
+                    .mods
+                    .mods
+                    .entity_died(&dimension, &entity, killer.as_deref()),
                 PendingEvent::Picked { player, stack } => {
                     if let Some(p) = players.iter().find(|p| p.id == player) {
                         self.mods.mods.item_picked_up(p, &stack);

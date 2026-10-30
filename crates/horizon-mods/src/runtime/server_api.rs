@@ -2,9 +2,7 @@
 //! (API level 10): the stacks they hand around, what the server keeps for
 //! them beside their bytes on blocks, and the host side of `storages`,
 //! `entities` and the item half of `players`.
-use super::{
-    FUEL_EVENT, Mods, Output, Running, State, block_id, block_key, server_bindings,
-};
+use super::{FUEL_EVENT, Mods, Output, Running, State, block_id, block_key, server_bindings};
 use server_bindings::horizon::mods::{entities, players, storages};
 use std::collections::BTreeMap;
 
@@ -68,11 +66,24 @@ pub struct EntityInfo {
 /// players' inventories, windows and the command dispatcher).
 #[derive(Clone, Debug, PartialEq)]
 pub enum ServerAction {
-    Give { player: String, stack: HostStack },
-    SetSlot { player: String, slot: u32, stack: Option<HostStack> },
-    Take { player: String, item: String, count: u32 },
+    Give {
+        player: String,
+        stack: HostStack,
+    },
+    SetSlot {
+        player: String,
+        slot: u32,
+        stack: Option<HostStack>,
+    },
+    Take {
+        player: String,
+        item: String,
+        count: u32,
+    },
     /// A vanilla command line, run as the server console.
-    Console { line: String },
+    Console {
+        line: String,
+    },
     OpenMenu {
         player: String,
         dimension: String,
@@ -84,6 +95,12 @@ pub enum ServerAction {
         player: Option<String>,
         channel: String,
         data: Vec<u8>,
+    },
+    /// A world generation rule registered by the server mod `id`.
+    Worldgen {
+        id: String,
+        biome: String,
+        surface: String,
     },
 }
 
@@ -142,7 +159,10 @@ pub(in crate::runtime) fn to_guest(stack: &HostStack, me: &str) -> players::Item
 /// A stack mod `me` handed in.
 pub(super) fn from_guest(stack: players::ItemStack, me: &str) -> Result<HostStack, String> {
     if stack.data.len() > STACK_DATA_BYTES {
-        return Err(format!("{} bytes on a stack: at most {STACK_DATA_BYTES}", stack.data.len()));
+        return Err(format!(
+            "{} bytes on a stack: at most {STACK_DATA_BYTES}",
+            stack.data.len()
+        ));
     }
     let opaque: Opaque = if stack.components.is_empty() {
         Opaque::default()
@@ -168,14 +188,21 @@ pub(super) fn from_guest(stack: players::ItemStack, me: &str) -> Result<HostStac
 }
 
 fn guest_fluid(t: &Tank) -> Option<storages::FluidStack> {
-    t.fluid.as_ref().map(|(fluid, amount)| storages::FluidStack {
-        fluid: fluid.clone(),
-        amount: *amount,
-    })
+    t.fluid
+        .as_ref()
+        .map(|(fluid, amount)| storages::FluidStack {
+            fluid: fluid.clone(),
+            amount: *amount,
+        })
 }
 
 /// Moves `stack` into `slots` as a hopper does; how many went in.
-fn insert_into(slots: &mut [Option<HostStack>], stack: &HostStack, max: u32, simulate: bool) -> u32 {
+fn insert_into(
+    slots: &mut [Option<HostStack>],
+    stack: &HostStack,
+    max: u32,
+    simulate: bool,
+) -> u32 {
     let mut left = stack.count;
     let mut moved: Vec<(usize, u32)> = Vec::new();
     for (i, slot) in slots.iter().enumerate() {
@@ -205,7 +232,12 @@ fn insert_into(slots: &mut [Option<HostStack>], stack: &HostStack, max: u32, sim
         for (i, n) in moved {
             match &mut slots[i] {
                 Some(s) => s.count += n,
-                none => *none = Some(HostStack { count: n, ..stack.clone() }),
+                none => {
+                    *none = Some(HostStack {
+                        count: n,
+                        ..stack.clone()
+                    })
+                }
             }
         }
     }
@@ -228,7 +260,10 @@ fn extract_from(
     if n == 0 {
         return None;
     }
-    let out = HostStack { count: n, ..s.clone() };
+    let out = HostStack {
+        count: n,
+        ..s.clone()
+    };
     if !simulate {
         s.count -= n;
         if s.count == 0 {
@@ -263,7 +298,12 @@ fn insert_fluid(tanks: &mut [Tank], fluid: &str, amount: u32, simulate: bool) ->
     amount - left
 }
 
-fn extract_fluid(tanks: &mut [Tank], fluid: Option<&str>, amount: u32, simulate: bool) -> Option<(String, u32)> {
+fn extract_fluid(
+    tanks: &mut [Tank],
+    fluid: Option<&str>,
+    amount: u32,
+    simulate: bool,
+) -> Option<(String, u32)> {
     let t = tanks.iter_mut().find(|t| {
         t.fluid
             .as_ref()
@@ -286,11 +326,19 @@ fn check_id(kind: &str, id: &str) -> Result<(), String> {
         && id
             .chars()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || "_-.:/".contains(c));
-    if ok { Ok(()) } else { Err(format!("{kind} {id:?}: not an id")) }
+    if ok {
+        Ok(())
+    } else {
+        Err(format!("{kind} {id:?}: not an id"))
+    }
 }
 fn check_uuid(id: &str) -> Result<(), String> {
     let ok = id.len() == 36 && id.chars().all(|c| c.is_ascii_hexdigit() || c == '-');
-    if ok { Ok(()) } else { Err(format!("{id:?}: not a UUID")) }
+    if ok {
+        Ok(())
+    } else {
+        Err(format!("{id:?}: not a UUID"))
+    }
 }
 
 impl State {
@@ -309,7 +357,9 @@ impl State {
     }
     fn check_dimension(&self, dimension: &str) -> Result<(), String> {
         match self.world.lock().ok().as_ref().and_then(|v| v.as_ref()) {
-            Some(view) if !view.has_dimension(dimension) => Err(format!("no dimension {dimension}")),
+            Some(view) if !view.has_dimension(dimension) => {
+                Err(format!("no dimension {dimension}"))
+            }
             _ => Ok(()),
         }
     }
@@ -356,18 +406,29 @@ impl State {
     ) -> Result<R, String> {
         let me = self.id.clone();
         let mut f = Some(f);
-        match self.with_storage(dimension, pos, |s| (s.owner == me).then(|| (f.take().unwrap())(s))) {
+        match self.with_storage(dimension, pos, |s| {
+            (s.owner == me).then(|| (f.take().unwrap())(s))
+        }) {
             Some(Some(r)) => Ok(r),
             Some(None) => Err("another mod's storage".into()),
             None => Err(format!("no storage at {} {} {}", pos.0, pos.1, pos.2)),
         }
     }
     /// A vanilla container's slots there.
-    fn container(&self, dimension: &str, (x, y, z): (i32, i32, i32)) -> Option<Vec<Option<HostStack>>> {
+    fn container(
+        &self,
+        dimension: &str,
+        (x, y, z): (i32, i32, i32),
+    ) -> Option<Vec<Option<HostStack>>> {
         let view = self.world.lock().ok()?;
         view.as_ref()?.container(dimension, x, y, z)
     }
-    fn set_container(&self, dimension: &str, (x, y, z): (i32, i32, i32), slots: Vec<Option<HostStack>>) -> bool {
+    fn set_container(
+        &self,
+        dimension: &str,
+        (x, y, z): (i32, i32, i32),
+        slots: Vec<Option<HostStack>>,
+    ) -> bool {
         let Ok(mut view) = self.world.lock() else {
             return false;
         };
@@ -379,7 +440,10 @@ impl State {
 // ---------------------------------------------------------------- players
 impl State {
     fn inventory_of(&self, player: &str) -> Option<&(String, u32, Vec<Option<HostStack>>)> {
-        self.snapshot.inventories.iter().find(|(id, ..)| id == player)
+        self.snapshot
+            .inventories
+            .iter()
+            .find(|(id, ..)| id == player)
     }
     pub(super) fn player_inventory(&mut self, player: String) -> Vec<Option<players::ItemStack>> {
         let me = self.id.clone();
@@ -402,7 +466,11 @@ impl State {
             Err(format!("no player {player} online"))
         }
     }
-    pub(super) fn player_give(&mut self, player: String, stack: players::ItemStack) -> Result<(), String> {
+    pub(super) fn player_give(
+        &mut self,
+        player: String,
+        stack: players::ItemStack,
+    ) -> Result<(), String> {
         self.online(&player)?;
         let stack = from_guest(stack, &self.id)?;
         self.max_stack(&stack.item)?;
@@ -429,7 +497,11 @@ impl State {
             }
             None => None,
         };
-        self.act(ServerAction::SetSlot { player, slot, stack })
+        self.act(ServerAction::SetSlot {
+            player,
+            slot,
+            stack,
+        })
     }
     pub(super) fn player_take(&mut self, player: String, item: String, count: u32) -> u32 {
         let held: u32 = self
@@ -444,7 +516,15 @@ impl State {
             })
             .unwrap_or(0);
         let n = held.min(count);
-        if n == 0 || self.act(ServerAction::Take { player, item, count: n }).is_err() {
+        if n == 0
+            || self
+                .act(ServerAction::Take {
+                    player,
+                    item,
+                    count: n,
+                })
+                .is_err()
+        {
             return 0;
         }
         n
@@ -453,7 +533,14 @@ impl State {
 
 // ---------------------------------------------------------------- world
 impl State {
-    pub(super) fn schedule_tick(&mut self, dimension: String, x: i32, y: i32, z: i32, delay: u32) -> Result<(), String> {
+    pub(super) fn schedule_tick(
+        &mut self,
+        dimension: String,
+        x: i32,
+        y: i32,
+        z: i32,
+        delay: u32,
+    ) -> Result<(), String> {
         if !(1..=MAX_DELAY).contains(&delay) {
             return Err(format!("delay {delay}: 1 to {MAX_DELAY} ticks"));
         }
@@ -461,7 +548,10 @@ impl State {
             .block_at(&dimension, x, y, z)
             .ok_or_else(|| format!("no chunk loaded at {x} {y} {z} in {dimension}"))?;
         let me = self.id.clone();
-        let mut all = self.block_data.lock().map_err(|_| "block data unavailable".to_string())?;
+        let mut all = self
+            .block_data
+            .lock()
+            .map_err(|_| "block data unavailable".to_string())?;
         if all.ticks.iter().filter(|t| t.owner == me).count() >= TICKS_PER_MOD {
             return Err(format!("at most {TICKS_PER_MOD} waiting ticks per mod"));
         }
@@ -475,7 +565,13 @@ impl State {
         });
         Ok(())
     }
-    pub(super) fn redstone_power(&mut self, dimension: String, x: i32, y: i32, z: i32) -> Option<u8> {
+    pub(super) fn redstone_power(
+        &mut self,
+        dimension: String,
+        x: i32,
+        y: i32,
+        z: i32,
+    ) -> Option<u8> {
         let view = self.world.lock().ok()?;
         view.as_ref()?.redstone(&dimension, x, y, z)
     }
@@ -505,7 +601,10 @@ impl storages::Host for State {
         }
         let me = self.id.clone();
         let key = block_key(&dimension, x, y, z);
-        let mut all = self.block_data.lock().map_err(|_| "block data unavailable".to_string())?;
+        let mut all = self
+            .block_data
+            .lock()
+            .map_err(|_| "block data unavailable".to_string())?;
         let old = all.storages.remove(&key).filter(|s| s.block == block);
         if let Some(s) = &old
             && s.owner != me
@@ -514,7 +613,9 @@ impl storages::Host for State {
             all.storages.insert(key, s);
             return Err("another mod's storage is there".into());
         }
-        if old.is_none() && all.storages.values().filter(|s| s.owner == me).count() >= STORAGES_PER_MOD {
+        if old.is_none()
+            && all.storages.values().filter(|s| s.owner == me).count() >= STORAGES_PER_MOD
+        {
             return Err(format!("at most {STORAGES_PER_MOD} storages per mod"));
         }
         let old = old.unwrap_or_default();
@@ -523,10 +624,16 @@ impl storages::Host for State {
         let mut tanks: Vec<super::Tank> = shape
             .tanks
             .iter()
-            .map(|&capacity| super::Tank { fluid: None, capacity })
+            .map(|&capacity| super::Tank {
+                fluid: None,
+                capacity,
+            })
             .collect();
         for (t, o) in tanks.iter_mut().zip(old.tanks) {
-            t.fluid = o.fluid.map(|(f, a)| (f, a.min(t.capacity))).filter(|(_, a)| *a > 0);
+            t.fluid = o
+                .fluid
+                .map(|(f, a)| (f, a.min(t.capacity)))
+                .filter(|(_, a)| *a > 0);
         }
         all.storages.insert(
             key,
@@ -549,26 +656,44 @@ impl storages::Host for State {
             all.storages.remove(&key);
         }
     }
-    fn shape(&mut self, dimension: String, x: i32, y: i32, z: i32) -> Option<storages::StorageShape> {
+    fn shape(
+        &mut self,
+        dimension: String,
+        x: i32,
+        y: i32,
+        z: i32,
+    ) -> Option<storages::StorageShape> {
         self.with_storage(&dimension, (x, y, z), |s| storages::StorageShape {
             slots: s.slots.len() as u32,
             energy_capacity: s.energy_capacity,
             tanks: s.tanks.iter().map(|t| t.capacity).collect(),
         })
         .or_else(|| {
-            self.container(&dimension, (x, y, z)).map(|c| storages::StorageShape {
-                slots: c.len() as u32,
-                energy_capacity: 0,
-                tanks: Vec::new(),
-            })
+            self.container(&dimension, (x, y, z))
+                .map(|c| storages::StorageShape {
+                    slots: c.len() as u32,
+                    energy_capacity: 0,
+                    tanks: Vec::new(),
+                })
         })
     }
-    fn items(&mut self, dimension: String, x: i32, y: i32, z: i32) -> Option<Vec<Option<players::ItemStack>>> {
+    fn items(
+        &mut self,
+        dimension: String,
+        x: i32,
+        y: i32,
+        z: i32,
+    ) -> Option<Vec<Option<players::ItemStack>>> {
         let me = self.id.clone();
         let slots = self
             .with_storage(&dimension, (x, y, z), |s| s.slots.clone())
             .or_else(|| self.container(&dimension, (x, y, z)))?;
-        Some(slots.iter().map(|s| s.as_ref().map(|s| to_guest(s, &me))).collect())
+        Some(
+            slots
+                .iter()
+                .map(|s| s.as_ref().map(|s| to_guest(s, &me)))
+                .collect(),
+        )
     }
     fn set_item(
         &mut self,
@@ -587,12 +712,14 @@ impl storages::Host for State {
             }
             None => None,
         };
-        self.with_own_storage(&dimension, (x, y, z), |s| match s.slots.get_mut(slot as usize) {
-            Some(at) => {
-                *at = stack;
-                Ok(())
+        self.with_own_storage(&dimension, (x, y, z), |s| {
+            match s.slots.get_mut(slot as usize) {
+                Some(at) => {
+                    *at = stack;
+                    Ok(())
+                }
+                None => Err(format!("slot {slot}: the storage has {}", s.slots.len())),
             }
-            None => Err(format!("slot {slot}: the storage has {}", s.slots.len())),
         })?
     }
     fn insert_item(
@@ -613,7 +740,9 @@ impl storages::Host for State {
         if stack.count == 0 {
             return 0;
         }
-        if let Some(n) = self.with_storage(&dimension, (x, y, z), |s| insert_into(&mut s.slots, &stack, max, simulate)) {
+        if let Some(n) = self.with_storage(&dimension, (x, y, z), |s| {
+            insert_into(&mut s.slots, &stack, max, simulate)
+        }) {
             return n;
         }
         let Some(mut slots) = self.container(&dimension, (x, y, z)) else {
@@ -637,7 +766,9 @@ impl storages::Host for State {
     ) -> Option<players::ItemStack> {
         let me = self.id.clone();
         let item = item.as_deref();
-        let out = match self.with_storage(&dimension, (x, y, z), |s| extract_from(&mut s.slots, item, count, simulate)) {
+        let out = match self.with_storage(&dimension, (x, y, z), |s| {
+            extract_from(&mut s.slots, item, count, simulate)
+        }) {
             Some(out) => out,
             None => {
                 let mut slots = self.container(&dimension, (x, y, z))?;
@@ -654,7 +785,15 @@ impl storages::Host for State {
         self.with_storage(&dimension, (x, y, z), |s| (s.energy, s.energy_capacity))
             .filter(|(_, cap)| *cap > 0)
     }
-    fn insert_energy(&mut self, dimension: String, x: i32, y: i32, z: i32, amount: u64, simulate: bool) -> u64 {
+    fn insert_energy(
+        &mut self,
+        dimension: String,
+        x: i32,
+        y: i32,
+        z: i32,
+        amount: u64,
+        simulate: bool,
+    ) -> u64 {
         self.with_storage(&dimension, (x, y, z), |s| {
             let n = (s.energy_capacity.saturating_sub(s.energy)).min(amount);
             if !simulate {
@@ -664,7 +803,15 @@ impl storages::Host for State {
         })
         .unwrap_or(0)
     }
-    fn extract_energy(&mut self, dimension: String, x: i32, y: i32, z: i32, amount: u64, simulate: bool) -> u64 {
+    fn extract_energy(
+        &mut self,
+        dimension: String,
+        x: i32,
+        y: i32,
+        z: i32,
+        amount: u64,
+        simulate: bool,
+    ) -> u64 {
         self.with_storage(&dimension, (x, y, z), |s| {
             let n = s.energy.min(amount);
             if !simulate {
@@ -674,12 +821,29 @@ impl storages::Host for State {
         })
         .unwrap_or(0)
     }
-    fn set_energy(&mut self, dimension: String, x: i32, y: i32, z: i32, amount: u64) -> Result<(), String> {
-        self.with_own_storage(&dimension, (x, y, z), |s| s.energy = amount.min(s.energy_capacity))
+    fn set_energy(
+        &mut self,
+        dimension: String,
+        x: i32,
+        y: i32,
+        z: i32,
+        amount: u64,
+    ) -> Result<(), String> {
+        self.with_own_storage(&dimension, (x, y, z), |s| {
+            s.energy = amount.min(s.energy_capacity)
+        })
     }
-    fn fluids(&mut self, dimension: String, x: i32, y: i32, z: i32) -> Option<Vec<Option<storages::FluidStack>>> {
-        self.with_storage(&dimension, (x, y, z), |s| s.tanks.iter().map(guest_fluid).collect())
-            .filter(|t: &Vec<_>| !t.is_empty())
+    fn fluids(
+        &mut self,
+        dimension: String,
+        x: i32,
+        y: i32,
+        z: i32,
+    ) -> Option<Vec<Option<storages::FluidStack>>> {
+        self.with_storage(&dimension, (x, y, z), |s| {
+            s.tanks.iter().map(guest_fluid).collect()
+        })
+        .filter(|t: &Vec<_>| !t.is_empty())
     }
     fn insert_fluid(
         &mut self,
@@ -693,8 +857,10 @@ impl storages::Host for State {
         if check_id("fluid", &fluid.fluid).is_err() {
             return 0;
         }
-        self.with_storage(&dimension, (x, y, z), |s| insert_fluid(&mut s.tanks, &fluid.fluid, fluid.amount, simulate))
-            .unwrap_or(0)
+        self.with_storage(&dimension, (x, y, z), |s| {
+            insert_fluid(&mut s.tanks, &fluid.fluid, fluid.amount, simulate)
+        })
+        .unwrap_or(0)
     }
     fn extract_fluid(
         &mut self,
@@ -706,8 +872,9 @@ impl storages::Host for State {
         amount: u32,
         simulate: bool,
     ) -> Option<storages::FluidStack> {
-        let (fluid, amount) = self
-            .with_storage(&dimension, (x, y, z), |s| extract_fluid(&mut s.tanks, fluid.as_deref(), amount, simulate))??;
+        let (fluid, amount) = self.with_storage(&dimension, (x, y, z), |s| {
+            extract_fluid(&mut s.tanks, fluid.as_deref(), amount, simulate)
+        })??;
         Some(storages::FluidStack { fluid, amount })
     }
     fn set_fluid(
@@ -722,14 +889,32 @@ impl storages::Host for State {
         if let Some(f) = &fluid {
             check_id("fluid", &f.fluid)?;
         }
-        self.with_own_storage(&dimension, (x, y, z), |s| match s.tanks.get_mut(tank as usize) {
-            Some(t) => {
-                t.fluid = fluid
-                    .map(|f| (f.fluid, f.amount.min(t.capacity)))
-                    .filter(|(_, a)| *a > 0);
-                Ok(())
+        self.with_own_storage(&dimension, (x, y, z), |s| {
+            match s.tanks.get_mut(tank as usize) {
+                Some(t) => {
+                    let target_fluid = fluid.clone();
+                    let resolved =
+                        if let (Some(f), Some((old, _))) = (&target_fluid, t.fluid.as_ref()) {
+                            if old != &f.fluid {
+                                crate::FluidInteractionResolver::with_defaults()
+                                    .resolve(old, &f.fluid)
+                                    .map(str::to_owned)
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        };
+                    t.fluid = target_fluid
+                        .map(|f| {
+                            let name = resolved.unwrap_or(f.fluid);
+                            (name, f.amount.min(t.capacity))
+                        })
+                        .filter(|(_, a)| *a > 0);
+                    Ok(())
+                }
+                None => Err(format!("tank {tank}: the storage has {}", s.tanks.len())),
             }
-            None => Err(format!("tank {tank}: the storage has {}", s.tanks.len())),
         })?
     }
     fn open_menu(
@@ -759,7 +944,14 @@ impl storages::Host for State {
 
 // ---------------------------------------------------------------- entities
 impl entities::Host for State {
-    fn near(&mut self, dimension: String, x: f64, y: f64, z: f64, radius: f64) -> Vec<entities::Entity> {
+    fn near(
+        &mut self,
+        dimension: String,
+        x: f64,
+        y: f64,
+        z: f64,
+        radius: f64,
+    ) -> Vec<entities::Entity> {
         let r = radius.clamp(0.0, 128.0);
         let Ok(view) = self.world.lock() else {
             return Vec::new();
@@ -767,7 +959,8 @@ impl entities::Host for State {
         let Some(view) = view.as_ref() else {
             return Vec::new();
         };
-        let d2 = |e: &EntityInfo| (e.pos.0 - x).powi(2) + (e.pos.1 - y).powi(2) + (e.pos.2 - z).powi(2);
+        let d2 =
+            |e: &EntityInfo| (e.pos.0 - x).powi(2) + (e.pos.1 - y).powi(2) + (e.pos.2 - z).powi(2);
         let mut near: Vec<(f64, EntityInfo)> = view
             .mobs(&dimension)
             .into_iter()
@@ -787,11 +980,23 @@ impl entities::Host for State {
             })
             .collect()
     }
-    fn spawn(&mut self, dimension: String, kind: String, x: f64, y: f64, z: f64, nbt: String) -> Result<(), String> {
+    fn spawn(
+        &mut self,
+        dimension: String,
+        kind: String,
+        x: f64,
+        y: f64,
+        z: f64,
+        nbt: String,
+    ) -> Result<(), String> {
         self.check_dimension(&dimension)?;
         check_id("entity", &kind)?;
         let nbt = nbt.trim();
-        self.console(format!("execute in {dimension} run summon {kind} {x} {y} {z} {nbt}").trim_end().to_owned())
+        self.console(
+            format!("execute in {dimension} run summon {kind} {x} {y} {z} {nbt}")
+                .trim_end()
+                .to_owned(),
+        )
     }
     fn hurt(&mut self, id: String, amount: f32) -> Result<(), String> {
         check_uuid(&id)?;
@@ -804,15 +1009,40 @@ impl entities::Host for State {
         check_uuid(&id)?;
         self.console(format!("kill {id}"))
     }
-    fn teleport(&mut self, id: String, dimension: String, x: f64, y: f64, z: f64) -> Result<(), String> {
+    fn teleport(
+        &mut self,
+        id: String,
+        dimension: String,
+        x: f64,
+        y: f64,
+        z: f64,
+    ) -> Result<(), String> {
         check_uuid(&id)?;
         self.check_dimension(&dimension)?;
         self.console(format!("execute in {dimension} run tp {id} {x} {y} {z}"))
     }
-    fn effect(&mut self, id: String, effect: String, seconds: u32, amplifier: u8) -> Result<(), String> {
+    fn effect(
+        &mut self,
+        id: String,
+        effect: String,
+        seconds: u32,
+        amplifier: u8,
+    ) -> Result<(), String> {
         check_uuid(&id)?;
         check_id("effect", &effect)?;
-        self.console(format!("effect give {id} {effect} {} {amplifier}", seconds.clamp(1, 1_000_000)))
+        let eff_id = crate::ResourceLocation::parse(&effect)
+            .unwrap_or_else(|_| crate::ResourceLocation::parse("minecraft:effect").unwrap());
+        let def = crate::MobEffectDefinition::new(eff_id, &effect, true);
+        self.mob_effects.apply(
+            &id,
+            &def,
+            i32::from(amplifier),
+            (seconds.clamp(1, 1_000_000) as i32) * 20,
+        );
+        self.console(format!(
+            "effect give {id} {effect} {} {amplifier}",
+            seconds.clamp(1, 1_000_000)
+        ))
     }
     fn particle(
         &mut self,
@@ -834,7 +1064,16 @@ impl entities::Host for State {
             "execute in {dimension} run particle {particle} {x} {y} {z} {dx} {dy} {dz} {speed} {count}"
         ))
     }
-    fn sound(&mut self, dimension: String, sound: String, x: f64, y: f64, z: f64, volume: f32, pitch: f32) -> Result<(), String> {
+    fn sound(
+        &mut self,
+        dimension: String,
+        sound: String,
+        x: f64,
+        y: f64,
+        z: f64,
+        volume: f32,
+        pitch: f32,
+    ) -> Result<(), String> {
         self.check_dimension(&dimension)?;
         check_id("sound", &sound)?;
         let (volume, pitch) = (volume.clamp(0.0, 16.0), pitch.clamp(0.5, 2.0));
@@ -856,7 +1095,10 @@ impl Mods {
     fn ask_blocks<R>(
         &mut self,
         i: usize,
-        f: impl FnOnce(&server_bindings_block::Guest, &mut wasmtime::Store<State>) -> wasmtime::Result<R>,
+        f: impl FnOnce(
+            &server_bindings_block::Guest,
+            &mut wasmtime::Store<State>,
+        ) -> wasmtime::Result<R>,
     ) -> Option<R> {
         if !self.asks_blocks(i) {
             return None;
@@ -871,17 +1113,29 @@ impl Mods {
     }
 
     /// `player` is about to place `item` at `pos`: true when a mod refuses.
-    pub fn place_block(&mut self, player: &players::Player, pos: super::BlockPos, item: &str) -> bool {
+    pub fn place_block(
+        &mut self,
+        player: &players::Player,
+        pos: super::BlockPos,
+        item: &str,
+    ) -> bool {
         let mut refused = false;
         for i in 0..self.entries.len() {
             refused |= self
-                .ask_blocks(i, |b, s| b.call_place_block(s, player, pos.x, pos.y, pos.z, item))
+                .ask_blocks(i, |b, s| {
+                    b.call_place_block(s, player, pos.x, pos.y, pos.z, item)
+                })
                 .unwrap_or(false);
         }
         refused
     }
     /// `player` right-clicks the air holding `stack`: true when a mod took it.
-    pub fn use_item(&mut self, player: &players::Player, stack: &HostStack, off_hand: bool) -> bool {
+    pub fn use_item(
+        &mut self,
+        player: &players::Player,
+        stack: &HostStack,
+        off_hand: bool,
+    ) -> bool {
         for i in 0..self.entries.len() {
             let Some(id) = self.entries[i].manifest.as_ref().map(|m| m.id.clone()) else {
                 continue;
@@ -903,7 +1157,11 @@ impl Mods {
         let Ok(all) = self.block_data.lock() else {
             return Vec::new();
         };
-        let keys = all.mods.values().flat_map(|m| m.keys()).chain(all.storages.keys());
+        let keys = all
+            .mods
+            .values()
+            .flat_map(|m| m.keys())
+            .chain(all.storages.keys());
         let mut out: Vec<(i32, i32, i32)> = keys.filter_map(|k| parse_key(k, dimension)).collect();
         out.sort_unstable();
         out.dedup();
@@ -911,16 +1169,27 @@ impl Mods {
     }
 
     /// A storage's slots, for a window the game shows.
-    pub fn storage_slots(&self, dimension: &str, pos: (i32, i32, i32)) -> Option<Vec<Option<HostStack>>> {
+    pub fn storage_slots(
+        &self,
+        dimension: &str,
+        pos: (i32, i32, i32),
+    ) -> Option<Vec<Option<HostStack>>> {
         let all = self.block_data.lock().ok()?;
         all.storages
             .get(&block_key(dimension, pos.0, pos.1, pos.2))
             .map(|s| s.slots.clone())
     }
     /// What a player did in a storage's window, back into it (same size).
-    pub fn set_storage_slots(&mut self, dimension: &str, pos: (i32, i32, i32), slots: Vec<Option<HostStack>>) {
+    pub fn set_storage_slots(
+        &mut self,
+        dimension: &str,
+        pos: (i32, i32, i32),
+        slots: Vec<Option<HostStack>>,
+    ) {
         if let Ok(mut all) = self.block_data.lock()
-            && let Some(s) = all.storages.get_mut(&block_key(dimension, pos.0, pos.1, pos.2))
+            && let Some(s) = all
+                .storages
+                .get_mut(&block_key(dimension, pos.0, pos.1, pos.2))
             && s.slots.len() == slots.len()
         {
             s.slots = slots;
@@ -963,7 +1232,9 @@ impl Mods {
                 continue;
             };
             if let Some(i) = self.index_of(&t.owner) {
-                self.ask_blocks(i, |b, s| b.call_block_tick(s, &t.dimension, x, y, z, &state));
+                self.ask_blocks(i, |b, s| {
+                    b.call_block_tick(s, &t.dimension, x, y, z, &state)
+                });
             }
         }
         self.neighbor_hooks();
@@ -1017,7 +1288,8 @@ impl Mods {
             let Ok(mut all) = self.block_data.lock() else {
                 return;
             };
-            let keys: std::collections::HashSet<&str> = watched.iter().map(|(k, _)| k.as_str()).collect();
+            let keys: std::collections::HashSet<&str> =
+                watched.iter().map(|(k, _)| k.as_str()).collect();
             all.neighbors.retain(|k, _| keys.contains(k.as_str()));
             for (key, owners) in &watched {
                 let Some((dim, (x, y, z))) = split_key(key) else {
@@ -1026,14 +1298,19 @@ impl Mods {
                 let Some(state) = view.block(dim, x, y, z) else {
                     continue;
                 };
-                let around: [Option<u64>; 6] = NEIGHBORS.map(|(dx, dy, dz)| {
-                    view.block(dim, x + dx, y + dy, z + dz).map(|s| hash(&s))
-                });
+                let around: [Option<u64>; 6] = NEIGHBORS
+                    .map(|(dx, dy, dz)| view.block(dim, x + dx, y + dy, z + dz).map(|s| hash(&s)));
                 if let Some(before) = all.neighbors.insert(key.clone(), around) {
                     for (n, (dx, dy, dz)) in NEIGHBORS.into_iter().enumerate() {
                         if before[n].is_some() && around[n].is_some() && before[n] != around[n] {
                             for o in owners {
-                                events.push((o.clone(), dim.to_owned(), (x, y, z), state.clone(), (x + dx, y + dy, z + dz)));
+                                events.push((
+                                    o.clone(),
+                                    dim.to_owned(),
+                                    (x, y, z),
+                                    state.clone(),
+                                    (x + dx, y + dy, z + dz),
+                                ));
                             }
                         }
                     }
@@ -1042,7 +1319,9 @@ impl Mods {
         }
         for (owner, dim, (x, y, z), state, (fx, fy, fz)) in events {
             if let Some(i) = self.index_of(&owner) {
-                self.ask_blocks(i, |b, s| b.call_neighbor_changed(s, &dim, x, y, z, &state, fx, fy, fz));
+                self.ask_blocks(i, |b, s| {
+                    b.call_neighbor_changed(s, &dim, x, y, z, &state, fx, fy, fz)
+                });
             }
         }
     }
@@ -1050,7 +1329,14 @@ impl Mods {
 
 use super::block_bindings::exports::horizon::mods::block_events as server_bindings_block;
 
-const NEIGHBORS: [(i32, i32, i32); 6] = [(0, -1, 0), (0, 1, 0), (0, 0, -1), (0, 0, 1), (-1, 0, 0), (1, 0, 0)];
+const NEIGHBORS: [(i32, i32, i32); 6] = [
+    (0, -1, 0),
+    (0, 1, 0),
+    (0, 0, -1),
+    (0, 0, 1),
+    (-1, 0, 0),
+    (1, 0, 0),
+];
 
 fn hash(s: &str) -> u64 {
     use std::hash::{Hash, Hasher};
@@ -1068,10 +1354,11 @@ fn split_key(key: &str) -> Option<(&str, (i32, i32, i32))> {
     Some((w.next()?, (x, y, z)))
 }
 fn parse_key(key: &str, dimension: &str) -> Option<(i32, i32, i32)> {
-    split_key(key).filter(|(d, _)| *d == dimension).map(|(_, p)| p)
+    split_key(key)
+        .filter(|(d, _)| *d == dimension)
+        .map(|(_, p)| p)
 }
 
 /// Neighbour states last seen around a mod's block (hashes, in
 /// [`NEIGHBORS`] order; none where no chunk was loaded).
 pub(super) type NeighborCache = std::collections::HashMap<String, [Option<u64>; 6]>;
-

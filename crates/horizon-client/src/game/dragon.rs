@@ -1383,7 +1383,7 @@ impl Game<'_> {
                 clockwise,
             } => {
                 let dt = far(*target);
-                if dt < 100.0 || dt > 22500.0 || collided {
+                if !(100.0..=22500.0).contains(&dt) || collided {
                     let done = path.as_ref().is_some_and(|p| p.0.done());
                     let mut chosen = false;
                     if done {
@@ -1453,7 +1453,7 @@ impl Game<'_> {
                     *target = Some(Vec3::new(pp.x, pp.y + ho, pp.z));
                 }
                 let dt = far(*target);
-                if dt < 100.0 || dt > 22500.0 {
+                if !(100.0..=22500.0).contains(&dt) {
                     if path.as_ref().is_none_or(|p| p.0.done()) {
                         *path = self.ring_path(clockwise).map(PathBox);
                     }
@@ -1499,7 +1499,7 @@ impl Game<'_> {
             }
             Phase::LandingApproach { path, target } => {
                 let dt = far(*target);
-                if dt < 100.0 || dt > 22500.0 || collided {
+                if !(100.0..=22500.0).contains(&dt) || collided {
                     if path.as_ref().is_none_or(|p| p.0.done()) {
                         let current = self.closest_node(pos.x, pos.y, pos.z);
                         // NEAR_EGG_TARGETING: the enemy nearest the egg.
@@ -1685,7 +1685,7 @@ impl Game<'_> {
                     }
                 } else {
                     let dt = far(*target);
-                    if dt < 100.0 || dt > 22500.0 {
+                    if !(100.0..=22500.0).contains(&dt) {
                         *since += 1;
                     }
                 }

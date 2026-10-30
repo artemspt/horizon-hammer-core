@@ -404,7 +404,13 @@ impl Game<'_> {
         // In-frame, the window runs server mods too: their names, free text
         // here (the server parses their arguments).
         let server = self.mods.mods.server_commands().map(|c| c.name.as_str());
-        let mut names = self.mods.mods.commands().chain(server).chain(self.hmod_name()).peekable();
+        let mut names = self
+            .mods
+            .mods
+            .commands()
+            .chain(server)
+            .chain(self.hmod_name())
+            .peekable();
         self.mods.tree = names
             .peek()
             .is_some()
@@ -685,7 +691,9 @@ impl Game<'_> {
     }
     /// A message from the server's mods to this window's client mods.
     pub(super) fn mod_net_received(&mut self, channel: &str, data: &[u8]) {
-        let channel = channel.strip_prefix(horizon_mods::NET_PREFIX).unwrap_or(channel);
+        let channel = channel
+            .strip_prefix(horizon_mods::NET_PREFIX)
+            .unwrap_or(channel);
         self.mods.mods.client_net_received(channel, data);
         self.show_mod_output();
     }
@@ -995,7 +1003,9 @@ impl Game<'_> {
                 if rows.is_empty() {
                     vec![format!("No mods{side}")]
                 } else {
-                    std::iter::once(format!("Mods{side}:")).chain(rows).collect()
+                    std::iter::once(format!("Mods{side}:"))
+                        .chain(rows)
+                        .collect()
                 }
             }
             HmodCommand::Reload(only) => {

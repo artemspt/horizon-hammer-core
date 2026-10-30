@@ -293,8 +293,11 @@ impl Game<'_> {
             let left = std::mem::replace(&mut self.dim, target);
             self.levels.parked.insert(left, p);
             if opened {
-                // The new streaming's radius and meshing options.
-                self.apply_settings();
+                #[cfg(feature = "mods")]
+                if self.mods.running() {
+                    horizon_client::mod_worldgen::publish(&self.mods.mods);
+                    self.mods.mods.wiring_level_loaded(target.id());
+                }
             }
         }
         let host = match host {

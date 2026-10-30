@@ -113,6 +113,8 @@ mod mod_browser;
 mod mod_browser_recipes;
 mod mod_input;
 #[cfg(feature = "mods")]
+mod mod_machines;
+#[cfg(feature = "mods")]
 mod mod_recipes;
 mod mod_render;
 mod mods;
@@ -168,8 +170,6 @@ mod sculk;
 mod sculk_fixture;
 mod server_links;
 mod server_mods;
-#[cfg(feature = "mods")]
-mod mod_machines;
 mod server_packs;
 mod server_travel;
 mod shader_packs;

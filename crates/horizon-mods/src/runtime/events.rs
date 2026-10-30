@@ -1,9 +1,9 @@
 //! `game-events`: what happens to entities and the world, for the server
 //! mods whose manifest lists the event, in order of their `priority`.
 use super::server_api::{EntityInfo, HostStack, to_guest};
+use super::server_bindings::horizon::mods::entities::Entity;
 use super::{FUEL_EVENT, Mods, Running, ServerPlayer, State, events_bindings};
 use events_bindings::exports::horizon::mods::game_events::Guest;
-use super::server_bindings::horizon::mods::entities::Entity;
 
 fn guest_entity(e: &EntityInfo) -> Entity {
     Entity {
@@ -26,7 +26,10 @@ impl Mods {
             .filter(|(_, e)| e.run.as_ref().is_some_and(|r| r.events.is_some()))
             .filter_map(|(i, e)| {
                 let m = e.manifest.as_ref()?;
-                m.events.iter().any(|n| n == event).then_some((m.priority, i))
+                m.events
+                    .iter()
+                    .any(|n| n == event)
+                    .then_some((m.priority, i))
             })
             .collect();
         order.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
@@ -57,7 +60,11 @@ impl Mods {
         mut f: impl FnMut(&Guest, &mut wasmtime::Store<State>, &str) -> wasmtime::Result<bool>,
     ) -> bool {
         for i in self.hearing(event) {
-            let id = self.entries[i].manifest.as_ref().map(|m| m.id.clone()).unwrap_or_default();
+            let id = self.entries[i]
+                .manifest
+                .as_ref()
+                .map(|m| m.id.clone())
+                .unwrap_or_default();
             if self.ask_events(i, |g, s| f(g, s, &id)).unwrap_or(false) {
                 return true;
             }
@@ -68,12 +75,16 @@ impl Mods {
     /// A mob appeared: true when a mod removes it.
     pub fn entity_spawned(&mut self, dimension: &str, entity: &EntityInfo) -> bool {
         let e = guest_entity(entity);
-        self.cancelled("entity-spawned", |g, s, _| g.call_entity_spawned(s, dimension, &e))
+        self.cancelled("entity-spawned", |g, s, _| {
+            g.call_entity_spawned(s, dimension, &e)
+        })
     }
     /// A mob lost `amount` health and lives: true when a mod gives it back.
     pub fn entity_hurt(&mut self, dimension: &str, entity: &EntityInfo, amount: f32) -> bool {
         let e = guest_entity(entity);
-        self.cancelled("entity-hurt", |g, s, _| g.call_entity_hurt(s, dimension, &e, amount))
+        self.cancelled("entity-hurt", |g, s, _| {
+            g.call_entity_hurt(s, dimension, &e, amount)
+        })
     }
     /// A mob died, last hurt by `killer` (a player's id) if anyone.
     pub fn entity_died(&mut self, dimension: &str, entity: &EntityInfo, killer: Option<&str>) {
@@ -91,13 +102,19 @@ impl Mods {
     /// A player picked up `stack`.
     pub fn item_picked_up(&mut self, player: &ServerPlayer, stack: &HostStack) {
         for i in self.hearing("item-picked-up") {
-            let id = self.entries[i].manifest.as_ref().map(|m| m.id.clone()).unwrap_or_default();
+            let id = self.entries[i]
+                .manifest
+                .as_ref()
+                .map(|m| m.id.clone())
+                .unwrap_or_default();
             let guest = to_guest(stack, &id);
             self.ask_events(i, |g, s| g.call_item_picked_up(s, player, &guest));
         }
     }
     /// An explosion is about to go off: true when a mod stops it.
     pub fn explosion(&mut self, dimension: &str, at: (f64, f64, f64), power: f32) -> bool {
-        self.cancelled("explosion", |g, s, _| g.call_explosion(s, dimension, at.0, at.1, at.2, power))
+        self.cancelled("explosion", |g, s, _| {
+            g.call_explosion(s, dimension, at.0, at.1, at.2, power)
+        })
     }
 }

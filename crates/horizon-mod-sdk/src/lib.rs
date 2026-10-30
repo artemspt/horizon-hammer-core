@@ -37,8 +37,8 @@ wit_bindgen::generate!({
     default_bindings_module: "horizon_mod_sdk",
 });
 
-pub use exports::horizon::mods::events::{Guest as __Guest, Registration};
 pub use exports::horizon::mods::client_net_events::Guest as __ClientNetGuest;
+pub use exports::horizon::mods::events::{Guest as __Guest, Registration};
 pub use exports::horizon::mods::ui_events::Guest as __UiEventsGuest;
 pub use horizon::mods::{
     browser, chat, client_net, command, game, hud, input, log, recipes, render, storage, ui,
@@ -204,16 +204,17 @@ pub mod server {
 
     pub use exports::horizon::mods::block_events::Guest as __BlockGuest;
     pub use exports::horizon::mods::game_events::Guest as __EventsGuest;
-    pub use exports::horizon::mods::server_net_events::Guest as __ServerNetGuest;
-    pub use horizon::mods::server_net;
     pub use exports::horizon::mods::server_events::{
         Argument, ArgumentKind, ArgumentValue, BlockPos, Guest as __Guest, Registration,
         ServerCommand,
     };
+    pub use exports::horizon::mods::server_net_events::Guest as __ServerNetGuest;
     pub use horizon::mods::entities::{self, Entity};
     pub use horizon::mods::players::{self, GameMode, ItemStack, Player};
+    pub use horizon::mods::server_net;
     pub use horizon::mods::storages::{self, FluidStack, StorageShape};
     pub use horizon::mods::world::{self, BlockChange};
+    pub use horizon::mods::worldgen::{self};
 
     impl ItemStack {
         /// A plain stack of `count` `item`s, with no bytes of the mod's.
@@ -269,7 +270,13 @@ pub mod server {
         /// holding `item` (`minecraft:air`: empty hand), when
         /// [`Registration::blocks`] is set: true means the mod handled it, and
         /// vanilla neither uses the block nor uses or places the item.
-        fn use_block(&mut self, _player: &Player, _pos: BlockPos, _state: &str, _item: &str) -> bool {
+        fn use_block(
+            &mut self,
+            _player: &Player,
+            _pos: BlockPos,
+            _state: &str,
+            _item: &str,
+        ) -> bool {
             false
         }
         /// Before `player` places `item` at `pos` (the block it would go in),
@@ -287,7 +294,14 @@ pub mod server {
         fn block_tick(&mut self, _dimension: &str, _pos: BlockPos, _state: &str) {}
         /// A neighbour (`from`) of a block the mod keeps data or a storage
         /// on changed, when [`Registration::blocks`] is set.
-        fn neighbor_changed(&mut self, _dimension: &str, _pos: BlockPos, _state: &str, _from: BlockPos) {}
+        fn neighbor_changed(
+            &mut self,
+            _dimension: &str,
+            _pos: BlockPos,
+            _state: &str,
+            _from: BlockPos,
+        ) {
+        }
 
         /// `game-events`, for the events the manifest lists (`events =
         /// ["entity-hurt", ...]`), in order of `priority`. A mob appeared:
@@ -473,7 +487,9 @@ macro_rules! export_server_mod {
     ($t:ty) => {
         const _: () = {
             use ::std::cell::RefCell;
-            use $crate::server::{Args, ArgumentValue, BlockPos, Entity, ItemStack, Player, Registration, ServerMod};
+            use $crate::server::{
+                Args, ArgumentValue, BlockPos, Entity, ItemStack, Player, Registration, ServerMod,
+            };
             ::std::thread_local! {
                 static STATE: RefCell<Option<$t>> = const { RefCell::new(None) };
             }
@@ -527,7 +543,14 @@ macro_rules! export_server_mod {
                     with(|m| out = m.break_block(&player, BlockPos { x, y, z }, &state));
                     out
                 }
-                fn use_block(player: Player, x: i32, y: i32, z: i32, state: String, item: String) -> bool {
+                fn use_block(
+                    player: Player,
+                    x: i32,
+                    y: i32,
+                    z: i32,
+                    state: String,
+                    item: String,
+                ) -> bool {
                     let mut out = false;
                     with(|m| out = m.use_block(&player, BlockPos { x, y, z }, &state, &item));
                     out
@@ -560,7 +583,11 @@ macro_rules! export_server_mod {
                             &dimension,
                             BlockPos { x, y, z },
                             &state,
-                            BlockPos { x: from_x, y: from_y, z: from_z },
+                            BlockPos {
+                                x: from_x,
+                                y: from_y,
+                                z: from_z,
+                            },
                         )
                     })
                 }

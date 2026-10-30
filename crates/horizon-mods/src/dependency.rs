@@ -7,7 +7,11 @@ use std::collections::{HashMap, HashSet};
 pub enum DependencyError {
     Missing(String),
     Circular(String),
-    VersionMismatch { mod_id: String, required: String, found: String },
+    VersionMismatch {
+        mod_id: String,
+        required: String,
+        found: String,
+    },
 }
 
 impl std::fmt::Display for DependencyError {
@@ -15,8 +19,16 @@ impl std::fmt::Display for DependencyError {
         match self {
             DependencyError::Missing(id) => write!(f, "Missing required dependency: {}", id),
             DependencyError::Circular(id) => write!(f, "Circular dependency detected: {}", id),
-            DependencyError::VersionMismatch { mod_id, required, found } => {
-                write!(f, "Version mismatch for {}: requires {}, found {}", mod_id, required, found)
+            DependencyError::VersionMismatch {
+                mod_id,
+                required,
+                found,
+            } => {
+                write!(
+                    f,
+                    "Version mismatch for {}: requires {}, found {}",
+                    mod_id, required, found
+                )
             }
         }
     }

@@ -65,6 +65,9 @@ pub struct Manifest {
     /// the rest); equal ones go in load order.
     #[serde(default)]
     pub priority: i32,
+    /// Mod dependencies (optional, not validated in runtime currently).
+    #[serde(default)]
+    pub dependencies: Vec<String>,
 }
 
 /// The events of `game-events`, as a manifest's `events` names them.
@@ -126,9 +129,11 @@ pub enum Capability {
     /// Messages between a mod's client and server halves (interfaces
     /// `client-net` and `server-net`).
     Net,
+    /// World generation surface modifiers for server mods.
+    Worldgen,
 }
 impl Capability {
-    pub const ALL: [Capability; 14] = [
+    pub const ALL: [Capability; 15] = [
         Capability::GameRead,
         Capability::Chat,
         Capability::Hud,
@@ -143,12 +148,17 @@ impl Capability {
         Capability::Recipes,
         Capability::Entities,
         Capability::Net,
+        Capability::Worldgen,
     ];
     /// Whether a server mod may have it: the others act on a local player.
     pub fn on_server(self) -> bool {
         matches!(
             self,
-            Capability::Storage | Capability::Players | Capability::World | Capability::Entities
+            Capability::Storage
+                | Capability::Players
+                | Capability::World
+                | Capability::Entities
+                | Capability::Worldgen
         )
     }
     /// The WIT interface it grants, in `horizon:mods`.
@@ -167,6 +177,7 @@ impl Capability {
             Capability::World => "world",
             Capability::Recipes => "recipes",
             Capability::Entities => "entities",
+            Capability::Worldgen => "worldgen",
             // And `server-net` (`of_import`).
             Capability::Net => "client-net",
         }
@@ -176,7 +187,11 @@ impl Capability {
     pub fn is_experimental(self) -> bool {
         matches!(
             self,
-            Capability::Ui | Capability::Render | Capability::Input | Capability::Recipes
+            Capability::Ui
+                | Capability::Render
+                | Capability::Input
+                | Capability::Recipes
+                | Capability::Worldgen
         )
     }
     /// What the player reads before turning the mod on: "May <this>".
@@ -193,9 +208,16 @@ impl Capability {
             Capability::Input => {
                 "see the keys you hold and your clicks, take over the use button on its own items and the mouse wheel, and add keys"
             }
-            Capability::Players => "see who is on the server, message them and change their inventories",
-            Capability::World => "read and change the world's blocks, and keep items, energy and fluids on them",
-            Capability::Entities => "find, spawn, hurt and move mobs and players, give effects, show particles and play sounds",
+            Capability::Players => {
+                "see who is on the server, message them and change their inventories"
+            }
+            Capability::World => {
+                "read and change the world's blocks, and keep items, energy and fluids on them"
+            }
+            Capability::Entities => {
+                "find, spawn, hurt and move mobs and players, give effects, show particles and play sounds"
+            }
+            Capability::Worldgen => "modify world generation surface rules",
             Capability::Net => "send messages between your game and the server's mods",
             Capability::Recipes => {
                 "read the game's recipes and items and which recipes you know, place recipes in your crafting grid and, in creative mode, give you items"
@@ -250,6 +272,7 @@ impl fmt::Display for Capability {
             Capability::Recipes => "recipes",
             Capability::Entities => "entities",
             Capability::Net => "net",
+            Capability::Worldgen => "worldgen",
         };
         f.write_str(name)
     }
@@ -269,7 +292,10 @@ impl Manifest {
             ));
         }
         if let Some(e) = m.events.iter().find(|e| !EVENTS.contains(&e.as_str())) {
-            return Err(format!("{MANIFEST}: no event {e:?} (events are {})", EVENTS.join(", ")));
+            return Err(format!(
+                "{MANIFEST}: no event {e:?} (events are {})",
+                EVENTS.join(", ")
+            ));
         }
         if !m.events.is_empty() && m.side == Side::Client {
             return Err(format!("{MANIFEST}: events are for server mods"));
@@ -292,11 +318,9 @@ impl Manifest {
                 "{MANIFEST}: a server mod is side = \"server\" with api = \"{SERVER_API}\", and only it"
             ));
         }
-        if let Some(c) = m
-            .capabilities
-            .iter()
-            .find(|c| c.on_server() != server && !matches!(c, Capability::Storage | Capability::Net))
-        {
+        if let Some(c) = m.capabilities.iter().find(|c| {
+            c.on_server() != server && !matches!(c, Capability::Storage | Capability::Net)
+        }) {
             let side = if server { "client" } else { "server" };
             return Err(format!("{MANIFEST}: capability {c} is for {side} mods"));
         }

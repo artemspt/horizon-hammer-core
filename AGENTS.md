@@ -8,7 +8,7 @@ This file tracks the development of the NeoForge-like modding core for Horizon.
 
 ## Current Version
 **Core Version:** `0.1.0-dev`  
-**Last Updated:** 2025-10-28
+**Last Updated:** 2026-10-30
 
 ## Project Context
 Horizon is a Minecraft: Java Edition 26.3 rewrite in Rust (wgpu). We are building a NeoForge-like modding API on top of the existing WASM-based mod system.
@@ -22,6 +22,33 @@ The project has a working WASM mod system in `crates/horizon-mods/` with:
 - Basic hooks (tick, frame, chat, command)
 
 ## Changelog
+
+### 2026-10-30 - World generation surface rules (`worldgen`, API level 12)
+
+#### Added
+- **WIT `worldgen.set-surface-rule(biome, surface)`** and the capability `worldgen` (server mods only,
+  experimental: the manifest needs `experimental = ["worldgen"]`); the interface is imported by the
+  `horizon-server-mod` and `horizon-server-block-mod` worlds. One surface block per biome: the game puts it at
+  the top of that biome's terrain in the chunks it decorates while the rule is set; the last rule for a biome wins
+- **Runtime** - `output::ServerAction::Worldgen { id, biome, surface }` (the mod's id, so a rule belongs to
+  the mod that set it), `worldgen::Host` in `runtime.rs`, `Mods::worldgen_mut`;
+  `WorldgenModifierManager::set_surface_rule` (replaces that mod's rule for the biome) and `remove_mod`;
+  `Mods::restart` drops the rules of the version it replaces, so a reload sets them again instead of adding up
+- **Game** - `game/mod_machines.rs` puts the rule in the manager; `mod_worldgen.rs` publishes an immutable
+  snapshot for the terrain worker; `vanillagen.rs` sets the surface block when it decorates a chunk;
+  `levels.rs` publishes again when a level opens
+- **SDK** - `server::worldgen`; **example** `crates/horizon-mod-sdk/examples/worldgen` (plains surfaced with
+  diamond blocks), built by the sandbox tests
+- **Tests** - `sandbox.rs` `worldgen_rule_reaches_the_game` (the rule `init` sets reaches the game) and the
+  newest-level check moved to the worldgen example; `worldgen_mods::tests::worldgen_surface_rules_replace_per_mod`;
+  `horizon-client` `mod_worldgen::tests::publish_carries_the_rules_to_the_worker`
+- **Docs** - `docs/mods.md` "World generation", the server interfaces table and the experimental list;
+  `docs/api/stability.md`; `docs/api/mods-reference.md` regenerated
+
+#### Fixed
+- `crates/horizon-client/src/game/mod_machines.rs` compiles with the `mods` feature again (`worldgen_mut`,
+  `horizon_client::mod_worldgen`), which the release builds and CI use
+- `attributes::tests::attribute_compute_works` checks the modifier order instead of unused locals
 
 ### 2025-10-28 - Network for mods (capability `net`, API level 11)
 
@@ -227,10 +254,11 @@ crates/horizon-mods/src/
 - [ ] Integration with SDK (expose to mod authors)
 - [ ] More engine events
 
-### Phase 2: Registries (Next)
-- [ ] Registry system (blocks, items, entities)
-- [ ] DeferredRegister API
-- [ ] Registry events
+### Phase 2: Registries (In progress)
+- [~] Registry primitives: ResourceLocation, Registry<T>, DeferredRegister, RegistryManager, register/freeze events
+- [ ] Registry system (blocks, items, entities) wired to horizon-world/horizon-items
+- [ ] DeferredRegister integrated into loading stages / SDK
+- [ ] Registry events driven by runtime
 - [ ] Link to horizon-world/horizon-items
 
 ### Phase 3: Advanced Features

@@ -34,7 +34,10 @@ impl ServerMod for BlockGuard {
             .map_or(0, u32::from_le_bytes)
             + 1;
         let _ = world::set_data(dim, x, y, z, &reads.to_le_bytes());
-        players::tell(&player.id, &format!("{x} {y} {z}: {state} (read {reads} times)"));
+        players::tell(
+            &player.id,
+            &format!("{x} {y} {z}: {state} (read {reads} times)"),
+        );
         true
     }
 }

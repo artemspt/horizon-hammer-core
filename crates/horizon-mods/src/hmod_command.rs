@@ -37,7 +37,10 @@ mod tests {
     fn parses_hmod_lines() {
         assert_eq!(parse("hmod list"), Some(HmodCommand::List));
         assert_eq!(parse("hmod reload"), Some(HmodCommand::Reload(None)));
-        assert_eq!(parse("hmod reload test_core"), Some(HmodCommand::Reload(Some("test_core".into()))));
+        assert_eq!(
+            parse("hmod reload test_core"),
+            Some(HmodCommand::Reload(Some("test_core".into())))
+        );
         assert_eq!(parse("hmod"), Some(HmodCommand::Help));
         assert_eq!(parse("hmod reload a b"), Some(HmodCommand::Help));
         assert_eq!(parse("hmods list"), None);

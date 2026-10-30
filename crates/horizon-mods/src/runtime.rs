@@ -1,13 +1,24 @@
 //! Loading and calling mods with wasmtime's component model.
 use crate::{
-    container::{ModContainer, ModState},
-    event_bus::{EventBus, ModLoadEvent, TickEvent},
+    RegistryManager,
+    capabilities::{AttachmentManager, CapabilityProviderRegistry},
+    config::{ConfigManager, ModConfig},
+    container::{ModContainer, ModDependency, ModState},
+    definitions::{
+        BlockStatePropertyDefinition, ContainerMenuDefinition, DimensionDefinition,
+        EnchantmentDefinition, FluidDefinition, LootModifierDefinition, MobEffectDefinition,
+        ParticleDefinition, SoundDefinition, StructureDefinition, SurfaceRuleDefinition,
+        TagDefinition,
+    },
+    dependency::DependencyResolver,
+    event_bus::{EventBus, ModConfigEvent, ModLoadEvent},
     manifest::{Manifest, Package, Side},
+    payloads::PayloadRegistry,
 };
 use server_bindings::{
     HorizonServerMod,
     exports::horizon::mods::server_events::Registration as ServerRegistration,
-    horizon::mods::{players, world as mod_world},
+    horizon::mods::{players, world as mod_world, worldgen},
 };
 use std::{
     path::{Path, PathBuf},
@@ -331,7 +342,13 @@ pub trait WorldView: std::any::Any + Send {
         Some(64)
     }
     /// A vanilla container's slots at a position (chest, barrel, hopper...).
-    fn container(&self, _dimension: &str, _x: i32, _y: i32, _z: i32) -> Option<Vec<Option<HostStack>>> {
+    fn container(
+        &self,
+        _dimension: &str,
+        _x: i32,
+        _y: i32,
+        _z: i32,
+    ) -> Option<Vec<Option<HostStack>>> {
         None
     }
     /// Stores a vanilla container's slots (as many as it has): false when
@@ -530,6 +547,8 @@ struct State {
     world: WorldSlot,
     /// Every server mod's bytes on blocks, shared (each reads its own).
     block_data: BlockDataSlot,
+    /// Mob effect state for integration.
+    mob_effects: crate::MobEffectManager,
 }
 
 /// Server mods' bytes on blocks (`world.get-data`, `world.set-data`): mod id
@@ -537,7 +556,8 @@ struct State {
 /// properties) and the bytes as hex. The game saves it with the world.
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct BlockData {
-    pub mods: std::collections::BTreeMap<String, std::collections::BTreeMap<String, (String, String)>>,
+    pub mods:
+        std::collections::BTreeMap<String, std::collections::BTreeMap<String, (String, String)>>,
     /// `storages.declare`: `"dimension x y z"` → the storage.
     #[serde(default)]
     pub storages: std::collections::BTreeMap<String, Storage>,
@@ -589,6 +609,44 @@ pub struct Mods {
     generation: u64,
     /// NeoForge-style event bus
     event_bus: Arc<EventBus>,
+    /// Mod (startup) event bus, separate from the game bus, NeoForge-style.
+    mod_event_bus: Arc<EventBus>,
+    /// Loading stage progression, NeoForge `FML` lifecycle.
+    lifecycle: crate::LifecycleManager,
+    /// Object registries, NeoForge-style `RegistryManager`.
+    registries: RegistryManager,
+    /// Config manager, ForgeConfigSpec-style core slice.
+    configs: ConfigManager,
+    /// Runtime mob effect tracker.
+    mob_effects: crate::MobEffectManager,
+    /// Capability providers.
+    capability_providers: CapabilityProviderRegistry,
+    /// Data attachments.
+    attachments: AttachmentManager,
+    /// Custom payload registry.
+    payloads: PayloadRegistry,
+    /// Resource overlays.
+    overlays: crate::OverlayManager,
+    /// Worldgen modifiers.
+    worldgen: crate::WorldgenModifierManager,
+    /// Fluid registrations/buckets.
+    fluid_registry: crate::FluidRegistryManager,
+    /// Fluid interactions.
+    fluid_interactions: crate::FluidInteractionResolver,
+    /// Attribute modifier manager.
+    attributes: crate::AttributeManager,
+    /// AI goal manager.
+    ai_goals: crate::AiGoalManager,
+    /// Recipe condition/composite resolver.
+    recipe_resolver: crate::RecipeResolver,
+    /// Block state property resolver.
+    block_state_properties: crate::BlockStatePropertyResolver,
+    /// InterMod compatibility messages.
+    intermod: crate::InterModComms,
+    /// Tag entry manager.
+    tag_manager: crate::TagManager,
+    /// Container menu sync resolvers keyed by menu type.
+    menu_resolvers: std::collections::BTreeMap<String, crate::ContainerMenuResolver>,
 }
 
 impl Mods {
@@ -597,14 +655,483 @@ impl Mods {
         &self.event_bus
     }
 
+    /// Mod/startup event bus (registration, setup, capabilities).
+    pub fn mod_event_bus(&self) -> &Arc<EventBus> {
+        &self.mod_event_bus
+    }
+
+    /// Current lifecycle loading stage.
+    pub fn lifecycle_stage(&self) -> crate::LoadingStage {
+        self.lifecycle.current_stage()
+    }
+
+    /// Advance to a lifecycle stage and emit an event on the mod event bus.
+    pub fn advance_lifecycle(&mut self, stage: crate::LoadingStage) {
+        match stage {
+            crate::LoadingStage::Construct => {
+                for entry in &self.entries {
+                    let id = entry
+                        .manifest
+                        .as_ref()
+                        .map(|m| m.id.clone())
+                        .unwrap_or_default();
+                    let mut event = crate::event_bus::ModConstructEvent { mod_id: id };
+                    self.mod_event_bus.post(&mut event);
+                }
+            }
+            crate::LoadingStage::CommonSetup => {
+                let mut event = crate::event_bus::CommonSetupEvent;
+                self.mod_event_bus.post(&mut event);
+            }
+            crate::LoadingStage::SidedSetup => {
+                let mut event = crate::event_bus::SidedSetupEvent { client: true };
+                self.mod_event_bus.post(&mut event);
+            }
+            crate::LoadingStage::LoadComplete => {
+                let mut event = crate::event_bus::ModLoadCompleteEvent;
+                self.mod_event_bus.post(&mut event);
+                for entry in &self.entries {
+                    let id = entry.manifest.as_ref().map(|m| m.id.clone());
+                    let Some(id) = id else {
+                        continue;
+                    };
+                    if entry.status == crate::Status::Running {
+                        self.mod_event_bus
+                            .post(&mut crate::event_bus::ModLoadEvent { mod_id: id });
+                    }
+                }
+            }
+            crate::LoadingStage::PostLoad => {}
+        }
+        self.lifecycle.advance(stage);
+    }
+
+    /// Run the conventional FML-like startup sequence through `PostLoad`.
+    pub fn run_lifecycle(&mut self) {
+        for stage in [
+            crate::LoadingStage::Construct,
+            crate::LoadingStage::CommonSetup,
+            crate::LoadingStage::SidedSetup,
+            crate::LoadingStage::LoadComplete,
+            crate::LoadingStage::PostLoad,
+        ] {
+            self.advance_lifecycle(stage);
+        }
+    }
+
+    /// Run a NeoForge-like registration pass: announce new registries, freeze
+    /// those already known, and announce the freeze.
+    pub fn run_registration(&mut self) {
+        let mut new_event = crate::event_bus::NewRegistryEvent {
+            name: "horizon:registries".to_string(),
+        };
+        self.mod_event_bus.post(&mut new_event);
+        self.registries.freeze_all();
+        let mut frozen_event = crate::event_bus::RegistryFrozenEvent {
+            name: "horizon:registries".to_string(),
+        };
+        self.mod_event_bus.post(&mut frozen_event);
+    }
+
+    /// Object registry manager, NeoForge-style.
+    pub fn registries(&self) -> &RegistryManager {
+        &self.registries
+    }
+
+    /// Config manager.
+    pub fn configs(&self) -> &ConfigManager {
+        &self.configs
+    }
+
+    pub fn mob_effects(&self) -> &crate::MobEffectManager {
+        &self.mob_effects
+    }
+
+    pub fn mob_effect_applied(&mut self, id: String, effect: String, seconds: u32, amplifier: u8) {
+        let eff_id = crate::ResourceLocation::parse(&effect)
+            .unwrap_or_else(|_| crate::ResourceLocation::parse("minecraft:effect").unwrap());
+        let def = crate::MobEffectDefinition::new(eff_id, &effect, true);
+        self.mob_effects
+            .apply(&id, &def, i32::from(amplifier), (seconds as i32) * 20);
+        let mut e = crate::event_bus::PotionApplyEvent {
+            entity: id.clone(),
+            effect: effect.clone(),
+            amplifier: i32::from(amplifier),
+            duration: (seconds as i32) * 20,
+            cancelled: false,
+        };
+        self.mod_event_bus.post(&mut e);
+    }
+
+    pub fn add_config(
+        &mut self,
+        id: String,
+        spec: crate::parity_models::ConfigSpecDef,
+        path: std::path::PathBuf,
+    ) -> Result<(), String> {
+        let mut cfg = ModConfig::new(spec, path);
+        cfg.load()?;
+        self.configs.add(id.clone(), cfg);
+        let mut event = ModConfigEvent {
+            mod_id: id,
+            phase: crate::event_bus::ConfigPhase::Loading,
+        };
+        self.mod_event_bus.post(&mut event);
+        Ok(())
+    }
+
+    pub fn config_reload(&mut self, id: &str) -> Result<(), String> {
+        if let Some(cfg) = self.configs.get_mut(id) {
+            cfg.reload()?;
+        } else {
+            return Err("unknown config".into());
+        }
+        let mut event = ModConfigEvent {
+            mod_id: id.to_string(),
+            phase: crate::event_bus::ConfigPhase::Reloading,
+        };
+        self.mod_event_bus.post(&mut event);
+        Ok(())
+    }
+
+    pub fn config_save_all(&mut self) -> Result<(), String> {
+        self.configs.save_all()
+    }
+
+    pub fn register_capability_provider(
+        &mut self,
+        provider: crate::parity_models::CapabilityProvider,
+    ) {
+        let kind = provider.capability.clone();
+        self.capability_providers.register(provider.clone());
+        let mut event = crate::parity_events::CapabilityProviderRegisteredEvent {
+            capability: kind,
+            cancelled: false,
+        };
+        self.mod_event_bus.post(&mut event);
+    }
+
+    pub fn set_attachment(&mut self, id: &str, value: impl Into<String>, synced: bool) {
+        self.attachments.set(id, value, synced);
+        let mut event = crate::parity_events::AttachmentSyncEvent {
+            target: id.split(':').next().unwrap_or("unknown").to_string(),
+            attachment: id.to_string(),
+            cancelled: false,
+        };
+        self.mod_event_bus.post(&mut event);
+    }
+
+    pub fn register_payload(&mut self, def: crate::parity_models::CustomPayloadDef) {
+        let channel = def.id.clone();
+        self.payloads.register(def);
+        let mut event = crate::parity_events::CustomPayloadEvent {
+            channel,
+            bytes: 0,
+            cancelled: false,
+        };
+        self.mod_event_bus.post(&mut event);
+    }
+
+    pub fn receive_payload(&mut self, channel: &str, data: &[u8]) -> Result<(), String> {
+        self.payloads.validate(channel, data.len())?;
+        let mut event = crate::parity_events::CustomPayloadEvent {
+            channel: channel.to_string(),
+            bytes: data.len(),
+            cancelled: false,
+        };
+        self.mod_event_bus.post(&mut event);
+        Ok(())
+    }
+
+    pub fn recipe_loaded(&mut self, recipe: impl Into<String>) {
+        let mut e = crate::parity_events::RecipeLoadEvent {
+            recipe: recipe.into(),
+            cancelled: false,
+        };
+        self.mod_event_bus.post(&mut e);
+    }
+
+    pub fn loot_table_loaded(&mut self, table: impl Into<String>) {
+        let mut e = crate::parity_events::LootTableLoadEvent {
+            table: table.into(),
+            cancelled: false,
+        };
+        self.mod_event_bus.post(&mut e);
+    }
+
+    pub fn resource_overlay_added(&mut self, ns: impl Into<String>) {
+        let mut e = crate::parity_events::ResourceOverlayEvent {
+            namespace: ns.into(),
+            cancelled: false,
+        };
+        self.mod_event_bus.post(&mut e);
+    }
+
+    pub fn enchantment_level_set(
+        &mut self,
+        item: impl Into<String>,
+        table: impl Into<String>,
+        slot: i32,
+        level: i32,
+    ) {
+        let mut e = crate::event_bus::EnchantmentLevelSetEvent {
+            item: item.into(),
+            table: table.into(),
+            slot,
+            level,
+            cancelled: false,
+        };
+        self.mod_event_bus.post(&mut e);
+    }
+
+    pub fn container_opened(&mut self, player: impl Into<String>, menu_type: impl Into<String>) {
+        let mut e = crate::event_bus::ContainerOpenEvent {
+            player: player.into(),
+            menu_type: menu_type.into(),
+            cancelled: false,
+        };
+        self.mod_event_bus.post(&mut e);
+    }
+
+    pub fn loot_modified(&mut self, loot_table: impl Into<String>) {
+        let mut e = crate::parity_events::LootTableLoadEvent {
+            table: loot_table.into(),
+            cancelled: false,
+        };
+        self.mod_event_bus.post(&mut e);
+    }
+
+    pub fn resolve_loot(
+        &self,
+        resolver: &crate::LootResolver,
+        table_id: &str,
+        ctx: crate::LootContext,
+    ) -> Result<Vec<String>, String> {
+        let drops = resolver.resolve_table(table_id, ctx)?;
+        Ok(drops
+            .into_iter()
+            .map(|d| format!("{}:{}", d.item, d.count))
+            .collect())
+    }
+
+    pub fn surface_rule_evaluated(
+        &mut self,
+        biome: impl Into<String>,
+        block: impl Into<String>,
+        depth: i32,
+    ) {
+        let biome = biome.into();
+        let block = block.into();
+        let mut e = crate::event_bus::SurfaceRuleEvent {
+            biome,
+            block: block.clone(),
+            depth,
+            result_block: block,
+        };
+        self.mod_event_bus.post(&mut e);
+    }
+
+    pub fn register_menu_type(&mut self, name: impl Into<String>, id: String) {
+        let mut event = crate::parity_events::CustomMenuEvent {
+            menu_type: id,
+            cancelled: false,
+        };
+        // Keep name in trace only.
+        let _ = name;
+        self.mod_event_bus.post(&mut event);
+    }
+
+    pub fn capability_providers(&self) -> &CapabilityProviderRegistry {
+        &self.capability_providers
+    }
+
+    pub fn attachments(&self) -> &AttachmentManager {
+        &self.attachments
+    }
+
+    pub fn payloads(&self) -> &PayloadRegistry {
+        &self.payloads
+    }
+
+    pub fn overlays(&self) -> &crate::OverlayManager {
+        &self.overlays
+    }
+
+    pub fn resource_overlay_loaded(&mut self, namespace: impl Into<String>) {
+        let namespace = namespace.into();
+        self.overlays
+            .add(crate::parity_models::ResourceOverlayDef::new(
+                "mod-runtime",
+                namespace.clone(),
+            ));
+        let mut e = crate::parity_events::ResourceOverlayEvent {
+            namespace,
+            cancelled: false,
+        };
+        self.mod_event_bus.post(&mut e);
+    }
+
+    pub fn worldgen(&self) -> &crate::WorldgenModifierManager {
+        &self.worldgen
+    }
+
+    /// A server mod's `worldgen.set-surface-rule` lands here.
+    pub fn worldgen_mut(&mut self) -> &mut crate::WorldgenModifierManager {
+        &mut self.worldgen
+    }
+
+    pub fn fluid_interactions(&self) -> &crate::FluidInteractionResolver {
+        &self.fluid_interactions
+    }
+
+    pub fn intermod(&self) -> &crate::InterModComms {
+        &self.intermod
+    }
+
+    pub fn intermod_mut(&mut self) -> &mut crate::InterModComms {
+        &mut self.intermod
+    }
+
+    pub fn fluid_registry(&self) -> &crate::FluidRegistryManager {
+        &self.fluid_registry
+    }
+
+    pub fn fluid_registry_mut(&mut self) -> &mut crate::FluidRegistryManager {
+        &mut self.fluid_registry
+    }
+
+    pub fn attributes(&self) -> &crate::AttributeManager {
+        &self.attributes
+    }
+
+    pub fn attributes_mut(&mut self) -> &mut crate::AttributeManager {
+        &mut self.attributes
+    }
+
+    pub fn ai_goals(&self) -> &crate::AiGoalManager {
+        &self.ai_goals
+    }
+
+    pub fn ai_goals_mut(&mut self) -> &mut crate::AiGoalManager {
+        &mut self.ai_goals
+    }
+
+    pub fn recipe_resolver(&self) -> &crate::RecipeResolver {
+        &self.recipe_resolver
+    }
+
+    pub fn recipe_resolver_mut(&mut self) -> &mut crate::RecipeResolver {
+        &mut self.recipe_resolver
+    }
+
+    /// Wiring-level helper: tell worldgen manager a level has loaded.
+    pub fn wiring_level_loaded(&mut self, dimension: impl Into<String>) -> usize {
+        self.worldgen.handle_level_load(&crate::LevelLoadEvent {
+            dimension: dimension.into(),
+            cancelled: false,
+        })
+    }
+
+    /// Wiring-level helper: resolve an attribute with current modifiers.
+    pub fn wiring_attribute(&self, attribute: &str) -> crate::ComputedAttribute {
+        self.attributes.compute(attribute)
+    }
+
+    /// Wiring-level helper: top AI goal for an entity.
+    pub fn wiring_top_goal(&self, entity: &str) -> Option<crate::AIGoalDef> {
+        self.ai_goals.top_goal(entity)
+    }
+
+    /// Wiring-level helper: test a recipe composite.
+    pub fn wiring_recipe_allowed(&self, composite: crate::RecipeComposite, ids: &[&str]) -> bool {
+        self.recipe_resolver.evaluate_composite(composite, ids)
+    }
+
+    /// Wiring-level helper: resolve a fluid interaction.
+    pub fn wiring_fluid_interaction(&self, a: &str, b: &str) -> Option<&str> {
+        self.fluid_interactions.resolve(a, b)
+    }
+
+    pub fn register_menu_resolver(
+        &mut self,
+        menu_type: impl Into<String>,
+        resolver: crate::ContainerMenuResolver,
+    ) {
+        self.menu_resolvers.insert(menu_type.into(), resolver);
+        let mut event = crate::event_bus::RegisterEvent {
+            registry: "menu-types".into(),
+        };
+        self.mod_event_bus.post(&mut event);
+    }
+
+    pub fn validate_container_move(&self, menu_type: &str, slot: usize, count: i32) -> i32 {
+        self.menu_resolvers
+            .get(menu_type)
+            .map(|r| r.validate_move(slot, count))
+            .unwrap_or(count)
+    }
+
+    pub fn commit_container_drag(&mut self, menu_type: &str, targets: &[usize]) -> i32 {
+        self.menu_resolvers
+            .get_mut(menu_type)
+            .map(|r| r.commit_drag(targets))
+            .unwrap_or(0)
+    }
+
+    pub fn container_sync_value(&mut self, menu_type: &str, name: &str, value: i32) -> bool {
+        self.menu_resolvers
+            .get_mut(menu_type)
+            .map(|r| r.set_synced_data(name, value))
+            .unwrap_or(false)
+    }
+
+    pub fn has_active_mob_effect(&self, entity: &str, effect: &str) -> bool {
+        self.mob_effects.active(entity, effect).is_some()
+    }
+
+    pub fn worldgen_apply_features(&self, biome: &str) -> Vec<String> {
+        self.worldgen.features_for(biome)
+    }
+
+    pub fn wiring_mob_effect_active(&self, entity: &str, effect: &str) -> bool {
+        self.mob_effects.active(entity, effect).is_some()
+    }
+
+    pub fn wiring_container_validated_move(&self, menu_type: &str, slot: usize, count: i32) -> i32 {
+        self.validate_container_move(menu_type, slot, count)
+    }
+
+    pub fn wiring_worldgen_apply_features(&self, biome: &str) -> Vec<String> {
+        self.worldgen_apply_features(biome)
+    }
+
+    pub fn config_sync_payload(&mut self, mod_id: String, config_text: String) -> Vec<u8> {
+        let mut payload = Vec::with_capacity(16 + config_text.len());
+        payload.extend_from_slice(b"horizon_net:");
+        payload.extend_from_slice(mod_id.as_bytes());
+        payload.push(b':');
+        let remaining = 32 * 1024 - payload.len();
+        payload.extend_from_slice(&config_text.as_bytes()[..config_text.len().min(remaining)]);
+        let mut event = ModConfigEvent {
+            mod_id,
+            phase: crate::event_bus::ConfigPhase::Reloading,
+        };
+        self.mod_event_bus.post(&mut event);
+        payload
+    }
+
     /// Post an event to the bus
-    pub fn post_event<E: crate::event_bus::Event>(&self, event: &E) {
+    pub fn post_event<E: crate::event_bus::Event>(&self, event: &mut E) {
         self.event_bus.post(event);
     }
 
     /// Server mods' bytes on blocks, as JSON, for the game to save with the world.
     pub fn block_data_json(&self) -> String {
-        let data = self.block_data.lock().map(|d| d.clone()).unwrap_or_default();
+        let data = self
+            .block_data
+            .lock()
+            .map(|d| d.clone())
+            .unwrap_or_default();
         serde_json::to_string(&data).unwrap_or_default()
     }
     /// Puts back the bytes [`Mods::block_data_json`] saved (an unreadable or
@@ -661,8 +1188,53 @@ impl Mods {
         reserved: impl Fn(&str) -> bool,
     ) -> Mods {
         let mut mods = Mods::default();
-        for path in paths {
-            let modified = modified(path);
+
+        // Dependency-aware ordering (best effort): only reorder when manifests
+        // declare dependencies, so existing content-only and failure tests keep
+        // their expected order.
+        let has_dependencies = paths.iter().any(|path| {
+            Package::read(path)
+                .map(|package| !package.manifest.dependencies.is_empty())
+                .unwrap_or(false)
+        });
+        let ordered: Vec<PathBuf> = if has_dependencies {
+            let mut resolver = DependencyResolver::new();
+            let mut available: Vec<(PathBuf, String)> = Vec::new();
+            let mut failed: Vec<PathBuf> = Vec::new();
+            for path in paths {
+                match Package::read(path) {
+                    Ok(package) => {
+                        resolver.add_container(ModContainer::from_manifest(
+                            package.manifest.clone(),
+                            path.clone(),
+                        ));
+                        available.push((path.clone(), package.manifest.id.clone()));
+                    }
+                    Err(_) => failed.push(path.clone()),
+                }
+            }
+            let sorted_ids = resolver.resolve().unwrap_or_default();
+            let mut sorted: Vec<PathBuf> = if sorted_ids.is_empty() {
+                available.iter().map(|(p, _)| p.clone()).collect()
+            } else {
+                let mut sorted_available = available.clone();
+                sorted_available.sort_by_key(|(_, id)| {
+                    sorted_ids
+                        .iter()
+                        .position(|x| x == id)
+                        .unwrap_or(usize::MAX)
+                });
+                sorted_available.into_iter().map(|(p, _)| p).collect()
+            };
+            sorted.extend(failed);
+            sorted
+        } else {
+            paths.to_vec()
+        };
+
+        for path_ref in &ordered {
+            let path: PathBuf = path_ref.clone();
+            let modified = modified(&path);
             let mut entry = Entry {
                 path: path.clone(),
                 manifest: None,
@@ -672,14 +1244,26 @@ impl Mods {
                 run: None,
                 modified,
             };
-            match Package::read(path) {
+            match Package::read(&path) {
                 Err(e) => entry.status = Status::Failed(e),
                 Ok(package) => {
                     let on = enabled(&package.manifest.id);
                     entry.manifest = Some(package.manifest.clone());
                     // Create mod container
-                    let mut container = ModContainer::from_manifest(package.manifest.clone(), path.clone());
+                    let mut container =
+                        ModContainer::from_manifest(package.manifest.clone(), path.clone());
                     container.set_state(ModState::Validated);
+                    container.dependencies = package
+                        .manifest
+                        .dependencies
+                        .iter()
+                        .map(|dep| ModDependency {
+                            mod_id: dep.clone(),
+                            version_range: "*".into(),
+                            required: true,
+                            ordering: crate::container::DependencyOrdering::After,
+                        })
+                        .collect();
                     entry.container = Some(container);
                     if on && !runs.starts(package.manifest.side) {
                         entry.status = Status::Elsewhere;
@@ -689,9 +1273,9 @@ impl Mods {
                     } else if on {
                         // Content is read before the world loads; a mod whose
                         // content is refused stays off, with the reason.
-                        let content = crate::Content::read(path, &package.manifest);
+                        let content = crate::Content::read(&path, &package.manifest);
                         entry.status =
-                            match content.and_then(|_| mods.start(path, &package, &reserved)) {
+                            match content.and_then(|_| mods.start(&path, &package, &reserved)) {
                                 Ok(run) => {
                                     entry.run = run;
                                     if let Some(c) = entry.container.as_mut() {
@@ -714,14 +1298,98 @@ impl Mods {
             }
             mods.entries.push(entry);
         }
-        // Post mod load events
+        // NeoForge-style mod bus: construction then load events.
         for entry in &mods.entries {
-            if entry.status == Status::Running {
-                if let Some(c) = &entry.container {
-                    mods.event_bus.post(&ModLoadEvent { mod_id: c.id.clone() });
-                }
+            if entry.status == Status::Running
+                && let Some(c) = &entry.container
+            {
+                let mut constructed = crate::event_bus::ModConstructEvent {
+                    mod_id: c.id.clone(),
+                };
+                mods.mod_event_bus.post(&mut constructed);
+
+                let mut loaded = ModLoadEvent {
+                    mod_id: c.id.clone(),
+                };
+                mods.event_bus.post(&mut loaded);
             }
         }
+        for registry in [
+            "horizon:blocks",
+            "horizon:items",
+            "horizon:entities",
+            "horizon:fluids",
+        ] {
+            let mut event = crate::event_bus::RegisterEvent {
+                registry: registry.to_string(),
+            };
+            mods.mod_event_bus.post(&mut event);
+        }
+        let mut common = crate::event_bus::CommonSetupEvent;
+        mods.mod_event_bus.post(&mut common);
+        let mut capabilities = crate::event_bus::RegisterCapabilitiesEvent;
+        mods.mod_event_bus.post(&mut capabilities);
+        let mut client = crate::event_bus::SidedSetupEvent { client: true };
+        mods.mod_event_bus.post(&mut client);
+        let mut loaded = crate::event_bus::ModLoadCompleteEvent;
+        mods.mod_event_bus.post(&mut loaded);
+
+        // Core object registries for parity: available from startup.
+        macro_rules! reg {
+            ($name:expr, $ty:ty) => {
+                let _ = mods
+                    .registries
+                    .add($name, crate::Registry::<$ty>::new($name));
+            };
+        }
+        reg!(crate::Registries::fluids(), FluidDefinition);
+        reg!(crate::Registries::mob_effects(), MobEffectDefinition);
+        reg!(crate::Registries::enchantments(), EnchantmentDefinition);
+        reg!(crate::Registries::particles(), ParticleDefinition);
+        reg!(crate::Registries::sounds(), SoundDefinition);
+        reg!(crate::Registries::menu_types(), ContainerMenuDefinition);
+        reg!(crate::Registries::loot_modifiers(), LootModifierDefinition);
+        reg!(crate::Registries::structures(), StructureDefinition);
+        reg!(crate::Registries::surface_rules(), SurfaceRuleDefinition);
+        reg!(crate::Registries::dimensions(), DimensionDefinition);
+        reg!(
+            crate::Registries::block_states(),
+            BlockStatePropertyDefinition
+        );
+        reg!(crate::Registries::tags(), TagDefinition);
+
+        let mut new_registry = crate::event_bus::NewRegistryEvent {
+            name: "core".into(),
+        };
+        mods.mod_event_bus.post(&mut new_registry);
+
+        mods.fluid_interactions = crate::FluidInteractionResolver::with_defaults();
+        mods.fluid_registry = crate::FluidRegistryManager::new();
+        mods.attributes = crate::AttributeManager::new();
+        mods.ai_goals = crate::AiGoalManager::new();
+        mods.recipe_resolver = crate::RecipeResolver::new();
+        mods.intermod = crate::InterModComms::new();
+        mods.block_state_properties = crate::BlockStatePropertyResolver::new();
+        mods.tag_manager = crate::TagManager::new();
+        mods.menu_resolvers = std::collections::BTreeMap::new();
+        mods.worldgen = crate::WorldgenModifierManager::new();
+
+        mods.advance_lifecycle(crate::LoadingStage::Construct);
+        mods.run_registration();
+        mods.advance_lifecycle(crate::LoadingStage::CommonSetup);
+        mods.advance_lifecycle(crate::LoadingStage::SidedSetup);
+        mods.advance_lifecycle(crate::LoadingStage::LoadComplete);
+        mods.advance_lifecycle(crate::LoadingStage::PostLoad);
+
+        if !mods.registries.contains(&crate::Registries::menu_types()) {
+            let _ = mods.registries.add(
+                crate::Registries::menu_types(),
+                crate::Registry::<crate::ContainerMenuDefinition>::new(
+                    crate::Registries::menu_types(),
+                ),
+            );
+        }
+
         mods
     }
 
@@ -733,15 +1401,26 @@ impl Mods {
             let mut linker = Linker::new(&engine);
             HorizonMod::add_to_linker::<State, HasSelf<State>>(&mut linker, |s| s)
                 .map_err(|e| e.to_string())?;
-            server_bindings::horizon::mods::storages::add_to_linker::<State, HasSelf<State>>(&mut linker, |s| s)
-                .map_err(|e| e.to_string())?;
-            server_bindings::horizon::mods::entities::add_to_linker::<State, HasSelf<State>>(&mut linker, |s| s)
-                .map_err(|e| e.to_string())?;
-            server_bindings::horizon::mods::server_net::add_to_linker::<State, HasSelf<State>>(&mut linker, |s| s)
-                .map_err(|e| e.to_string())?;
+            server_bindings::horizon::mods::storages::add_to_linker::<State, HasSelf<State>>(
+                &mut linker,
+                |s| s,
+            )
+            .map_err(|e| e.to_string())?;
+            server_bindings::horizon::mods::entities::add_to_linker::<State, HasSelf<State>>(
+                &mut linker,
+                |s| s,
+            )
+            .map_err(|e| e.to_string())?;
+            server_bindings::horizon::mods::server_net::add_to_linker::<State, HasSelf<State>>(
+                &mut linker,
+                |s| s,
+            )
+            .map_err(|e| e.to_string())?;
             players::add_to_linker::<State, HasSelf<State>>(&mut linker, |s| s)
                 .map_err(|e| e.to_string())?;
             mod_world::add_to_linker::<State, HasSelf<State>>(&mut linker, |s| s)
+                .map_err(|e| e.to_string())?;
+            worldgen::add_to_linker::<State, HasSelf<State>>(&mut linker, |s| s)
                 .map_err(|e| e.to_string())?;
             UiHost::add_to_linker::<State, HasSelf<State>>(&mut linker, |s| s)
                 .map_err(|e| e.to_string())?;
@@ -841,6 +1520,7 @@ impl Mods {
                 .build(),
             world,
             block_data,
+            mob_effects: crate::MobEffectManager::new(),
         };
         let mut store = Store::new(engine, state);
         store.limiter(|s| &mut s.limits);
@@ -1024,7 +1704,8 @@ impl Mods {
 
     /// A game tick.
     pub fn tick(&mut self, tick: u64) {
-        self.event_bus.post(&TickEvent { tick });
+        let mut tick_event = crate::event_bus::TickEvent { tick };
+        self.event_bus.post(&mut tick_event);
         self.each_client(FUEL_TICK, |h| h.tick, |m, s| m.call_tick(s, tick));
     }
     /// A rendered frame, `seconds` after the last.
@@ -1114,9 +1795,10 @@ impl Mods {
     /// Running server mods asked about blocks: registration `blocks` and the
     /// `block-events` export.
     fn asks_blocks(&self, i: usize) -> bool {
-        self.entries[i].run.as_ref().is_some_and(|r| {
-            r.blocks.is_some() && r.hooks.server().is_some_and(|h| h.blocks)
-        })
+        self.entries[i]
+            .run
+            .as_ref()
+            .is_some_and(|r| r.blocks.is_some() && r.hooks.server().is_some_and(|h| h.blocks))
     }
     /// `player` starts breaking `state` at `pos` (`block-events.break-block`):
     /// true when a server mod refuses it, and the block stays.
@@ -1130,9 +1812,9 @@ impl Mods {
                 .call(i, FUEL_EVENT, |run| {
                     let Running { blocks, store, .. } = run;
                     match blocks {
-                        Some(b) => b.horizon_mods_block_events().call_break_block(
-                            store, player, pos.x, pos.y, pos.z, state,
-                        ),
+                        Some(b) => b
+                            .horizon_mods_block_events()
+                            .call_break_block(store, player, pos.x, pos.y, pos.z, state),
                         None => Ok(false),
                     }
                 })
@@ -1143,7 +1825,13 @@ impl Mods {
     /// `player` right-clicks `state` at `pos` holding `item`
     /// (`block-events.use-block`): true when a server mod handled it, and
     /// vanilla does nothing there. The first mod that takes it ends the asking.
-    pub fn use_block(&mut self, player: &ServerPlayer, pos: BlockPos, state: &str, item: &str) -> bool {
+    pub fn use_block(
+        &mut self,
+        player: &ServerPlayer,
+        pos: BlockPos,
+        state: &str,
+        item: &str,
+    ) -> bool {
         for i in 0..self.entries.len() {
             if !self.asks_blocks(i) {
                 continue;
@@ -1152,9 +1840,9 @@ impl Mods {
                 .call(i, FUEL_EVENT, |run| {
                     let Running { blocks, store, .. } = run;
                     match blocks {
-                        Some(b) => b.horizon_mods_block_events().call_use_block(
-                            store, player, pos.x, pos.y, pos.z, state, item,
-                        ),
+                        Some(b) => b
+                            .horizon_mods_block_events()
+                            .call_use_block(store, player, pos.x, pos.y, pos.z, state, item),
                         None => Ok(false),
                     }
                 })
@@ -1617,18 +2305,24 @@ impl Mods {
             self.entries[i].manifest = Some(p.manifest.clone());
             self.start(&path, &p, reserved)
         });
-        let entry = &mut self.entries[i];
-        let id = entry.manifest.as_ref().map_or("?", |m| m.id.as_str());
+        let id = self.entries[i]
+            .manifest
+            .as_ref()
+            .map_or_else(|| "?".to_owned(), |m| m.id.clone());
+        // The rules the last version of this mod set are gone with it; its
+        // `init` sets the ones it keeps, and they reach the game at `drain`.
+        self.worldgen.remove_mod(&id);
         match started {
             Ok(run) => {
                 log::info!("Horizon: mod {id} reloaded");
+                let entry = &mut self.entries[i];
                 entry.run = run;
                 entry.status = Status::Running;
                 Ok(())
             }
             Err(e) => {
                 log::warn!("Horizon: mod {id} did not reload: {e}");
-                entry.status = Status::Failed(e.clone());
+                self.entries[i].status = Status::Failed(e.clone());
                 Err(e)
             }
         }
@@ -1920,7 +2614,14 @@ impl mod_world::Host for State {
         }
         Some(from_hex(hex))
     }
-    fn set_data(&mut self, dimension: String, x: i32, y: i32, z: i32, data: Vec<u8>) -> Result<(), String> {
+    fn set_data(
+        &mut self,
+        dimension: String,
+        x: i32,
+        y: i32,
+        z: i32,
+        data: Vec<u8>,
+    ) -> Result<(), String> {
         if data.len() > BLOCK_DATA_BYTES {
             return Err(format!("{} bytes: at most {BLOCK_DATA_BYTES}", data.len()));
         }
@@ -1928,7 +2629,10 @@ impl mod_world::Host for State {
             .block_at(&dimension, x, y, z)
             .ok_or_else(|| format!("no chunk loaded at {x} {y} {z} in {dimension}"))?;
         let key = block_key(&dimension, x, y, z);
-        let mut all = self.block_data.lock().map_err(|_| "block data unavailable".to_string())?;
+        let mut all = self
+            .block_data
+            .lock()
+            .map_err(|_| "block data unavailable".to_string())?;
         let mine = all.mods.entry(self.id.clone()).or_default();
         if data.is_empty() {
             mine.remove(&key);
@@ -1960,7 +2664,14 @@ impl mod_world::Host for State {
             })
             .collect()
     }
-    fn schedule_tick(&mut self, dimension: String, x: i32, y: i32, z: i32, delay: u32) -> Result<(), String> {
+    fn schedule_tick(
+        &mut self,
+        dimension: String,
+        x: i32,
+        y: i32,
+        z: i32,
+        delay: u32,
+    ) -> Result<(), String> {
         State::schedule_tick(self, dimension, x, y, z, delay)
     }
     fn redstone_power(&mut self, dimension: String, x: i32, y: i32, z: i32) -> Option<u8> {
@@ -1999,6 +2710,23 @@ impl mod_world::Host for State {
         Ok(())
     }
 }
+impl worldgen::Host for State {
+    fn set_surface_rule(&mut self, biome: String, surface: String) -> Result<(), String> {
+        if biome.is_empty() {
+            return Err("biome must not be empty".into());
+        }
+        if surface.is_empty() {
+            return Err("surface must not be empty".into());
+        }
+        self.out.push(Output::Server(ServerAction::Worldgen {
+            id: self.id.clone(),
+            biome,
+            surface,
+        }));
+        Ok(())
+    }
+}
+
 impl players::Host for State {
     fn online(&mut self) -> Vec<ServerPlayer> {
         self.snapshot.players.clone()
@@ -2026,7 +2754,12 @@ impl players::Host for State {
     fn give(&mut self, player: String, stack: players::ItemStack) -> Result<(), String> {
         self.player_give(player, stack)
     }
-    fn set_slot(&mut self, player: String, slot: u32, stack: Option<players::ItemStack>) -> Result<(), String> {
+    fn set_slot(
+        &mut self,
+        player: String,
+        slot: u32,
+        stack: Option<players::ItemStack>,
+    ) -> Result<(), String> {
         self.player_set_slot(player, slot, stack)
     }
     fn take(&mut self, player: String, item: String, count: u32) -> u32 {
@@ -2333,7 +3066,11 @@ impl ui::Host for State {
     fn set_settings(&mut self, widgets: Vec<ui::Widget>) {
         self.ui.settings = clip_widgets(widgets);
     }
-    fn replace_screen(&mut self, vanilla: String, replacement: Option<ui::Screen>) -> Result<(), String> {
+    fn replace_screen(
+        &mut self,
+        vanilla: String,
+        replacement: Option<ui::Screen>,
+    ) -> Result<(), String> {
         if !REPLACEABLE_SCREENS.contains(&vanilla.as_str()) {
             return Err(format!(
                 "{vanilla} can't be replaced (this Horizon replaces {})",

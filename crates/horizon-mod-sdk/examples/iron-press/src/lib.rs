@@ -80,7 +80,11 @@ impl ServerMod for IronPress {
             return false;
         }
         if item == "minecraft:paper" {
-            let items: u32 = players::inventory(&player.id).iter().flatten().map(|s| s.count).sum();
+            let items: u32 = players::inventory(&player.id)
+                .iter()
+                .flatten()
+                .map(|s| s.count)
+                .sum();
             players::tell(&player.id, &format!("You carry {items} items"));
             let _ = players::give(&player.id, &ItemStack::new(NUGGET, 1).with_data(vec![7]));
             return true;
@@ -109,7 +113,11 @@ impl ServerMod for IronPress {
     }
 
     fn neighbor_changed(&mut self, dimension: &str, pos: BlockPos, _state: &str, _from: BlockPos) {
-        let (x, y, z) = (f64::from(pos.x) + 0.5, f64::from(pos.y) + 0.5, f64::from(pos.z) + 0.5);
+        let (x, y, z) = (
+            f64::from(pos.x) + 0.5,
+            f64::from(pos.y) + 0.5,
+            f64::from(pos.z) + 0.5,
+        );
         let _ = entities::sound(dimension, "minecraft:block.anvil.land", x, y, z, 0.5, 1.5);
     }
 
@@ -119,7 +127,9 @@ impl ServerMod for IronPress {
         }
         let near = world::data_positions(&player.dimension)
             .into_iter()
-            .any(|(x, y, z)| (x - pos.x).abs() <= 4 && (y - pos.y).abs() <= 4 && (z - pos.z).abs() <= 4);
+            .any(|(x, y, z)| {
+                (x - pos.x).abs() <= 4 && (y - pos.y).abs() <= 4 && (z - pos.z).abs() <= 4
+            });
         if near {
             players::tell(&player.id, "No TNT near a press");
         }
@@ -134,15 +144,28 @@ impl ServerMod for IronPress {
         for mob in entities::near(dim, x, y, z, 8.0) {
             let _ = entities::effect(&mob.id, "minecraft:speed", 10, 1);
         }
-        let _ = entities::particle(dim, "minecraft:flame", x, y + 1.0, z, 0.5, 0.5, 0.5, 0.01, 20);
+        let _ = entities::particle(
+            dim,
+            "minecraft:flame",
+            x,
+            y + 1.0,
+            z,
+            0.5,
+            0.5,
+            0.5,
+            0.01,
+            20,
+        );
         true
     }
 
     fn explosion(&mut self, dimension: &str, x: f64, y: f64, z: f64, _power: f32) -> bool {
-        world::data_positions(dimension).into_iter().any(|(px, py, pz)| {
-            let d = |a: i32, b: f64| f64::from(a) + 0.5 - b;
-            d(px, x).powi(2) + d(py, y).powi(2) + d(pz, z).powi(2) <= 64.0
-        })
+        world::data_positions(dimension)
+            .into_iter()
+            .any(|(px, py, pz)| {
+                let d = |a: i32, b: f64| f64::from(a) + 0.5 - b;
+                d(px, x).powi(2) + d(py, y).powi(2) + d(pz, z).powi(2) <= 64.0
+            })
     }
 
     /// A client mod asks on `iron_press/ping`: the server answers on

@@ -86,7 +86,16 @@ impl ModContainer {
             side: manifest.side,
             api_version: manifest.api.clone(),
             capabilities: manifest.capabilities.clone(),
-            dependencies: Vec::new(),
+            dependencies: manifest
+                .dependencies
+                .iter()
+                .map(|dep| ModDependency {
+                    mod_id: dep.clone(),
+                    version_range: "*".into(),
+                    required: true,
+                    ordering: DependencyOrdering::After,
+                })
+                .collect(),
             state: ModState::Discovered,
             properties: BTreeMap::new(),
         }
@@ -140,6 +149,10 @@ impl ModContainer {
 
 impl std::fmt::Display for ModContainer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} [{}] v{} ({:?})", self.name, self.id, self.version, self.state)
+        write!(
+            f,
+            "{} [{}] v{} ({:?})",
+            self.name, self.id, self.version, self.state
+        )
     }
 }

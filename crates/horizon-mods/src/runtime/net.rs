@@ -17,7 +17,9 @@ fn check(channel: &str, data: &[u8]) -> Result<(), String> {
             .bytes()
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"_./-".contains(&b));
     if !ok {
-        return Err(format!("channel {channel:?}: [a-z0-9_./-], 1 to 64 characters"));
+        return Err(format!(
+            "channel {channel:?}: [a-z0-9_./-], 1 to 64 characters"
+        ));
     }
     if data.len() > NET_BYTES {
         return Err(format!("{} bytes: at most {NET_BYTES}", data.len()));
@@ -29,7 +31,12 @@ impl State {
     fn sent(&self) -> usize {
         self.out
             .iter()
-            .filter(|o| matches!(o, Output::NetToServer { .. } | Output::Server(ServerAction::Net { .. })))
+            .filter(|o| {
+                matches!(
+                    o,
+                    Output::NetToServer { .. } | Output::Server(ServerAction::Net { .. })
+                )
+            })
             .count()
     }
     fn may_send(&self, channel: &str, data: &[u8]) -> Result<(), String> {
@@ -77,11 +84,19 @@ impl Mods {
     /// A message from the server's mods: every client mod that hears `net`.
     pub fn client_net_received(&mut self, channel: &str, data: &[u8]) {
         for i in 0..self.entries.len() {
-            if self.entries[i].run.as_ref().is_some_and(|r| r.net_client.is_some()) {
+            if self.entries[i]
+                .run
+                .as_ref()
+                .is_some_and(|r| r.net_client.is_some())
+            {
                 self.call(i, FUEL_EVENT, |run| {
-                    let Running { net_client, store, .. } = run;
+                    let Running {
+                        net_client, store, ..
+                    } = run;
                     match net_client {
-                        Some(n) => n.horizon_mods_client_net_events().call_received(store, channel, data),
+                        Some(n) => n
+                            .horizon_mods_client_net_events()
+                            .call_received(store, channel, data),
                         None => Ok(()),
                     }
                 });
@@ -91,9 +106,15 @@ impl Mods {
     /// A message from `player`'s client mods: every server mod that hears `net`.
     pub fn server_net_received(&mut self, player: &ServerPlayer, channel: &str, data: &[u8]) {
         for i in 0..self.entries.len() {
-            if self.entries[i].run.as_ref().is_some_and(|r| r.net_server.is_some()) {
+            if self.entries[i]
+                .run
+                .as_ref()
+                .is_some_and(|r| r.net_server.is_some())
+            {
                 self.call(i, FUEL_EVENT, |run| {
-                    let Running { net_server, store, .. } = run;
+                    let Running {
+                        net_server, store, ..
+                    } = run;
                     match net_server {
                         Some(n) => n
                             .horizon_mods_server_net_events()

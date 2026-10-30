@@ -493,6 +493,28 @@ impl ChunkGenerator for VanillaTerrain {
             if let Err(e) = worker.decorate(&mut array) {
                 log::warn!("Horizon: decorating chunk failed: {e}");
             }
+            #[cfg(feature = "mods")]
+            if let Some(snapshot) = crate::mod_worldgen::snapshot()
+                && !snapshot.surface_blocks.is_empty()
+            {
+                for chunk in &mut array {
+                    let reg = chunk.data().registry();
+                    for x in 0..16i32 {
+                        for z in 0..16i32 {
+                            let y = chunk.surface_height(x, z) - 1;
+                            if y < chunk.terrain.min_y() {
+                                continue;
+                            }
+                            let biome = chunk.biome_at(x, y, z).to_owned();
+                            if let Some(block) = snapshot.surface_blocks.get(&biome)
+                                && let Some(state) = reg.default_state(block)
+                            {
+                                let _ = chunk.terrain.set_block_worldgen(x, y, z, state);
+                            }
+                        }
+                    }
+                }
+            }
             for (slot, chunk) in region.iter_mut().zip(array) {
                 *slot = Box::new(VanillaProto::Ready(Box::new(chunk)));
             }

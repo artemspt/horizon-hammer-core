@@ -21,6 +21,7 @@ The contract between Horizon and its mods: the WIT package `horizon:mods@0.1.0`,
 | `recipes` | [`recipes`](#recipes) | read the game's recipes and items and which recipes you know, place recipes in your crafting grid and, in creative mode, give you items |
 | `entities` | [`entities`](#entities) | find, spawn, hurt and move mobs and players, give effects, show particles and play sounds |
 | `net` | [`client-net`](#client-net) | send messages between your game and the server's mods |
+| `worldgen` | [`worldgen`](#worldgen) | modify world generation surface rules |
 
 ## World `events-host`
 
@@ -59,14 +60,14 @@ A server mod (manifest `side = "server"`, `api = "0.3"`, experimental): runs whe
 
 ## World `horizon-server-mod`
 
-- Imports (what the game offers): `log`, `storage`, `players`, `world`, `storages`, `entities`, `server-net`
+- Imports (what the game offers): `log`, `storage`, `players`, `world`, `storages`, `entities`, `worldgen`, `server-net`
 - Exports (what the mod provides): `server-events`
 
 ## World `horizon-server-block-mod`
 
 What the SDK builds a server mod as: `horizon-server-mod` and the block hooks.
 
-- Imports (what the game offers): `log`, `storage`, `players`, `world`, `storages`, `entities`, `server-net`
+- Imports (what the game offers): `log`, `storage`, `players`, `world`, `storages`, `entities`, `worldgen`, `server-net`
 - Exports (what the mod provides): `block-events`, `game-events`, `server-net-events`, `server-events`
 
 ## World `horizon-ui-mod`
@@ -819,6 +820,16 @@ Capability `entities` (server mods): the mobs of the loaded level, and the serve
 | `effect` | `func(id: string, effect: string, seconds: u32, amplifier: u8) -> result<_, string>` | `/effect give`: `effect` (`minecraft:speed`) for `seconds` at `amplifier` (0 is level I). |
 | `particle` | `func(dimension: string, particle: string, x: f64, y: f64, z: f64, dx: f32, dy: f32, dz: f32, speed: f32, count: u32) -> result<_, string>` | `/particle`: `count` of `particle` (`minecraft:flame`) spread over `dx dy dz`, at `speed`, seen by every player in range. |
 | `sound` | `func(dimension: string, sound: string, x: f64, y: f64, z: f64, volume: f32, pitch: f32) -> result<_, string>` | `/playsound`: `sound` (`minecraft:block.anvil.use`) at a position for every player in range. |
+
+## `worldgen`
+
+Access: capability `worldgen`.
+
+Capability `worldgen`, server mods only (experimental): world generation modifiers. Today one surface block per biome, applied to the chunks the game decorates while the rule is set.
+
+| Function | Signature | What it does |
+| --- | --- | --- |
+| `set-surface-rule` | `func(biome: string, surface: string) -> result<_, string>` | The block the game puts at the top of `biome`'s terrain, e.g. `minecraft:stone`. The last rule for a biome wins. |
 
 ## `server-events`
 
