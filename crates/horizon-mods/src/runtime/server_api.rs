@@ -66,6 +66,29 @@ pub enum MobChange {
     Target(Option<String>),
     Heal(f32),
     Health(f32),
+    /// `entities.set-baby`.
+    Baby(bool),
+    /// `entities.set-owner`: a player's UUID, none untames.
+    Owner(Option<String>),
+    /// `entities.set-fire` (0: `extinguish`).
+    Fire(u32),
+    Flag(MobFlag, bool),
+    /// `entities.remove`: gone with no death.
+    Remove,
+    AddVelocity(f64, f64, f64),
+    /// Strength, then the x and z it is pushed from.
+    Knockback(f64, f64, f64),
+}
+
+/// A mob's on-off flags `entities` sets.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MobFlag {
+    Glowing,
+    Invisible,
+    Invulnerable,
+    Silent,
+    NoGravity,
+    Persistent,
 }
 
 /// `players.style-stack`.
@@ -154,6 +177,20 @@ pub enum ServerAction {
         dimension: String,
         kind: String,
         pos: (f64, f64, f64),
+        /// `entities.spawn-with-reason`: the UUID it gets and why it came.
+        uuid: Option<String>,
+        reason: Option<String>,
+    },
+    /// `entities.set-pickup-delay` on a dropped item.
+    PickupDelay {
+        id: String,
+        ticks: i32,
+    },
+    /// `entities.xp-orb`.
+    XpOrb {
+        dimension: String,
+        pos: (f64, f64, f64),
+        amount: u32,
     },
     /// `entities.drop-item`.
     Undying {
@@ -424,6 +461,11 @@ fn check_uuid(id: &str) -> Result<(), String> {
 }
 
 impl State {
+    /// `entities.*` changing a mob by UUID, at the tick's end.
+    fn change_mob(&mut self, id: String, change: MobChange) -> Result<(), String> {
+        check_uuid(&id)?;
+        self.act(ServerAction::Mob { id, change })
+    }
     /// Queues a change for the game; Err past the per-call limit.
     pub(super) fn act(&mut self, action: ServerAction) -> Result<(), String> {
         let queued = self
@@ -1379,6 +1421,8 @@ impl entities::Host for State {
         // A mod's own type: the console's `/summon` knows vanilla's.
         if !kind.starts_with("minecraft:") && nbt.is_empty() {
             return self.act(ServerAction::SpawnMob {
+                uuid: None,
+                reason: None,
                 dimension,
                 kind,
                 pos: (x, y, z),
@@ -1652,6 +1696,364 @@ impl entities::Host for State {
     fn swing(&mut self, id: String) -> Result<(), String> {
         check_uuid(&id)?;
         self.console(format!("swing {id}"))
+    }
+    fn kind(&mut self, id: String) -> Option<String> {
+        if self.find_player(&id).is_some() {
+            return Some("minecraft:player".into());
+        }
+        Some(self.find_mob(&id)?.1.kind)
+    }
+    fn position(&mut self, id: String) -> Option<(f64, f64, f64)> {
+        Some(self.whereabouts(&id)?.1)
+    }
+    fn rotation(&mut self, id: String) -> Option<(f32, f32)> {
+        let m = self.mob_state(&id)?;
+        Some((m.yaw, m.pitch))
+    }
+    fn velocity(&mut self, id: String) -> Option<(f64, f64, f64)> {
+        Some(self.mob_state(&id)?.velocity)
+    }
+    fn health(&mut self, id: String) -> Option<f32> {
+        if let Some(p) = self.find_player(&id) {
+            return Some(p.health);
+        }
+        Some(self.find_mob(&id)?.1.health)
+    }
+    fn max_health(&mut self, id: String) -> Option<f32> {
+        Some(self.mob_state(&id)?.max_health)
+    }
+    fn dimension(&mut self, id: String) -> Option<String> {
+        Some(self.whereabouts(&id)?.0)
+    }
+    fn is_alive(&mut self, id: String) -> bool {
+        if let Some(p) = self.find_player(&id) {
+            return p.health > 0.0;
+        }
+        self.find_mob(&id).is_some_and(|(_, e)| e.health > 0.0)
+    }
+    fn is_on_ground(&mut self, id: String) -> bool {
+        self.mob_state(&id).is_some_and(|m| m.on_ground)
+    }
+    fn is_in_water(&mut self, id: String) -> bool {
+        self.mob_state(&id).is_some_and(|m| m.in_water)
+    }
+    fn is_in_lava(&mut self, id: String) -> bool {
+        self.mob_state(&id).is_some_and(|m| m.in_lava)
+    }
+    fn is_burning(&mut self, id: String) -> bool {
+        self.mob_state(&id).is_some_and(|m| m.burning)
+    }
+    fn is_baby(&mut self, id: String) -> bool {
+        self.mob_state(&id).is_some_and(|m| m.baby)
+    }
+    fn set_baby(&mut self, id: String, baby: bool) -> Result<(), String> {
+        self.change_mob(id, MobChange::Baby(baby))
+    }
+    fn is_tamed(&mut self, id: String) -> bool {
+        self.mob_state(&id).is_some_and(|m| m.tamed)
+    }
+    fn owner(&mut self, id: String) -> Option<String> {
+        self.mob_state(&id)?.owner
+    }
+    fn set_owner(&mut self, id: String, player: Option<String>) -> Result<(), String> {
+        if let Some(p) = &player {
+            check_uuid(p)?;
+        }
+        self.change_mob(id, MobChange::Owner(player))
+    }
+    fn custom_name(&mut self, id: String) -> Option<String> {
+        self.mob_state(&id)?.custom_name
+    }
+    fn effects(&mut self, id: String) -> Vec<entities::EffectState> {
+        self.mob_state(&id)
+            .map_or_else(Vec::new, |m| m.effects)
+            .into_iter()
+            .map(|(effect, duration, amplifier)| entities::EffectState {
+                effect,
+                duration,
+                amplifier,
+            })
+            .collect()
+    }
+    fn has_effect(&mut self, id: String, effect: String) -> bool {
+        self.mob_state(&id)
+            .is_some_and(|m| m.effects.iter().any(|e| e.0 == effect))
+    }
+    fn attribute(&mut self, id: String, attribute: String) -> Option<f64> {
+        let m = self.mob_state(&id)?;
+        m.attributes.iter().find(|a| a.0 == attribute).map(|a| a.1)
+    }
+    fn base_attribute(&mut self, id: String, attribute: String) -> Option<f64> {
+        let m = self.mob_state(&id)?;
+        m.attributes.iter().find(|a| a.0 == attribute).map(|a| a.2)
+    }
+    fn equipment(&mut self, id: String) -> Vec<entities::Equipped> {
+        self.mob_state(&id)
+            .map_or_else(Vec::new, |m| m.equipment)
+            .into_iter()
+            .map(|(slot, item)| entities::Equipped { slot, item })
+            .collect()
+    }
+    fn target(&mut self, id: String) -> Option<String> {
+        self.mob_state(&id)?.target
+    }
+    fn passengers(&mut self, id: String) -> Vec<String> {
+        self.mob_state(&id).map_or_else(Vec::new, |m| m.passengers)
+    }
+    fn vehicle(&mut self, id: String) -> Option<String> {
+        self.mob_state(&id)?.vehicle
+    }
+    fn ride(&mut self, id: String, vehicle: String) -> Result<(), String> {
+        check_uuid(&id)?;
+        check_uuid(&vehicle)?;
+        self.console(format!("ride {id} mount {vehicle}"))
+    }
+    fn dismount(&mut self, id: String) -> Result<(), String> {
+        check_uuid(&id)?;
+        self.console(format!("ride {id} dismount"))
+    }
+    fn remove(&mut self, id: String) -> Result<(), String> {
+        self.change_mob(id, MobChange::Remove)
+    }
+    fn set_fire(&mut self, id: String, ticks: u32) -> Result<(), String> {
+        self.change_mob(id, MobChange::Fire(ticks.min(72_000)))
+    }
+    fn extinguish(&mut self, id: String) -> Result<(), String> {
+        self.change_mob(id, MobChange::Fire(0))
+    }
+    fn set_glowing(&mut self, id: String, on: bool) -> Result<(), String> {
+        self.change_mob(id, MobChange::Flag(MobFlag::Glowing, on))
+    }
+    fn set_invisible(&mut self, id: String, on: bool) -> Result<(), String> {
+        self.change_mob(id, MobChange::Flag(MobFlag::Invisible, on))
+    }
+    fn set_invulnerable(&mut self, id: String, on: bool) -> Result<(), String> {
+        self.change_mob(id, MobChange::Flag(MobFlag::Invulnerable, on))
+    }
+    fn set_silent(&mut self, id: String, on: bool) -> Result<(), String> {
+        self.change_mob(id, MobChange::Flag(MobFlag::Silent, on))
+    }
+    fn set_no_gravity(&mut self, id: String, on: bool) -> Result<(), String> {
+        self.change_mob(id, MobChange::Flag(MobFlag::NoGravity, on))
+    }
+    fn set_persistent(&mut self, id: String, on: bool) -> Result<(), String> {
+        self.change_mob(id, MobChange::Flag(MobFlag::Persistent, on))
+    }
+    fn set_pickup_delay(&mut self, id: String, ticks: u32) -> Result<(), String> {
+        check_uuid(&id)?;
+        self.act(ServerAction::PickupDelay {
+            id,
+            ticks: ticks.min(32_767) as i32,
+        })
+    }
+    fn add_tag(&mut self, id: String, tag: String) -> Result<(), String> {
+        check_uuid(&id)?;
+        super::mobs::check_tag(&tag)?;
+        self.console(format!("tag {id} add {tag}"))
+    }
+    fn remove_tag(&mut self, id: String, tag: String) -> Result<(), String> {
+        check_uuid(&id)?;
+        super::mobs::check_tag(&tag)?;
+        self.console(format!("tag {id} remove {tag}"))
+    }
+    fn tags(&mut self, id: String) -> Vec<String> {
+        self.mob_state(&id).map_or_else(Vec::new, |m| m.tags)
+    }
+    fn has_tag(&mut self, id: String, tag: String) -> bool {
+        self.mob_state(&id).is_some_and(|m| m.tags.contains(&tag))
+    }
+    fn merge_nbt(&mut self, id: String, nbt: String) -> Result<(), String> {
+        check_uuid(&id)?;
+        super::mobs::check_snbt(&nbt)?;
+        self.console(format!("data merge entity {id} {}", nbt.trim()))
+    }
+    fn look_at(&mut self, id: String, x: f64, y: f64, z: f64) -> Result<(), String> {
+        check_uuid(&id)?;
+        if !(x.is_finite() && y.is_finite() && z.is_finite()) {
+            return Err("a finite position".into());
+        }
+        let (_, at) = self.whereabouts(&id).ok_or("no such entity")?;
+        // Entity.lookAt from the eyes, about 1.6 blocks up for most mobs.
+        let (dx, dy, dz) = (x - at.0, y - (at.1 + 1.62), z - at.2);
+        let yaw = (dz.atan2(dx).to_degrees() - 90.0) as f32;
+        let pitch = (-dy.atan2((dx * dx + dz * dz).sqrt()).to_degrees()) as f32;
+        entities::Host::set_rotation(self, id, yaw, pitch)
+    }
+    fn knockback(
+        &mut self,
+        id: String,
+        strength: f64,
+        from_x: f64,
+        from_z: f64,
+    ) -> Result<(), String> {
+        if !(strength.is_finite() && from_x.is_finite() && from_z.is_finite()) {
+            return Err("finite numbers".into());
+        }
+        self.change_mob(
+            id,
+            MobChange::Knockback(strength.clamp(0.0, 10.0), from_x, from_z),
+        )
+    }
+    fn add_velocity(&mut self, id: String, x: f64, y: f64, z: f64) -> Result<(), String> {
+        if !(x.is_finite() && y.is_finite() && z.is_finite()) {
+            return Err("a finite motion".into());
+        }
+        let c = |v: f64| v.clamp(-10.0, 10.0);
+        self.change_mob(id, MobChange::AddVelocity(c(x), c(y), c(z)))
+    }
+    fn distance(&mut self, a: String, b: String) -> Option<f64> {
+        let (da, pa) = self.whereabouts(&a)?;
+        let (db, pb) = self.whereabouts(&b)?;
+        (da == db)
+            .then(|| ((pa.0 - pb.0).powi(2) + (pa.1 - pb.1).powi(2) + (pa.2 - pb.2).powi(2)).sqrt())
+    }
+    fn in_box(
+        &mut self,
+        dimension: String,
+        x1: f64,
+        y1: f64,
+        z1: f64,
+        x2: f64,
+        y2: f64,
+        z2: f64,
+    ) -> Vec<entities::Entity> {
+        let (lo, hi) = (
+            (x1.min(x2), y1.min(y2), z1.min(z2)),
+            (x1.max(x2), y1.max(y2), z1.max(z2)),
+        );
+        self.mobs_of(&dimension)
+            .into_iter()
+            .filter(|e| {
+                (lo.0..=hi.0).contains(&e.pos.0)
+                    && (lo.1..=hi.1).contains(&e.pos.1)
+                    && (lo.2..=hi.2).contains(&e.pos.2)
+            })
+            .take(256)
+            .map(|e| super::events::guest_entity(&e))
+            .collect()
+    }
+    fn all(&mut self, dimension: String) -> Vec<entities::Entity> {
+        self.mobs_of(&dimension)
+            .into_iter()
+            .take(4096)
+            .map(|e| super::events::guest_entity(&e))
+            .collect()
+    }
+    fn items_near(
+        &mut self,
+        dimension: String,
+        x: f64,
+        y: f64,
+        z: f64,
+        radius: f64,
+    ) -> Vec<entities::Dropped> {
+        let r = radius.clamp(0.0, 64.0);
+        let d2 = |p: (f64, f64, f64)| (p.0 - x).powi(2) + (p.1 - y).powi(2) + (p.2 - z).powi(2);
+        let mut near: Vec<_> = self
+            .dropped_near(&dimension)
+            .into_iter()
+            .filter(|d| d2(d.pos) <= r * r)
+            .collect();
+        near.sort_by(|a, b| d2(a.pos).total_cmp(&d2(b.pos)));
+        near.into_iter()
+            .take(256)
+            .map(|d| entities::Dropped {
+                id: d.id,
+                x: d.pos.0,
+                y: d.pos.1,
+                z: d.pos.2,
+                stack: to_guest(&d.stack, &self.id),
+            })
+            .collect()
+    }
+    fn xp_orb(
+        &mut self,
+        dimension: String,
+        x: f64,
+        y: f64,
+        z: f64,
+        amount: u32,
+    ) -> Result<(), String> {
+        if !(x.is_finite() && y.is_finite() && z.is_finite()) {
+            return Err("a finite position".into());
+        }
+        if amount == 0 {
+            return Ok(());
+        }
+        self.act(ServerAction::XpOrb {
+            dimension,
+            pos: (x, y, z),
+            amount: amount.min(32_767),
+        })
+    }
+    fn spawn_with_reason(
+        &mut self,
+        dimension: String,
+        kind: String,
+        x: f64,
+        y: f64,
+        z: f64,
+        reason: String,
+    ) -> Result<String, String> {
+        super::check_game_id("entity type", &kind)?;
+        super::mobs::check_reason(&reason)?;
+        if !(x.is_finite() && y.is_finite() && z.is_finite()) {
+            return Err("a finite position".into());
+        }
+        let uuid = {
+            use std::hash::{BuildHasher, Hasher};
+            let mut words = [0u32; 4];
+            for w in &mut words {
+                *w = std::collections::hash_map::RandomState::new()
+                    .build_hasher()
+                    .finish() as u32;
+            }
+            // A version 4 UUID, as `UUID.randomUUID`.
+            words[1] = (words[1] & 0xFFFF_0FFF) | 0x0000_4000;
+            words[2] = (words[2] & 0x3FFF_FFFF) | 0x8000_0000;
+            format!(
+                "{:08x}-{:04x}-{:04x}-{:04x}-{:04x}{:08x}",
+                words[0],
+                words[1] >> 16,
+                words[1] & 0xFFFF,
+                words[2] >> 16,
+                words[2] & 0xFFFF,
+                words[3]
+            )
+        };
+        self.act(ServerAction::SpawnMob {
+            dimension,
+            kind,
+            pos: (x, y, z),
+            uuid: Some(uuid.clone()),
+            reason: Some(reason),
+        })?;
+        Ok(uuid)
+    }
+    fn spawn_group(
+        &mut self,
+        dimension: String,
+        kind: String,
+        positions: Vec<(f64, f64, f64)>,
+        reason: String,
+    ) -> Result<Vec<String>, String> {
+        if positions.len() > 64 {
+            return Err("at most 64 at once".into());
+        }
+        positions
+            .into_iter()
+            .map(|(x, y, z)| {
+                entities::Host::spawn_with_reason(
+                    self,
+                    dimension.clone(),
+                    kind.clone(),
+                    x,
+                    y,
+                    z,
+                    reason.clone(),
+                )
+            })
+            .collect()
     }
 }
 

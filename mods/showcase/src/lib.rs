@@ -10,6 +10,7 @@ mod before;
 mod client;
 mod tour19;
 mod tour20;
+mod tour21;
 
 use horizon_mod_sdk::server::{
     Args, Argument, BlockChange, BlockPos, Entity, ItemStack, Player, Registration, ServerMod,
@@ -495,6 +496,10 @@ impl Showcase {
             // Level 20 (`loot`, `recipes-server`): `/showcase api loot`, then `/showcase api lootcheck`.
             "api" if arg == "loot" => tour20::set(player).map(Some),
             "api" if arg == "lootcheck" => tour20::check(player).map(Some),
+            // Level 21 (a mob's state): `/showcase api mobs`, `mobscheck`, then `mobsafter`.
+            "api" if arg == "mobs" => tour21::set(player).map(Some),
+            "api" if arg == "mobscheck" => tour21::check(player).map(Some),
+            "api" if arg == "mobsafter" => tour21::after(player).map(Some),
             "api" => api_tour(player, arg, (fx + 8, fy + 5, fz)).map(Some),
             // `before-events`: `on` turns each hook's rule on, `check` says how often each was asked.
             "before" => match arg {

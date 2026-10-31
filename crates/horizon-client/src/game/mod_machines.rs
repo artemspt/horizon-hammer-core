@@ -45,6 +45,15 @@ pub(super) fn uuid_string(u: u128) -> String {
         &h[20..]
     )
 }
+/// `xxxxxxxx-xxxx-...` as the game's four ints.
+pub(super) fn parse_uuid(s: &str) -> Option<[i32; 4]> {
+    let hex: String = s.chars().filter(|c| *c != '-').collect();
+    if hex.len() != 32 {
+        return None;
+    }
+    let u = u128::from_str_radix(&hex, 16).ok()?;
+    Some(horizon_client::lan::playerdata::uuid_ints(u))
+}
 pub(super) fn uuid_words(w: [i32; 4]) -> u128 {
     w.iter()
         .fold(0u128, |u, &x| (u << 32) | u128::from(x as u32))
@@ -160,6 +169,11 @@ pub(super) struct Lent {
     pub(super) root: std::path::PathBuf,
     /// `recipes-server`'s list, made once.
     pub(super) recipes: Option<Arc<Vec<horizon_mods::RecipeFacts>>>,
+    /// `entities`: the state of the level in place's mobs, by UUID, when a
+    /// mod reads it ([`horizon_mods::Mods::reads_mobs`]).
+    pub(super) mob_states: HashMap<String, horizon_mods::MobState>,
+    /// The level in place's items on the ground, when a mod reads them.
+    pub(super) dropped: (&'static str, Vec<horizon_mods::DroppedItem>),
 }
 /// `players.style-stack`.
 pub(super) fn style_stack(
@@ -965,7 +979,32 @@ impl Game<'_> {
             .entity_tags
             .get_or_insert_with(|| tags("entity_type"))
             .clone();
+        let mob_states = if self.mods_now(|m| m.reads_mobs()) {
+            self.mod_mob_states()
+        } else {
+            HashMap::new()
+        };
+        let dropped = if self.mods_now(|m| m.reads_items()) {
+            let ids: Vec<u32> = self.dropped.iter().map(|e| e.id).collect();
+            let uuids: Vec<String> = ids
+                .into_iter()
+                .map(|id| uuid_string(uuid_words(self.uuid_for(id))))
+                .collect();
+            self.dropped
+                .iter()
+                .zip(uuids)
+                .map(|(e, id)| horizon_mods::DroppedItem {
+                    id,
+                    pos: (e.position.x, e.position.y, e.position.z),
+                    stack: host_stack(&e.stack),
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
         Lent {
+            mob_states,
+            dropped: (dim, dropped),
             res: Some(self.res.clone()),
             root: self.options.resources.clone(),
             recipes,
@@ -1088,6 +1127,7 @@ impl Game<'_> {
                     data,
                 } => self.mod_net_send(player.as_deref(), &channel, data),
                 ServerAction::DropItem { ref dimension, .. }
+                | ServerAction::XpOrb { ref dimension, .. }
                 | ServerAction::SpawnMob { ref dimension, .. }
                 | ServerAction::Explode { ref dimension, .. }
                     if dimension != self.dim.id() =>
@@ -1099,9 +1139,33 @@ impl Game<'_> {
                         self.pop_resource([pos.0, pos.1, pos.2], s);
                     }
                 }
-                ServerAction::SpawnMob { kind, pos, .. } => {
-                    if self.spawn_mob(&kind, [pos.0, pos.1, pos.2], true).is_none() {
-                        log::warn!("Horizon: a mod spawned an unknown mob {kind}");
+                ServerAction::SpawnMob {
+                    kind,
+                    pos,
+                    uuid,
+                    reason,
+                    ..
+                } => {
+                    if self
+                        .mod_spawn(&kind, pos, uuid.as_deref(), reason.as_deref())
+                        .is_none()
+                    {
+                        log::warn!("Horizon: a mod's {kind} didn't spawn");
+                    }
+                }
+                ServerAction::XpOrb { pos, amount, .. } => {
+                    self.spawn_orbs([pos.0, pos.1, pos.2], amount);
+                }
+                ServerAction::PickupDelay { id, ticks } => {
+                    let found = self
+                        .persist
+                        .uuids
+                        .iter()
+                        .find_map(|(e, w)| (uuid_string(uuid_words(*w)) == id).then_some(*e));
+                    if let Some(item) =
+                        found.and_then(|e| self.dropped.iter_mut().find(|d| d.id == e))
+                    {
+                        item.pickup_delay = ticks.max(0) as u32;
                     }
                 }
                 ServerAction::Explode { pos, power, .. } => {
@@ -1188,8 +1252,187 @@ impl Game<'_> {
                 m.velocity = horizon_core::geometry::Vec3::new(*x, *y, *z);
                 m.needs_sync = true;
             }
+            MobChange::Baby(baby) => {
+                m.extra.age = if *baby { -24000 } else { 0 };
+                m.needs_sync = true;
+            }
+            MobChange::Owner(owner) => {
+                m.extra.owner = owner.as_deref().and_then(parse_uuid);
+                m.extra.tame = m.extra.owner.is_some();
+                m.needs_sync = true;
+            }
+            MobChange::Fire(ticks) => m.fire_ticks = *ticks as i32,
+            MobChange::Flag(flag, on) => {
+                use horizon_mods::MobFlag as F;
+                let at = match flag {
+                    F::Glowing => &mut m.glowing,
+                    F::Invisible => &mut m.invisible,
+                    F::Invulnerable => &mut m.invulnerable_flag,
+                    F::Silent => &mut m.silent,
+                    F::NoGravity => &mut m.no_gravity,
+                    F::Persistent => &mut m.persistent,
+                };
+                *at = *on;
+                m.needs_sync = true;
+            }
+            MobChange::Remove => m.removed = true,
+            MobChange::AddVelocity(x, y, z) => {
+                let v = m.velocity;
+                m.velocity = horizon_core::geometry::Vec3::new(v.x + x, v.y + y, v.z + z);
+                m.needs_sync = true;
+            }
+            MobChange::Knockback(strength, from_x, from_z) => {
+                // LivingEntity.knockback, pushed away from the source.
+                let power = strength * (1.0 - m.attrs.knockback_resistance);
+                let (xd, zd) = (from_x - m.position.x, from_z - m.position.z);
+                let l = (xd * xd + zd * zd).sqrt();
+                if power > 0.0 && l > 1.0e-5 {
+                    let v = m.velocity;
+                    m.velocity = horizon_core::geometry::Vec3::new(
+                        v.x / 2.0 - xd / l * power,
+                        if m.on_ground {
+                            (v.y / 2.0 + power).min(0.4)
+                        } else {
+                            v.y
+                        },
+                        v.z / 2.0 - zd / l * power,
+                    );
+                    m.needs_sync = true;
+                }
+            }
         }
         true
+    }
+
+    /// `entities`' reads of the level in place's mobs, by UUID.
+    fn mod_mob_states(&mut self) -> HashMap<String, horizon_mods::MobState> {
+        use horizon_client::mobs::Who;
+        let ids: Vec<u32> = self.mobs.iter().map(|m| m.id).collect();
+        let uuid: HashMap<u32, String> = ids
+            .into_iter()
+            .map(|id| (id, uuid_string(uuid_words(self.uuid_for(id)))))
+            .collect();
+        let player_of = |m: &horizon_client::mobs::Mob| -> Option<String> {
+            let bound = self.lan.as_ref().and_then(|h| {
+                let conn = h.mob_players.get(&m.id)?;
+                h.hub
+                    .guests
+                    .iter()
+                    .find(|g| g.conn == *conn)
+                    .map(|g| uuid_string(g.uuid))
+            });
+            bound.or_else(|| self.player.is_some().then(|| self.player_uuid_string()))
+        };
+        let tags = |id: u32| -> Vec<String> {
+            match self.persist.raw.get(&id).and_then(|t| t.get("Tags")) {
+                Some(Tag::List(list)) => list
+                    .iter()
+                    .filter_map(|t| match t {
+                        Tag::String(s) => Some(s.to_string_lossy()),
+                        _ => None,
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            }
+        };
+        let full = |id: &str| {
+            if id.contains(':') {
+                id.to_owned()
+            } else {
+                format!("minecraft:{id}")
+            }
+        };
+        self.mobs
+            .iter()
+            .filter(|m| !m.removed)
+            .map(|m| {
+                let (worn, _) = m.worn_armor();
+                let k = &m.kind;
+                let a = &m.attrs;
+                let gear = [
+                    ("mainhand", &m.extra.main_hand),
+                    ("offhand", &m.extra.off_hand),
+                    ("head", &m.extra.head),
+                    ("chest", &m.extra.chest),
+                    ("legs", &m.extra.legs),
+                    ("feet", &m.extra.feet),
+                ];
+                let state = horizon_mods::MobState {
+                    id: uuid[&m.id].clone(),
+                    yaw: m.yaw,
+                    pitch: m.head_pitch,
+                    velocity: (m.velocity.x, m.velocity.y, m.velocity.z),
+                    max_health: a.max_health,
+                    on_ground: m.on_ground,
+                    in_water: m.fluids.in_water,
+                    in_lava: m.fluids.in_lava,
+                    burning: m.fire_ticks > 0,
+                    baby: m.extra.age < 0,
+                    tamed: m.extra.tame,
+                    owner: m.extra.owner.map(|w| uuid_string(uuid_words(w))),
+                    custom_name: m.custom_name.clone(),
+                    effects: m
+                        .extra
+                        .effects
+                        .iter()
+                        .map(|(e, ticks, amp)| (full(e), *ticks, (*amp).clamp(0, 255) as u8))
+                        .collect(),
+                    attributes: vec![
+                        ("minecraft:movement_speed".into(), a.speed, k.speed),
+                        (
+                            "minecraft:attack_damage".into(),
+                            f64::from(a.attack_damage),
+                            f64::from(k.attack_damage),
+                        ),
+                        (
+                            "minecraft:max_health".into(),
+                            f64::from(a.max_health),
+                            f64::from(k.max_health),
+                        ),
+                        (
+                            "minecraft:follow_range".into(),
+                            a.follow_range,
+                            k.follow_range,
+                        ),
+                        (
+                            "minecraft:knockback_resistance".into(),
+                            a.knockback_resistance,
+                            k.knockback_resistance,
+                        ),
+                        (
+                            "minecraft:jump_strength".into(),
+                            a.jump_strength,
+                            k.jump_strength,
+                        ),
+                        (
+                            "minecraft:armor".into(),
+                            f64::from(k.armor + worn),
+                            f64::from(k.armor),
+                        ),
+                    ],
+                    equipment: gear
+                        .iter()
+                        .filter_map(|(slot, item)| {
+                            Some(((*slot).to_owned(), item.as_deref()?.to_owned()))
+                        })
+                        .collect(),
+                    target: match m.ai.target {
+                        Some(Who::Mob(id)) => uuid.get(&id).cloned(),
+                        Some(Who::Player) => player_of(m),
+                        None => None,
+                    },
+                    passengers: self
+                        .mobs
+                        .iter()
+                        .filter(|o| o.extra.mount == Some(m.id))
+                        .filter_map(|o| uuid.get(&o.id).cloned())
+                        .collect(),
+                    vehicle: m.extra.mount.and_then(|v| uuid.get(&v).cloned()),
+                    tags: tags(m.id),
+                };
+                (state.id.clone(), state)
+            })
+            .collect()
     }
 
     /// Each level not in place takes a turn when its mods' machines need it:
@@ -1245,8 +1488,17 @@ impl Game<'_> {
                             self.pop_resource([pos.0, pos.1, pos.2], s);
                         }
                     }
-                    ServerAction::SpawnMob { kind, pos, .. } => {
-                        self.spawn_mob(&kind, [pos.0, pos.1, pos.2], true);
+                    ServerAction::SpawnMob {
+                        kind,
+                        pos,
+                        uuid,
+                        reason,
+                        ..
+                    } => {
+                        self.mod_spawn(&kind, pos, uuid.as_deref(), reason.as_deref());
+                    }
+                    ServerAction::XpOrb { pos, amount, .. } => {
+                        self.spawn_orbs([pos.0, pos.1, pos.2], amount);
                     }
                     ServerAction::Explode { pos, power, .. } => {
                         if let Err(e) = self.explode([pos.0, pos.1, pos.2], power) {

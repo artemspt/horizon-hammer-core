@@ -966,6 +966,15 @@ Everything below sits in `data/<id>/horizon/` and needs a restart. `mods/showcas
 - **Entities flown by code**: `"ticks": true` calls `entity_tick` each tick; with `"projectile": {"gravity": 0, "drag": 1,
   "through_blocks": true}` and `entities.set-velocity` that is a boomerang.
 
+## A mob's state (API level 21)
+
+`entities` reads and changes the rest of a mob: its type, place, facing, motion, health, flags (on the ground, in water
+or lava, burning, a baby, tamed), owner, name, effects, attributes, gear, target, riders and tags, and sets them
+(`set-baby`, `set-owner`, `set-fire`, `set-glowing`, ...). Where a mob is and how it is answer for every level; the rest
+for the level in place, built only while a running mod imports one of those reads, so mods that don't pay nothing.
+Changes land at the tick's end, in the mob's level. `spawn-with-reason` returns the new mob's UUID at once and tells
+`before-events.entity-spawn` why it came. `/showcase api mobs`, `mobscheck`, then `mobsafter` checks every function.
+
 ## Loot and recipes (API level 20)
 
 Capability `world` rolls the game's loot tables (`loot`) and reads the server's recipes (`recipes-server`). A roll with

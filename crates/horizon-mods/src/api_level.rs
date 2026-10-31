@@ -7,13 +7,13 @@
 //! version's level so the launcher can tell before it installs.
 
 /// The newest level this Horizon serves.
-pub const LEVEL: u32 = 20;
+pub const LEVEL: u32 = 21;
 
 /// Every function the game offers mods, as `interface.function`, with its
 /// level. Level 0 is the contract of Horizon 0.2.67 to 0.2.69. A new
 /// function takes the next level and raises [`LEVEL`] (the `api_reference`
 /// test fails until it is listed here).
-pub const FUNCTIONS: [(&str, u32); 263] = [
+pub const FUNCTIONS: [(&str, u32); 316] = [
     ("log.write", 0),
     ("game.get-player", 0),
     ("game.get-clock", 0),
@@ -277,6 +277,59 @@ pub const FUNCTIONS: [(&str, u32); 263] = [
     ("recipes-server.of-own-type", 20),
     ("players.unlock-recipe", 20),
     ("players.lock-recipe", 20),
+    ("entities.kind", 21),
+    ("entities.position", 21),
+    ("entities.rotation", 21),
+    ("entities.velocity", 21),
+    ("entities.health", 21),
+    ("entities.max-health", 21),
+    ("entities.dimension", 21),
+    ("entities.is-alive", 21),
+    ("entities.is-on-ground", 21),
+    ("entities.is-in-water", 21),
+    ("entities.is-in-lava", 21),
+    ("entities.is-burning", 21),
+    ("entities.is-baby", 21),
+    ("entities.set-baby", 21),
+    ("entities.is-tamed", 21),
+    ("entities.owner", 21),
+    ("entities.set-owner", 21),
+    ("entities.custom-name", 21),
+    ("entities.effects", 21),
+    ("entities.has-effect", 21),
+    ("entities.attribute", 21),
+    ("entities.base-attribute", 21),
+    ("entities.equipment", 21),
+    ("entities.target", 21),
+    ("entities.passengers", 21),
+    ("entities.vehicle", 21),
+    ("entities.ride", 21),
+    ("entities.dismount", 21),
+    ("entities.remove", 21),
+    ("entities.set-fire", 21),
+    ("entities.extinguish", 21),
+    ("entities.set-glowing", 21),
+    ("entities.set-invisible", 21),
+    ("entities.set-invulnerable", 21),
+    ("entities.set-silent", 21),
+    ("entities.set-no-gravity", 21),
+    ("entities.set-persistent", 21),
+    ("entities.set-pickup-delay", 21),
+    ("entities.add-tag", 21),
+    ("entities.remove-tag", 21),
+    ("entities.tags", 21),
+    ("entities.has-tag", 21),
+    ("entities.merge-nbt", 21),
+    ("entities.look-at", 21),
+    ("entities.knockback", 21),
+    ("entities.add-velocity", 21),
+    ("entities.distance", 21),
+    ("entities.in-box", 21),
+    ("entities.all", 21),
+    ("entities.items-near", 21),
+    ("entities.xp-orb", 21),
+    ("entities.spawn-with-reason", 21),
+    ("entities.spawn-group", 21),
 ];
 
 /// What the game's program carries so the launcher can read its level

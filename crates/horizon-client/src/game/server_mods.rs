@@ -264,6 +264,16 @@ mod run {
         fn recipes_of_type(&self, kind: &str) -> Vec<(String, String)> {
             self.more.recipes_of_type(kind)
         }
+        fn mob_state(&self, id: &str) -> Option<horizon_mods::MobState> {
+            self.more.mob_states.get(id).cloned()
+        }
+        fn dropped_items(&self, dimension: &str) -> Vec<horizon_mods::DroppedItem> {
+            if self.more.dropped.0 == dimension {
+                self.more.dropped.1.clone()
+            } else {
+                Vec::new()
+            }
+        }
         fn dimensions(&self) -> Vec<horizon_mods::DimensionFacts> {
             let vanilla = [
                 "minecraft:overworld",

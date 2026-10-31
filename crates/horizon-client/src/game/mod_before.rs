@@ -70,6 +70,8 @@ mod with_mods {
         /// The mob dying now and the player who killed it, from `mob_died`
         /// for its loot (`before-mob-drop`).
         static KILLER: RefCell<Option<(u32, Option<String>)>> = const { RefCell::new(None) };
+        /// `entities.spawn-with-reason`'s reason, for the spawn under way.
+        static SPAWN_REASON: RefCell<Option<String>> = const { RefCell::new(None) };
     }
 
     /// The mods while a phase has them: what a mob's damage is asked of.
@@ -233,6 +235,29 @@ mod with_mods {
             out
         }
 
+        /// A mod's spawn: the UUID it was promised and the reason it gave.
+        pub(in crate::game) fn mod_spawn(
+            &mut self,
+            kind: &str,
+            pos: (f64, f64, f64),
+            uuid: Option<&str>,
+            reason: Option<&str>,
+        ) -> Option<u32> {
+            let words = uuid.and_then(super::super::mod_machines::parse_uuid);
+            // `spawn_mob_for` gives the next entity id.
+            let next = self.next_entity + 1;
+            if let Some(w) = words {
+                self.persist.uuids.insert(next, w);
+            }
+            SPAWN_REASON.with(|r| *r.borrow_mut() = reason.map(str::to_owned));
+            let id = self.spawn_mob(kind, [pos.0, pos.1, pos.2], true);
+            SPAWN_REASON.with(|r| *r.borrow_mut() = None);
+            if words.is_some() && id != Some(next) {
+                self.persist.uuids.remove(&next);
+            }
+            id
+        }
+
         /// `mob_died`: who killed `id`, for its loot.
         pub(in crate::game) fn mod_note_killer(&mut self, id: u32, killer: Option<String>) {
             KILLER.with(|k| *k.borrow_mut() = Some((id, killer)));
@@ -257,6 +282,8 @@ mod with_mods {
             }
             let entity = self.mod_mob_record(m);
             let dim = self.dim.id();
+            let said = SPAWN_REASON.with(|r| r.borrow().clone());
+            let reason = said.as_deref().unwrap_or(reason);
             let refused = self.mods_now(|mods| mods.before_entity_spawn(dim, &entity, reason));
             if refused {
                 self.persist.uuids.remove(&m.id);

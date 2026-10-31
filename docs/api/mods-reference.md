@@ -1008,6 +1008,37 @@ Capability `entities` (server mods): the mobs of the loaded level, and the serve
 | `z` | `f64` |  |
 | `health` | `f32` |  |
 
+### record `effect-state`
+
+API level 21: a mob's state. Reads answer for mobs of every level (`kind`, `position`, `health`, `dimension`, `is-alive`, `all`, `in-box`, `distance`) or of the level in place (the rest, `none` or false elsewhere), and for players by their id where it makes sense. Changes land at the tick's end, as `set-name` does, in the mob's level. An effect on a mob.
+
+| Field | Type | |
+| --- | --- | --- |
+| `effect` | `string` | `minecraft:speed`, or a mod's own. |
+| `duration` | `s32` | Ticks left. |
+| `amplifier` | `u8` |  |
+
+### record `equipped`
+
+What a mob wears or holds.
+
+| Field | Type | |
+| --- | --- | --- |
+| `slot` | `string` | `mainhand`, `offhand`, `head`, `chest`, `legs` or `feet`. |
+| `item` | `string` |  |
+
+### record `dropped`
+
+An item lying on the ground.
+
+| Field | Type | |
+| --- | --- | --- |
+| `id` | `string` | Its UUID, for `set-pickup-delay`. |
+| `x` | `f64` |  |
+| `y` | `f64` |  |
+| `z` | `f64` |  |
+| `stack` | `item-stack` |  |
+
 | Function | Signature | What it does |
 | --- | --- | --- |
 | `near` | `func(dimension: string, x: f64, y: f64, z: f64, radius: f64) -> list<entity>` | The living mobs within `radius` (up to 128) blocks of a position, as of the tick's start, nearest first, at most 256. Mobs of the level the server ticks last (single player: the owner's) only. |
@@ -1039,6 +1070,59 @@ Capability `entities` (server mods): the mobs of the loaded level, and the serve
 | `heal` | `func(id: string, amount: f32) -> result<_, string>` | Heals a mob, up to its maximum health. |
 | `set-health` | `func(id: string, health: f32) -> result<_, string>` | Sets a mob's health, from above 0 up to its maximum. |
 | `swing` | `func(id: string) -> result<_, string>` | `/swing`: an entity or player swings its main hand. |
+| `kind` | `func(id: string) -> option<string>` | An entity's type, `minecraft:player` for a player. |
+| `position` | `func(id: string) -> option<tuple<f64, f64, f64>>` | Its feet's position. |
+| `rotation` | `func(id: string) -> option<tuple<f32, f32>>` | Which way it faces: yaw and pitch, in degrees. |
+| `velocity` | `func(id: string) -> option<tuple<f64, f64, f64>>` | Its motion, in blocks a tick. |
+| `health` | `func(id: string) -> option<f32>` | Its health. |
+| `max-health` | `func(id: string) -> option<f32>` | Its maximum health, effects and attributes counted. |
+| `dimension` | `func(id: string) -> option<string>` | The dimension it is in. |
+| `is-alive` | `func(id: string) -> bool` | Whether it exists and lives. |
+| `is-on-ground` | `func(id: string) -> bool` | Whether it stands on something. |
+| `is-in-water` | `func(id: string) -> bool` | Whether it touches water. |
+| `is-in-lava` | `func(id: string) -> bool` | Whether it touches lava. |
+| `is-burning` | `func(id: string) -> bool` | Whether it is on fire. |
+| `is-baby` | `func(id: string) -> bool` | Whether it is a baby. |
+| `set-baby` | `func(id: string, baby: bool) -> result<_, string>` | Makes a mob that grows up a baby (its age to -24000) or an adult. |
+| `is-tamed` | `func(id: string) -> bool` | Whether a player tamed it. |
+| `owner` | `func(id: string) -> option<string>` | The UUID of the player who tamed it. |
+| `set-owner` | `func(id: string, player: option<string>) -> result<_, string>` | Tames a mob for `player` (a UUID), or untames it with `none`. |
+| `custom-name` | `func(id: string) -> option<string>` | The name over its head. |
+| `effects` | `func(id: string) -> list<effect-state>` | Its effects. |
+| `has-effect` | `func(id: string, effect: string) -> bool` | Whether it has `effect`. |
+| `attribute` | `func(id: string, attribute: string) -> option<f64>` | An attribute's value now (`minecraft:movement_speed`, `minecraft:attack_damage`, `minecraft:max_health`, `minecraft:follow_range`, `minecraft:knockback_resistance`, `minecraft:jump_strength`, `minecraft:armor`); `none` for others. |
+| `base-attribute` | `func(id: string, attribute: string) -> option<f64>` | The same attribute's base, as its type comes. |
+| `equipment` | `func(id: string) -> list<equipped>` | What it wears and holds. |
+| `target` | `func(id: string) -> option<string>` | The id of what it attacks: a mob's UUID, or a player's. |
+| `passengers` | `func(id: string) -> list<string>` | The mobs riding it. |
+| `vehicle` | `func(id: string) -> option<string>` | The mob it rides. |
+| `ride` | `func(id: string, vehicle: string) -> result<_, string>` | `/ride ... mount`: puts it on `vehicle`. |
+| `dismount` | `func(id: string) -> result<_, string>` | `/ride ... dismount`. |
+| `remove` | `func(id: string) -> result<_, string>` | Takes a mob out of the world: no death, no drops, no experience. |
+| `set-fire` | `func(id: string, ticks: u32) -> result<_, string>` | Sets it alight for `ticks` (at most 72000). |
+| `extinguish` | `func(id: string) -> result<_, string>` | Puts it out. |
+| `set-glowing` | `func(id: string, on: bool) -> result<_, string>` | An outline seen through walls. |
+| `set-invisible` | `func(id: string, on: bool) -> result<_, string>` | Not drawn (its gear still is, as with vanilla's flag). |
+| `set-invulnerable` | `func(id: string, on: bool) -> result<_, string>` | Nothing but `/kill` and the void hurts it. |
+| `set-silent` | `func(id: string, on: bool) -> result<_, string>` | Makes no sound. |
+| `set-no-gravity` | `func(id: string, on: bool) -> result<_, string>` | Floats where it is. |
+| `set-persistent` | `func(id: string, on: bool) -> result<_, string>` | Never despawns. |
+| `set-pickup-delay` | `func(id: string, ticks: u32) -> result<_, string>` | How many ticks a dropped item (`dropped.id`) waits before it can be picked up: 32767 never. |
+| `add-tag` | `func(id: string, tag: string) -> result<_, string>` | `/tag ... add`: a tag of `[A-Za-z0-9_.+-]`, up to 64 characters. |
+| `remove-tag` | `func(id: string, tag: string) -> result<_, string>` | `/tag ... remove`. |
+| `tags` | `func(id: string) -> list<string>` | Its tags. |
+| `has-tag` | `func(id: string, tag: string) -> bool` | Whether it has `tag`. |
+| `merge-nbt` | `func(id: string, nbt: string) -> result<_, string>` | `/data merge entity`: SNBT of the keys to set, `{Glowing:1b}`. |
+| `look-at` | `func(id: string, x: f64, y: f64, z: f64) -> result<_, string>` | Turns it to face x y z. |
+| `knockback` | `func(id: string, strength: f64, from-x: f64, from-z: f64) -> result<_, string>` | `LivingEntity.knockback`: pushed away from x z by `strength` (a hit is 0.4), less its knockback resistance. |
+| `add-velocity` | `func(id: string, x: f64, y: f64, z: f64) -> result<_, string>` | Adds to its motion. |
+| `distance` | `func(a: string, b: string) -> option<f64>` | Between two entities in one dimension, feet to feet. |
+| `in-box` | `func(dimension: string, x1: f64, y1: f64, z1: f64, x2: f64, y2: f64, z2: f64) -> list<entity>` | The mobs whose feet are in the box (corners in any order), at most 256. |
+| `all` | `func(dimension: string) -> list<entity>` | Every mob of a level, at most 4096. |
+| `items-near` | `func(dimension: string, x: f64, y: f64, z: f64, radius: f64) -> list<dropped>` | The items on the ground within `radius` (up to 64) of a position, in the level in place, nearest first, at most 256. |
+| `xp-orb` | `func(dimension: string, x: f64, y: f64, z: f64, amount: u32) -> result<_, string>` | Experience orbs worth `amount` (at most 32767) at a position. |
+| `spawn-with-reason` | `func(dimension: string, kind: string, x: f64, y: f64, z: f64, reason: string) -> result<string, string>` | Spawns a mob of `kind`, finalized as a spawn egg's, and says `reason` (`[a-z0-9_]`, up to 32) to `before-events.entity-spawn`: the mob's UUID, though it appears at the tick's end and a mod may refuse it. |
+| `spawn-group` | `func(dimension: string, kind: string, positions: list<tuple<f64, f64, f64>>, reason: string) -> result<list<string>, string>` | The same at each position (at most 64): their UUIDs. |
 
 ## `worldgen`
 

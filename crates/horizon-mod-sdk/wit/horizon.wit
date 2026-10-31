@@ -1226,6 +1226,151 @@ interface entities {
     set-health: func(id: string, health: f32) -> result<_, string>;
     /// `/swing`: an entity or player swings its main hand.
     swing: func(id: string) -> result<_, string>;
+
+    // API level 21: a mob's state. Reads answer for mobs of every level
+    // (`kind`, `position`, `health`, `dimension`, `is-alive`, `all`,
+    // `in-box`, `distance`) or of the level in place (the rest, `none` or
+    // false elsewhere), and for players by their id where it makes sense.
+    // Changes land at the tick's end, as `set-name` does, in the mob's level.
+
+    /// An effect on a mob.
+    record effect-state {
+        /// `minecraft:speed`, or a mod's own.
+        effect: string,
+        /// Ticks left.
+        duration: s32,
+        amplifier: u8,
+    }
+    /// What a mob wears or holds.
+    record equipped {
+        /// `mainhand`, `offhand`, `head`, `chest`, `legs` or `feet`.
+        slot: string,
+        item: string,
+    }
+    /// An item lying on the ground.
+    record dropped {
+        /// Its UUID, for `set-pickup-delay`.
+        id: string,
+        x: f64,
+        y: f64,
+        z: f64,
+        stack: item-stack,
+    }
+
+    /// An entity's type, `minecraft:player` for a player.
+    kind: func(id: string) -> option<string>;
+    /// Its feet's position.
+    position: func(id: string) -> option<tuple<f64, f64, f64>>;
+    /// Which way it faces: yaw and pitch, in degrees.
+    rotation: func(id: string) -> option<tuple<f32, f32>>;
+    /// Its motion, in blocks a tick.
+    velocity: func(id: string) -> option<tuple<f64, f64, f64>>;
+    /// Its health.
+    health: func(id: string) -> option<f32>;
+    /// Its maximum health, effects and attributes counted.
+    max-health: func(id: string) -> option<f32>;
+    /// The dimension it is in.
+    dimension: func(id: string) -> option<string>;
+    /// Whether it exists and lives.
+    is-alive: func(id: string) -> bool;
+    /// Whether it stands on something.
+    is-on-ground: func(id: string) -> bool;
+    /// Whether it touches water.
+    is-in-water: func(id: string) -> bool;
+    /// Whether it touches lava.
+    is-in-lava: func(id: string) -> bool;
+    /// Whether it is on fire.
+    is-burning: func(id: string) -> bool;
+    /// Whether it is a baby.
+    is-baby: func(id: string) -> bool;
+    /// Makes a mob that grows up a baby (its age to -24000) or an adult.
+    set-baby: func(id: string, baby: bool) -> result<_, string>;
+    /// Whether a player tamed it.
+    is-tamed: func(id: string) -> bool;
+    /// The UUID of the player who tamed it.
+    owner: func(id: string) -> option<string>;
+    /// Tames a mob for `player` (a UUID), or untames it with `none`.
+    set-owner: func(id: string, player: option<string>) -> result<_, string>;
+    /// The name over its head.
+    custom-name: func(id: string) -> option<string>;
+    /// Its effects.
+    effects: func(id: string) -> list<effect-state>;
+    /// Whether it has `effect`.
+    has-effect: func(id: string, effect: string) -> bool;
+    /// An attribute's value now (`minecraft:movement_speed`,
+    /// `minecraft:attack_damage`, `minecraft:max_health`,
+    /// `minecraft:follow_range`, `minecraft:knockback_resistance`,
+    /// `minecraft:jump_strength`, `minecraft:armor`); `none` for others.
+    attribute: func(id: string, attribute: string) -> option<f64>;
+    /// The same attribute's base, as its type comes.
+    base-attribute: func(id: string, attribute: string) -> option<f64>;
+    /// What it wears and holds.
+    equipment: func(id: string) -> list<equipped>;
+    /// The id of what it attacks: a mob's UUID, or a player's.
+    target: func(id: string) -> option<string>;
+    /// The mobs riding it.
+    passengers: func(id: string) -> list<string>;
+    /// The mob it rides.
+    vehicle: func(id: string) -> option<string>;
+    /// `/ride ... mount`: puts it on `vehicle`.
+    ride: func(id: string, vehicle: string) -> result<_, string>;
+    /// `/ride ... dismount`.
+    dismount: func(id: string) -> result<_, string>;
+    /// Takes a mob out of the world: no death, no drops, no experience.
+    remove: func(id: string) -> result<_, string>;
+    /// Sets it alight for `ticks` (at most 72000).
+    set-fire: func(id: string, ticks: u32) -> result<_, string>;
+    /// Puts it out.
+    extinguish: func(id: string) -> result<_, string>;
+    /// An outline seen through walls.
+    set-glowing: func(id: string, on: bool) -> result<_, string>;
+    /// Not drawn (its gear still is, as with vanilla's flag).
+    set-invisible: func(id: string, on: bool) -> result<_, string>;
+    /// Nothing but `/kill` and the void hurts it.
+    set-invulnerable: func(id: string, on: bool) -> result<_, string>;
+    /// Makes no sound.
+    set-silent: func(id: string, on: bool) -> result<_, string>;
+    /// Floats where it is.
+    set-no-gravity: func(id: string, on: bool) -> result<_, string>;
+    /// Never despawns.
+    set-persistent: func(id: string, on: bool) -> result<_, string>;
+    /// How many ticks a dropped item (`dropped.id`) waits before it can be
+    /// picked up: 32767 never.
+    set-pickup-delay: func(id: string, ticks: u32) -> result<_, string>;
+    /// `/tag ... add`: a tag of `[A-Za-z0-9_.+-]`, up to 64 characters.
+    add-tag: func(id: string, tag: string) -> result<_, string>;
+    /// `/tag ... remove`.
+    remove-tag: func(id: string, tag: string) -> result<_, string>;
+    /// Its tags.
+    tags: func(id: string) -> list<string>;
+    /// Whether it has `tag`.
+    has-tag: func(id: string, tag: string) -> bool;
+    /// `/data merge entity`: SNBT of the keys to set, `{Glowing:1b}`.
+    merge-nbt: func(id: string, nbt: string) -> result<_, string>;
+    /// Turns it to face x y z.
+    look-at: func(id: string, x: f64, y: f64, z: f64) -> result<_, string>;
+    /// `LivingEntity.knockback`: pushed away from x z by `strength` (a hit
+    /// is 0.4), less its knockback resistance.
+    knockback: func(id: string, strength: f64, from-x: f64, from-z: f64) -> result<_, string>;
+    /// Adds to its motion.
+    add-velocity: func(id: string, x: f64, y: f64, z: f64) -> result<_, string>;
+    /// Between two entities in one dimension, feet to feet.
+    distance: func(a: string, b: string) -> option<f64>;
+    /// The mobs whose feet are in the box (corners in any order), at most 256.
+    in-box: func(dimension: string, x1: f64, y1: f64, z1: f64, x2: f64, y2: f64, z2: f64) -> list<entity>;
+    /// Every mob of a level, at most 4096.
+    all: func(dimension: string) -> list<entity>;
+    /// The items on the ground within `radius` (up to 64) of a position, in
+    /// the level in place, nearest first, at most 256.
+    items-near: func(dimension: string, x: f64, y: f64, z: f64, radius: f64) -> list<dropped>;
+    /// Experience orbs worth `amount` (at most 32767) at a position.
+    xp-orb: func(dimension: string, x: f64, y: f64, z: f64, amount: u32) -> result<_, string>;
+    /// Spawns a mob of `kind`, finalized as a spawn egg's, and says `reason`
+    /// (`[a-z0-9_]`, up to 32) to `before-events.entity-spawn`: the mob's
+    /// UUID, though it appears at the tick's end and a mod may refuse it.
+    spawn-with-reason: func(dimension: string, kind: string, x: f64, y: f64, z: f64, reason: string) -> result<string, string>;
+    /// The same at each position (at most 64): their UUIDs.
+    spawn-group: func(dimension: string, kind: string, positions: list<tuple<f64, f64, f64>>, reason: string) -> result<list<string>, string>;
 }
 
 /// Capability `worldgen`, server mods only (experimental): world generation

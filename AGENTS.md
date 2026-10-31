@@ -25,6 +25,24 @@ The project has a working WASM mod system in `crates/horizon-mods/` with:
 
 ## Changelog
 
+### 2026-11-01 - A mob's state (API level 21)
+
+#### Added
+- **WIT `entities`** (53): `kind`, `position`, `rotation`, `velocity`, `health`, `max-health`, `dimension`, `is-alive`,
+  `is-on-ground`, `is-in-water`, `is-in-lava`, `is-burning`, `is-baby`, `set-baby`, `is-tamed`, `owner`, `set-owner`,
+  `custom-name`, `effects`, `has-effect`, `attribute`, `base-attribute`, `equipment`, `target`, `passengers`, `vehicle`,
+  `ride`, `dismount`, `remove`, `set-fire`, `extinguish`, `set-glowing`, `set-invisible`, `set-invulnerable`,
+  `set-silent`, `set-no-gravity`, `set-persistent`, `set-pickup-delay`, `add-tag`, `remove-tag`, `tags`, `has-tag`,
+  `merge-nbt`, `look-at`, `knockback`, `add-velocity`, `distance`, `in-box`, `all`, `items-near`, `xp-orb`,
+  `spawn-with-reason`, `spawn-group`
+- **Runtime** - `runtime/mobs.rs`: `MobState`, `DroppedItem`, `MOB_STATE_READS` (`Mods::reads_mobs`, `reads_items`);
+  `MobChange` gains `Baby`, `Owner`, `Fire`, `Flag(MobFlag, bool)`, `Remove`, `AddVelocity`, `Knockback`;
+  `ServerAction::PickupDelay`, `XpOrb`, and `SpawnMob`'s `uuid` and `reason`
+- **Game** - `mod_machines.rs` `mod_mob_states` (lent only when read), the new changes in `mod_change_mob`;
+  `mod_before.rs` `mod_spawn` gives a mod's mob the UUID it was promised and its reason
+- **`/showcase api mobs`, `mobscheck`, `mobsafter`**
+- Not run in the game yet: no game resources on this machine. Built, and the runtime tested
+
 ### 2026-10-31 - Loot and recipes (API level 20)
 
 #### Added

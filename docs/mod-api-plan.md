@@ -278,66 +278,70 @@ Mod dimensions work; getting into them and how they look does not.
 
 Reads and writes on mobs mods keep writing by hand.
 
-- [ ] `entities.kind`: an entity's type by id
-- [ ] `entities.position`: where it is
-- [ ] `entities.rotation`: which way it faces
-- [ ] `entities.velocity`: its motion
-- [ ] `entities.health`: its health
-- [ ] `entities.max-health`: its maximum
-- [ ] `entities.dimension`: where it is, across levels
-- [ ] `entities.is-alive`: alive or not
-- [ ] `entities.is-on-ground`: on the ground or not
-- [ ] `entities.is-in-water`: in water or not
-- [ ] `entities.is-in-lava`: in lava or not
-- [ ] `entities.is-burning`: on fire or not
-- [ ] `entities.is-baby`: a baby or not
-- [ ] `entities.set-baby`: makes it a baby or an adult
-- [ ] `entities.is-tamed`: tamed or not
-- [ ] `entities.owner`: who tamed it
-- [ ] `entities.set-owner`: tames it for a player
-- [ ] `entities.custom-name`: the name over its head
-- [ ] `entities.effects`: its effects, with level and time
-- [ ] `entities.has-effect`: whether it has one
-- [ ] `entities.attribute`: an attribute's current value
-- [ ] `entities.base-attribute`: its base value
-- [ ] `entities.add-attribute-modifier`: a modifier by id
-- [ ] `entities.remove-attribute-modifier`: removes it
-- [ ] `entities.equipment`: what it wears and holds
-- [ ] `entities.target`: what it attacks
-- [ ] `entities.passengers`: who rides it
-- [ ] `entities.vehicle`: what it rides
-- [ ] `entities.ride`: makes it ride another
-- [ ] `entities.dismount`: gets it off
-- [ ] `entities.remove`: removes it with no death or drops
-- [ ] `entities.set-fire`: sets it alight for some ticks
-- [ ] `entities.extinguish`: puts it out
-- [ ] `entities.set-glowing`: an outline through walls
-- [ ] `entities.set-invisible`: invisible or not
-- [ ] `entities.set-invulnerable`: can't be hurt
-- [ ] `entities.set-silent`: makes no sound
-- [ ] `entities.set-no-gravity`: floats
-- [ ] `entities.set-persistent`: never despawns
-- [ ] `entities.set-pickup-delay`: how long a dropped item waits
-- [ ] `entities.add-tag`: `/tag add`
-- [ ] `entities.remove-tag`: `/tag remove`
-- [ ] `entities.tags`: its tags
-- [ ] `entities.has-tag`: whether it has one
-- [ ] `entities.get-nbt`: its NBT as SNBT
-- [ ] `entities.merge-nbt`: `/data merge entity`
-- [ ] `entities.look-at`: turns it to face a position
-- [ ] `entities.knockback`: pushes it back from a position
-- [ ] `entities.add-velocity`: adds to its motion
-- [ ] `entities.line-of-sight`: whether one entity sees another
-- [ ] `entities.distance`: between two entities
-- [ ] `entities.in-box`: every mob in a box
-- [ ] `entities.raycast`: the first entity along a ray
-- [ ] `entities.all`: every mob of a level
-- [ ] `entities.items-near`: dropped items near a position, with their stacks
-- [ ] `entities.pickup-item`: a mob or player takes a dropped item
-- [ ] `entities.xp-orb`: drops experience at a position
-- [ ] `entities.spawn-with-reason`: spawn, saying why, with a returned id
-- [ ] `entities.spawn-group`: several mobs with one call
-- [ ] `entities.can-spawn-at`: whether a mob fits at a position
+Landed at API level 21. Every level's mobs answer where they are (`kind`, `position`, `health`, `dimension`,
+`is-alive`, `all`, `in-box`, `distance`); the rest read the level in place's, which the game builds into the lent world
+only while a running mod imports one of them (`MOB_STATE_READS`).
+
+- [x] `entities.kind`: an entity's type by id
+- [x] `entities.position`: where it is
+- [x] `entities.rotation`: which way it faces (the level in place's mobs; the same for the other per-mob reads)
+- [x] `entities.velocity`: its motion
+- [x] `entities.health`: its health
+- [x] `entities.max-health`: its maximum
+- [x] `entities.dimension`: where it is, across levels
+- [x] `entities.is-alive`: alive or not
+- [x] `entities.is-on-ground`: on the ground or not
+- [x] `entities.is-in-water`: in water or not
+- [x] `entities.is-in-lava`: in lava or not
+- [x] `entities.is-burning`: on fire or not
+- [x] `entities.is-baby`: a baby or not
+- [x] `entities.set-baby`: makes it a baby or an adult
+- [x] `entities.is-tamed`: tamed or not
+- [x] `entities.owner`: who tamed it
+- [x] `entities.set-owner`: tames it for a player
+- [x] `entities.custom-name`: the name over its head
+- [x] `entities.effects`: its effects, with level and time
+- [x] `entities.has-effect`: whether it has one
+- [x] `entities.attribute`: an attribute's current value
+- [x] `entities.base-attribute`: its base value
+- [ ] `entities.add-attribute-modifier`: a modifier by id (waits: a mob's attributes are fixed fields (`Attrs`), with no modifier list to add to)
+- [ ] `entities.remove-attribute-modifier`: removes it (waits: as `add-attribute-modifier`)
+- [x] `entities.equipment`: what it wears and holds
+- [x] `entities.target`: what it attacks
+- [x] `entities.passengers`: who rides it
+- [x] `entities.vehicle`: what it rides
+- [x] `entities.ride`: makes it ride another
+- [x] `entities.dismount`: gets it off
+- [x] `entities.remove`: removes it with no death or drops
+- [x] `entities.set-fire`: sets it alight for some ticks
+- [x] `entities.extinguish`: puts it out
+- [x] `entities.set-glowing`: an outline through walls
+- [x] `entities.set-invisible`: invisible or not
+- [x] `entities.set-invulnerable`: can't be hurt
+- [x] `entities.set-silent`: makes no sound
+- [x] `entities.set-no-gravity`: floats
+- [x] `entities.set-persistent`: never despawns
+- [x] `entities.set-pickup-delay`: how long a dropped item waits (the level in place)
+- [x] `entities.add-tag`: `/tag add`
+- [x] `entities.remove-tag`: `/tag remove`
+- [x] `entities.tags`: its tags
+- [x] `entities.has-tag`: whether it has one
+- [ ] `entities.get-nbt`: its NBT as SNBT (waits: a mob's NBT is written by the game's save code (`mob_tree_nbt`), which a call's lent world can't reach)
+- [x] `entities.merge-nbt`: `/data merge entity`
+- [x] `entities.look-at`: turns it to face a position
+- [x] `entities.knockback`: pushes it back from a position
+- [x] `entities.add-velocity`: adds to its motion
+- [ ] `entities.line-of-sight`: whether one entity sees another (waits: the lent world has block states, not collision shapes)
+- [x] `entities.distance`: between two entities
+- [x] `entities.in-box`: every mob in a box
+- [ ] `entities.raycast`: the first entity along a ray (waits: as `line-of-sight`)
+- [x] `entities.all`: every mob of a level
+- [x] `entities.items-near`: dropped items near a position, with their stacks (the level in place)
+- [ ] `entities.pickup-item`: a mob or player takes a dropped item (waits: a mob's own pickup runs in its AI; needs an action that gives it the stack)
+- [x] `entities.xp-orb`: drops experience at a position
+- [x] `entities.spawn-with-reason`: spawn, saying why, with a returned id
+- [x] `entities.spawn-group`: several mobs with one call
+- [ ] `entities.can-spawn-at`: whether a mob fits at a position (waits: the spawn placement rules run in the game's natural spawning, not in the lent world)
 
 ## 9. Mob AI and bodies (30, kind C)
 

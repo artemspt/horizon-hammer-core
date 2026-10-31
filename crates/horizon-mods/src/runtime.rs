@@ -36,12 +36,14 @@ mod items;
 pub use items::{DimensionFacts, ItemFacts, ModifierFacts, StackEdit, StackFacts};
 mod loot;
 pub use loot::{LOOT_STACKS, LootRoll, RecipeFacts};
+mod mobs;
+pub use mobs::{DroppedItem, MOB_STATE_READS, MobState};
 mod net;
 mod server_api;
 pub use net::{NET_BYTES, NET_PREFIX};
 pub use server_api::{
-    EntityInfo, HostStack, INVENTORY_SLOTS, MobChange, ScheduledTick, ServerAction, SlotRule,
-    StackLook, Storage, Tank,
+    EntityInfo, HostStack, INVENTORY_SLOTS, MobChange, MobFlag, ScheduledTick, ServerAction,
+    SlotRule, StackLook, Storage, Tank,
 };
 
 mod bindings {
@@ -495,6 +497,15 @@ pub trait WorldView: std::any::Any + Send {
     fn match_stonecutting(&self, _stack: &HostStack) -> Vec<(String, HostStack)> {
         Vec::new()
     }
+    /// `entities`: a mob of the level in place, when the game made them for
+    /// this call ([`Mods::reads_mobs`]).
+    fn mob_state(&self, _id: &str) -> Option<MobState> {
+        None
+    }
+    /// The items on the ground of a level, when the game lent them.
+    fn dropped_items(&self, _dimension: &str) -> Vec<DroppedItem> {
+        Vec::new()
+    }
     /// The recipe files of type `kind`: each id and its JSON.
     fn recipes_of_type(&self, _kind: &str) -> Vec<(String, String)> {
         Vec::new()
@@ -574,6 +585,9 @@ struct Running {
     raycasts: bool,
     /// It imports capability `recipes`.
     reads_recipes: bool,
+    /// It imports a read of [`MOB_STATE_READS`], or `entities.items-near`.
+    reads_mobs: bool,
+    reads_items: bool,
 }
 
 /// A running mod's exports and the hooks its `init` asked for.
@@ -1800,12 +1814,29 @@ impl Mods {
             hooks,
             raycasts: functions.iter().any(|f| f == "game.raycast"),
             reads_recipes: functions.iter().any(|f| f.starts_with("recipes.")),
+            reads_mobs: functions
+                .iter()
+                .any(|f| MOB_STATE_READS.contains(&f.as_str())),
+            reads_items: functions.iter().any(|f| f == "entities.items-near"),
         }))
     }
 
     /// True when at least one mod runs: the game skips its mod work otherwise.
     pub fn is_running(&self) -> bool {
         self.entries.iter().any(|e| e.run.is_some())
+    }
+    /// Whether a running mod reads mobs' state ([`MOB_STATE_READS`]): the
+    /// game builds [`MobState`]s for the calls only then.
+    pub fn reads_mobs(&self) -> bool {
+        self.entries
+            .iter()
+            .any(|e| e.run.as_ref().is_some_and(|r| r.reads_mobs))
+    }
+    /// Whether a running mod reads the items on the ground.
+    pub fn reads_items(&self) -> bool {
+        self.entries
+            .iter()
+            .any(|e| e.run.as_ref().is_some_and(|r| r.reads_items))
     }
     /// True when a server mod runs: the server skips its mod work otherwise.
     pub fn runs_server(&self) -> bool {
