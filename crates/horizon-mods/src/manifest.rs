@@ -285,9 +285,13 @@ impl Capability {
         if interface == "browser" {
             return Ok(Some(Capability::Ui));
         }
-        // Items, energy and fluids on blocks, item types and stacks, and the
-        // dimensions are part of capability `world`.
-        if interface == "storages" || interface == "items" || interface == "dimensions" {
+        // Items, energy and fluids on blocks, item types and stacks, the
+        // dimensions, loot tables and the server's recipes are part of
+        // capability `world`.
+        if matches!(
+            interface,
+            "storages" | "items" | "dimensions" | "loot" | "recipes-server"
+        ) {
             return Ok(Some(Capability::World));
         }
         if interface == "client-net" || interface == "server-net" {

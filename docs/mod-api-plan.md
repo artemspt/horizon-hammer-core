@@ -172,37 +172,37 @@ Custom tools, guns, staffs and tooltips: the core of tech and magic mods.
 
 `loot.rs` and `recipes_resolver.rs` exist but no mod reaches them. Needed by TerraFirmaCraft and GregTech analogues.
 
-- [ ] `loot.roll`: rolls a loot table, with luck and position
-- [ ] `loot.table-exists`: whether a table exists
-- [ ] `loot.block-drops`: what a block would drop with a tool
-- [ ] `loot.entity-drops`: what a mob would drop
-- [ ] `loot.give`: rolls a table into a player's inventory
-- [ ] `loot.drop`: rolls a table on the ground
-- [ ] `loot.fill-container`: rolls a table into a container
-- [ ] `loot.add-modifier`: adds items to a table's results
-- [ ] `loot.remove-from-table`: removes an item from a table's results
-- [ ] `loot.replace-in-table`: replaces one item with another in a table's results
-- [ ] `loot.set-chest-loot`: gives a placed chest a table and seed
-- [ ] `recipes-server.all`: every recipe id
-- [ ] `recipes-server.by-type`: every recipe of a type
-- [ ] `recipes-server.by-result`: every recipe making an item
-- [ ] `recipes-server.by-ingredient`: every recipe taking an item
-- [ ] `recipes-server.get`: one recipe as JSON
-- [ ] `recipes-server.add`: adds a recipe while the world runs
-- [ ] `recipes-server.remove`: removes a recipe
-- [ ] `recipes-server.replace-ingredient`: swaps an ingredient everywhere
-- [ ] `recipes-server.replace-result`: swaps a result everywhere
-- [ ] `recipes-server.match-crafting`: what a 3 x 3 grid of stacks makes
-- [ ] `recipes-server.match-smelting`: what a stack smelts into
-- [ ] `recipes-server.match-stonecutting`: what a stack cuts into
-- [ ] `recipes-server.smelting-time`: how long a stack smelts
-- [ ] `recipes-server.smelting-xp`: the experience it gives
-- [ ] `recipes-server.register-type`: a recipe type of the mod's own, read from `data/`
-- [ ] `recipes-server.of-own-type`: every recipe of that type
-- [ ] `recipes-server.show-in-book`: shows the mod's recipes in the recipe book
-- [ ] `players.unlock-recipe`: `/recipe give`
-- [ ] `players.lock-recipe`: `/recipe take`
-- [ ] `players.knows-recipe`: whether the player's book has one
+- [x] `loot.roll`: rolls a loot table, with luck and position (with a seed; no luck or position yet: `Items::loot_table` takes neither)
+- [x] `loot.table-exists`: whether a table exists
+- [x] `loot.block-drops`: what a block would drop with a tool
+- [x] `loot.entity-drops`: what a mob would drop
+- [x] `loot.give`: rolls a table into a player's inventory
+- [x] `loot.drop`: rolls a table on the ground
+- [x] `loot.fill-container`: rolls a table into a container (vanilla containers)
+- [ ] `loot.add-modifier`: adds items to a table's results (waits: loot is rolled in horizon-items with no place for a mod's change; needs a modifier list consulted by every roll)
+- [ ] `loot.remove-from-table`: removes an item from a table's results (waits: loot is rolled in horizon-items with no place for a mod's change; needs a modifier list consulted by every roll)
+- [ ] `loot.replace-in-table`: replaces one item with another in a table's results (waits: loot is rolled in horizon-items with no place for a mod's change; needs a modifier list consulted by every roll)
+- [ ] `loot.set-chest-loot`: gives a placed chest a table and seed (left out: Horizon rolls a container's table when its chunk loads, not when it opens, so this is `loot.fill-container` with a seed)
+- [x] `recipes-server.all`: every recipe id
+- [x] `recipes-server.by-type`: every recipe of a type
+- [x] `recipes-server.by-result`: every recipe making an item
+- [x] `recipes-server.by-ingredient`: every recipe taking an item
+- [x] `recipes-server.get`: one recipe as JSON
+- [ ] `recipes-server.add`: adds a recipe while the world runs (waits: the world's recipes are fixed once loaded, and clients would need telling; a content mod's `data/<id>/recipe/` adds them at load)
+- [ ] `recipes-server.remove`: removes a recipe (waits: the world's recipes are fixed once loaded, and clients would need telling; a content mod's `data/<id>/recipe/` adds them at load)
+- [ ] `recipes-server.replace-ingredient`: swaps an ingredient everywhere (waits: the world's recipes are fixed once loaded, and clients would need telling; a content mod's `data/<id>/recipe/` adds them at load)
+- [ ] `recipes-server.replace-result`: swaps a result everywhere (waits: the world's recipes are fixed once loaded, and clients would need telling; a content mod's `data/<id>/recipe/` adds them at load)
+- [x] `recipes-server.match-crafting`: what a 3 x 3 grid of stacks makes
+- [x] `recipes-server.match-smelting`: what a stack smelts into
+- [x] `recipes-server.match-stonecutting`: what a stack cuts into
+- [x] `recipes-server.smelting-time`: how long a stack smelts
+- [x] `recipes-server.smelting-xp`: the experience it gives
+- [ ] `recipes-server.register-type`: a recipe type of the mod's own, read from `data/` (left out: a type needs no registering, `of-own-type` reads its files as they are)
+- [x] `recipes-server.of-own-type`: every recipe of that type (reads `data/*/recipe/` of the content namespaces for the mod's own type)
+- [ ] `recipes-server.show-in-book`: shows the mod's recipes in the recipe book (waits: the recipe book shows the world's crafting recipes already; a mod's own type needs a book tab)
+- [x] `players.unlock-recipe`: `/recipe give`
+- [x] `players.lock-recipe`: `/recipe take`
+- [ ] `players.knows-recipe`: whether the player's book has one (waits: each player's book isn't in the snapshot; reading it each tick for every player costs, so it wants a read on demand)
 
 ## 6. World generation from a mod (40, kind C)
 

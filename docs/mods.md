@@ -966,6 +966,16 @@ Everything below sits in `data/<id>/horizon/` and needs a restart. `mods/showcas
 - **Entities flown by code**: `"ticks": true` calls `entity_tick` each tick; with `"projectile": {"gravity": 0, "drag": 1,
   "through_blocks": true}` and `entities.set-velocity` that is a boomerang.
 
+## Loot and recipes (API level 20)
+
+Capability `world` rolls the game's loot tables (`loot`) and reads the server's recipes (`recipes-server`). A roll with
+a `seed` repeats, so a machine can show what it will give before it gives it; `give` and `drop` land at the tick's end,
+`fill-container` lays the stacks out in random slots of a vanilla container at once. Recipes go by id
+(`minecraft:oak_planks`) and by their file's type; `match-crafting`, `match-smelting` and `match-stonecutting` answer
+as the stations would. A recipe type of a mod's own needs no registering: its files sit in `data/<id>/recipe/` with
+`"type": "<id>:<name>"`, and `of-own-type` hands the mod their JSON for its own machine. `/showcase api loot`, then
+`/showcase api lootcheck`, checks every function of the level.
+
 ## Items and dimensions (API level 19)
 
 Capability `world` also reads item types and stacks (`items`) and the dimensions (`dimensions`), from the world the game

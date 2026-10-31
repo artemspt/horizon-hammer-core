@@ -7,13 +7,13 @@
 //! version's level so the launcher can tell before it installs.
 
 /// The newest level this Horizon serves.
-pub const LEVEL: u32 = 19;
+pub const LEVEL: u32 = 20;
 
 /// Every function the game offers mods, as `interface.function`, with its
 /// level. Level 0 is the contract of Horizon 0.2.67 to 0.2.69. A new
 /// function takes the next level and raises [`LEVEL`] (the `api_reference`
 /// test fails until it is listed here).
-pub const FUNCTIONS: [(&str, u32); 243] = [
+pub const FUNCTIONS: [(&str, u32); 263] = [
     ("log.write", 0),
     ("game.get-player", 0),
     ("game.get-clock", 0),
@@ -257,6 +257,26 @@ pub const FUNCTIONS: [(&str, u32); 243] = [
     ("dimensions.min-y", 19),
     ("dimensions.max-y", 19),
     ("dimensions.players-in", 19),
+    ("loot.roll", 20),
+    ("loot.table-exists", 20),
+    ("loot.block-drops", 20),
+    ("loot.entity-drops", 20),
+    ("loot.give", 20),
+    ("loot.drop", 20),
+    ("loot.fill-container", 20),
+    ("recipes-server.all", 20),
+    ("recipes-server.by-type", 20),
+    ("recipes-server.by-result", 20),
+    ("recipes-server.by-ingredient", 20),
+    ("recipes-server.get", 20),
+    ("recipes-server.match-crafting", 20),
+    ("recipes-server.match-smelting", 20),
+    ("recipes-server.match-stonecutting", 20),
+    ("recipes-server.smelting-time", 20),
+    ("recipes-server.smelting-xp", 20),
+    ("recipes-server.of-own-type", 20),
+    ("players.unlock-recipe", 20),
+    ("players.lock-recipe", 20),
 ];
 
 /// What the game's program carries so the launcher can read its level

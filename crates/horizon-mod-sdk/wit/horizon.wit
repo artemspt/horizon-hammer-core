@@ -864,6 +864,11 @@ interface players {
     grant-advancement: func(player: string, advancement: string) -> result<_, string>;
     /// `/advancement revoke ... only`.
     revoke-advancement: func(player: string, advancement: string) -> result<_, string>;
+    /// `/recipe give`: puts a recipe (`minecraft:oak_planks`) in the
+    /// player's recipe book. Err for a recipe the book can't hold.
+    unlock-recipe: func(player: string, recipe: string) -> result<_, string>;
+    /// `/recipe take`: takes it out again.
+    lock-recipe: func(player: string, recipe: string) -> result<_, string>;
 }
 
 /// Capability `world`, server mods only (manifest `api = "0.3"`,
@@ -1341,6 +1346,76 @@ interface server-events {
     block-placed: func(player: player, pos: block-pos, state: string);
 }
 
+/// Capability `world` for a server mod: loot tables, rolled as the game
+/// rolls them. `seed` makes a roll repeat; `none` rolls a fresh one. A roll
+/// sees no position, luck or killer beyond what the function takes, so a
+/// table's conditions on them fail, as `/loot` with no source.
+interface loot {
+    use players.{item-stack};
+
+    /// What `table` (`minecraft:chests/simple_dungeon`) gives. Err for a
+    /// table the game doesn't have.
+    roll: func(table: string, seed: option<u64>) -> result<list<item-stack>, string>;
+    /// Whether the game has `table`, a mod's own (`data/<id>/loot_table/`)
+    /// included.
+    table-exists: func(table: string) -> bool;
+    /// What breaking `state` (`minecraft:oak_leaves`) with `tool` would drop
+    /// (`none`: by hand). Err for a state the game doesn't have.
+    block-drops: func(state: string, tool: option<item-stack>, seed: option<u64>) -> result<list<item-stack>, string>;
+    /// What a mob of `kind` (`minecraft:zombie`) would drop, killed by a
+    /// player when `by-player` is set. Err for a kind with no table.
+    entity-drops: func(kind: string, by-player: bool, seed: option<u64>) -> result<list<item-stack>, string>;
+    /// Rolls `table` into `player`'s inventory, at the tick's end (what
+    /// doesn't fit drops at their feet): the stacks rolled. Err for an
+    /// unknown table or a player not online.
+    give: func(player: string, table: string, seed: option<u64>) -> result<list<item-stack>, string>;
+    /// Rolls `table` onto the ground at x y z, at the tick's end: the
+    /// stacks rolled.
+    drop: func(dimension: string, x: s32, y: s32, z: s32, table: string, seed: option<u64>) -> result<list<item-stack>, string>;
+    /// Empties the vanilla container at x y z (a chest, barrel, hopper...)
+    /// and rolls `table` into it, stacks in random slots as a chest's loot
+    /// is laid out: how many stacks went in (those past its slots are lost,
+    /// as in vanilla). Err for no container there or an unknown table.
+    fill-container: func(dimension: string, x: s32, y: s32, z: s32, table: string, seed: option<u64>) -> result<u32, string>;
+}
+
+/// Capability `world` for a server mod: the recipes the server has. An id
+/// is `minecraft:oak_planks`, a mod's `<id>:<file name>`; a type is the
+/// recipe file's, `minecraft:crafting_shaped`, `minecraft:smelting`,
+/// `minecraft:stonecutting`...
+interface recipes-server {
+    use players.{item-stack};
+
+    /// Every crafting, cooking and stonecutting recipe.
+    all: func() -> list<string>;
+    /// The recipes of `kind`; crafting recipes with code of their own
+    /// (banner copying, map cloning...) are `minecraft:crafting_special`.
+    by-type: func(kind: string) -> list<string>;
+    /// The recipes that make `item`.
+    by-result: func(item: string) -> list<string>;
+    /// The recipes that take `item` (a tag in a recipe counts each item in
+    /// it).
+    by-ingredient: func(item: string) -> list<string>;
+    /// A recipe's file, as JSON; `none` for an unknown one.
+    get: func(id: string) -> option<string>;
+    /// What a crafting grid of 4 (2 x 2) or 9 (3 x 3) cells, row by row,
+    /// makes, and which recipe; `none` for nothing, or another size.
+    match-crafting: func(grid: list<option<item-stack>>) -> option<tuple<string, item-stack>>;
+    /// What a furnace makes of `stack`, and which recipe.
+    match-smelting: func(stack: item-stack) -> option<tuple<string, item-stack>>;
+    /// What a stonecutter offers for `stack`: each recipe and its result.
+    match-stonecutting: func(stack: item-stack) -> list<tuple<string, item-stack>>;
+    /// How many ticks a furnace takes to smelt `stack`.
+    smelting-time: func(stack: item-stack) -> option<u32>;
+    /// The experience smelting `stack` gives.
+    smelting-xp: func(stack: item-stack) -> option<f32>;
+    /// The recipe files of a type of this mod's own (`<id>:grinding`), from
+    /// `data/*/recipe/` of every content namespace: each id and its JSON,
+    /// for the mod's own machine to read. Empty for a type of another
+    /// namespace's: a mod reads its own types.
+    of-own-type: func(kind: string) -> list<tuple<string, string>>;
+}
+
 /// Capability `world` for a server mod: item types and stacks as the game
 /// knows them. A stack in is a `players.item-stack`; a stack out is a new
 /// one, the one handed in unchanged. Reads during a `before-events` hook
@@ -1752,6 +1827,8 @@ world horizon-server-mod {
     import worldgen;
     import items;
     import dimensions;
+    import loot;
+    import recipes-server;
     import server-net;
     export server-events;
 }

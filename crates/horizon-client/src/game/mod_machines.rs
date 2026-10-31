@@ -156,6 +156,10 @@ pub(super) struct Lent {
     pub(super) mobs: Vec<(&'static str, Vec<EntityInfo>)>,
     /// Item types, block facts and fuel, for `items`.
     pub(super) res: Option<Arc<super::Resources>>,
+    /// The resources' folder: recipe files for `recipes-server`.
+    pub(super) root: std::path::PathBuf,
+    /// `recipes-server`'s list, made once.
+    pub(super) recipes: Option<Arc<Vec<horizon_mods::RecipeFacts>>>,
 }
 /// `players.style-stack`.
 pub(super) fn style_stack(
@@ -464,6 +468,205 @@ impl Lent {
     }
 }
 
+/// A recipe's id as mods name it: vanilla's files go by bare name.
+fn recipe_id(name: &str) -> String {
+    if name.contains(':') {
+        name.to_owned()
+    } else {
+        format!("minecraft:{name}")
+    }
+}
+
+/// `recipes-server`'s list: the crafting, cooking and stonecutting recipes
+/// the world loaded, made once.
+pub(super) fn server_recipe_facts(res: &super::Resources) -> Vec<horizon_mods::RecipeFacts> {
+    use horizon_client::crafting::Recipe;
+    fn items(
+        i: &horizon_client::crafting::Ingredient,
+    ) -> std::iter::Cloned<std::slice::Iter<'_, String>> {
+        i.1.iter().cloned()
+    }
+    let mut out = Vec::new();
+    for (name, recipe) in &res.recipes().crafting {
+        let (kind, results, ingredients): (&str, Vec<String>, Vec<String>) = match recipe {
+            Recipe::Shaped { cells, result, .. } => (
+                "minecraft:crafting_shaped",
+                result.item.iter().map(|i| i.to_string()).collect(),
+                cells.iter().flatten().flat_map(items).collect(),
+            ),
+            Recipe::Shapeless {
+                ingredients,
+                result,
+            } => (
+                "minecraft:crafting_shapeless",
+                result.item.iter().map(|i| i.to_string()).collect(),
+                ingredients.iter().flat_map(items).collect(),
+            ),
+            Recipe::Special(_) => ("minecraft:crafting_special", Vec::new(), Vec::new()),
+        };
+        let mut ingredients = ingredients;
+        ingredients.sort();
+        ingredients.dedup();
+        out.push(horizon_mods::RecipeFacts {
+            id: recipe_id(name),
+            kind: kind.to_owned(),
+            results,
+            ingredients,
+        });
+    }
+    for c in &res.recipes().cooking {
+        out.push(horizon_mods::RecipeFacts {
+            id: recipe_id(&c.id),
+            kind: c.kind.clone(),
+            results: vec![c.result.item.to_string()],
+            ingredients: c.ingredient.1.clone(),
+        });
+    }
+    for s in &res.stations().recipes.stonecutting {
+        out.push(horizon_mods::RecipeFacts {
+            id: recipe_id(&s.id),
+            kind: "minecraft:stonecutting".to_owned(),
+            results: vec![s.result.item.to_string()],
+            ingredients: s.input.1.clone(),
+        });
+    }
+    out
+}
+
+/// `loot` and `recipes-server`: rolls and recipe lookups on the world's
+/// resources.
+impl Lent {
+    pub(super) fn loot(
+        &self,
+        registry: &horizon_world::registry::BlockRegistry,
+        roll: &horizon_mods::LootRoll,
+        seed: u64,
+    ) -> Result<Vec<HostStack>, String> {
+        use horizon_mods::LootRoll as L;
+        let res = self.res().ok_or("the game lent no loot")?;
+        let items = res.items();
+        let mut random = horizon_core::random::LegacyRandom::new(seed as i64);
+        let drops = match roll {
+            L::Table(table) => {
+                if !items.has_loot_table(table) {
+                    return Err(format!("no loot table {table}"));
+                }
+                items.loot_table(table, false, None, &mut random)
+            }
+            L::Block { state, tool } => {
+                let state = crate::game::render_control::parse_state(registry, state)
+                    .map_err(|e| e.to_string())?;
+                let tool = tool.as_ref().and_then(game_stack);
+                items.block_drops(registry, state, tool.as_ref(), &mut random)
+            }
+            L::Entity { kind, by_player } => {
+                let (ns, path) = kind.split_once(':').unwrap_or(("minecraft", kind));
+                let table = format!("{ns}:entities/{path}");
+                if !items.has_loot_table(&table) {
+                    return Err(format!("{kind} has no loot table"));
+                }
+                items.loot_table(&table, *by_player, None, &mut random)
+            }
+        };
+        Ok(drops
+            .iter()
+            .take(horizon_mods::LOOT_STACKS)
+            .map(host_stack)
+            .collect())
+    }
+    pub(super) fn loot_table_exists(&self, table: &str) -> bool {
+        self.res().is_some_and(|r| r.items().has_loot_table(table))
+    }
+    pub(super) fn recipes(&self) -> Option<Arc<Vec<horizon_mods::RecipeFacts>>> {
+        self.recipes.clone()
+    }
+    pub(super) fn recipe_json(&self, id: &str) -> Option<String> {
+        let (ns, path) = id.split_once(':')?;
+        let file = self.root.join(format!("data/{ns}/recipe/{path}.json"));
+        // A recipe file is small: a mod is handed no more than this.
+        let meta = std::fs::metadata(&file).ok()?;
+        if meta.len() > 64 * 1024 {
+            return None;
+        }
+        std::fs::read_to_string(file).ok()
+    }
+    pub(super) fn match_crafting(&self, grid: &[Option<HostStack>]) -> Option<(String, HostStack)> {
+        let size = match grid.len() {
+            4 => 2,
+            9 => 3,
+            _ => return None,
+        };
+        let cells: Vec<Option<ItemStack>> = grid
+            .iter()
+            .map(|s| s.as_ref().and_then(game_stack))
+            .collect();
+        let (id, made) = self.res()?.recipes().find(&cells, size)?;
+        Some((recipe_id(id), host_stack(&made)))
+    }
+    pub(super) fn match_cooking(
+        &self,
+        kind: &str,
+        stack: &HostStack,
+    ) -> Option<(String, HostStack, u32, f32)> {
+        let stack = game_stack(stack)?;
+        let c = self.res()?.recipes().cook(kind, &stack)?;
+        Some((
+            recipe_id(&c.id),
+            host_stack(&c.result),
+            c.time,
+            c.experience,
+        ))
+    }
+    pub(super) fn match_stonecutting(&self, stack: &HostStack) -> Vec<(String, HostStack)> {
+        let (Some(stack), Some(res)) = (game_stack(stack), self.res()) else {
+            return Vec::new();
+        };
+        res.stations()
+            .recipes
+            .stonecutter(&stack)
+            .into_iter()
+            .map(|r| (recipe_id(&r.id), host_stack(&r.result)))
+            .collect()
+    }
+    pub(super) fn recipes_of_type(&self, kind: &str) -> Vec<(String, String)> {
+        // Bounds on what one call reads off the disk.
+        const FILES: usize = 4096;
+        const BYTES: u64 = 4 << 20;
+        let mut out = Vec::new();
+        let mut read = 0;
+        for ns in horizon_items::content_namespaces::namespaces(&self.root) {
+            let Ok(dir) = std::fs::read_dir(self.root.join(format!("data/{ns}/recipe"))) else {
+                continue;
+            };
+            let mut files: Vec<_> = dir
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| p.extension().is_some_and(|e| e == "json"))
+                .take(FILES)
+                .collect();
+            files.sort();
+            for file in files {
+                let Ok(text) = std::fs::read_to_string(&file) else {
+                    continue;
+                };
+                read += text.len() as u64;
+                if read > BYTES {
+                    return out;
+                }
+                let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else {
+                    continue;
+                };
+                if v["type"].as_str() == Some(kind)
+                    && let Some(stem) = file.file_stem().and_then(|s| s.to_str())
+                {
+                    out.push((format!("{ns}:{stem}"), text));
+                }
+            }
+        }
+        out
+    }
+}
+
 /// A stack's attribute modifiers: its own component, else its item's.
 fn stack_modifiers(
     s: &ItemStack,
@@ -710,6 +913,12 @@ impl Game<'_> {
                 )
             })
             .clone();
+        let recipes = (self.res.rest.get().is_some()).then(|| {
+            self.mods
+                .server_recipes
+                .get_or_insert_with(|| Arc::new(server_recipe_facts(&self.res)))
+                .clone()
+        });
         let mut containers = vec![(dim, std::mem::take(&mut self.world.block_entities))];
         for (d, world) in self.levels.parked_worlds() {
             containers.push((d.id(), std::mem::take(&mut world.block_entities)));
@@ -758,6 +967,8 @@ impl Game<'_> {
             .clone();
         Lent {
             res: Some(self.res.clone()),
+            root: self.options.resources.clone(),
+            recipes,
             item_tags,
             block_tags,
             entity_tags,

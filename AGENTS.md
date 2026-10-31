@@ -25,6 +25,21 @@ The project has a working WASM mod system in `crates/horizon-mods/` with:
 
 ## Changelog
 
+### 2026-10-31 - Loot and recipes (API level 20)
+
+#### Added
+- **WIT `loot`** (7, capability `world`): `roll`, `table-exists`, `block-drops`, `entity-drops`, `give`, `drop`,
+  `fill-container`
+- **WIT `recipes-server`** (11, capability `world`): `all`, `by-type`, `by-result`, `by-ingredient`, `get`,
+  `match-crafting`, `match-smelting`, `match-stonecutting`, `smelting-time`, `smelting-xp`, `of-own-type`
+- **WIT `players.unlock-recipe`, `lock-recipe`** (`/recipe give|take`)
+- **Runtime** - `runtime/loot.rs`: `LootRoll`, `RecipeFacts`, the `WorldView` reads; a recipe id with `..` reads no file
+- **Game** - `mod_machines.rs` `Lent::loot` rolls `Items::loot_table` / `block_drops` from `LegacyRandom(seed)`;
+  `server_recipe_facts` lists crafting, cooking and stonecutting once (`ModsState.server_recipes`); recipe files from
+  the resources' `data/<ns>/recipe/`
+- **`/showcase api loot`, `lootcheck`**; `showcase:grinding`, a recipe type of the mod's own
+- Not run in the game yet: no game resources on this machine. Built, and the runtime tested
+
 ### 2026-10-31 - Items and dimensions (API level 19)
 
 #### Added

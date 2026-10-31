@@ -236,6 +236,34 @@ mod run {
         fn tool(&self, tool: &HostStack, block: &str) -> Option<(f32, bool)> {
             self.more.tool(tool, block)
         }
+        fn loot(&self, roll: &horizon_mods::LootRoll, seed: u64) -> Result<Vec<HostStack>, String> {
+            self.more.loot(self.registry, roll, seed)
+        }
+        fn loot_table_exists(&self, table: &str) -> bool {
+            self.more.loot_table_exists(table)
+        }
+        fn recipes(&self) -> Option<std::sync::Arc<Vec<horizon_mods::RecipeFacts>>> {
+            self.more.recipes()
+        }
+        fn recipe_json(&self, id: &str) -> Option<String> {
+            self.more.recipe_json(id)
+        }
+        fn match_crafting(&self, grid: &[Option<HostStack>]) -> Option<(String, HostStack)> {
+            self.more.match_crafting(grid)
+        }
+        fn match_cooking(
+            &self,
+            kind: &str,
+            stack: &HostStack,
+        ) -> Option<(String, HostStack, u32, f32)> {
+            self.more.match_cooking(kind, stack)
+        }
+        fn match_stonecutting(&self, stack: &HostStack) -> Vec<(String, HostStack)> {
+            self.more.match_stonecutting(stack)
+        }
+        fn recipes_of_type(&self, kind: &str) -> Vec<(String, String)> {
+            self.more.recipes_of_type(kind)
+        }
         fn dimensions(&self) -> Vec<horizon_mods::DimensionFacts> {
             let vanilla = [
                 "minecraft:overworld",

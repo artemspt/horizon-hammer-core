@@ -109,6 +109,9 @@ pub(super) struct ModsState {
     /// Every item's stack size, for server mods' calls, made once.
     #[cfg(feature = "mods")]
     pub(super) max_stacks: Option<std::sync::Arc<std::collections::HashMap<String, u32>>>,
+    /// `recipes-server`'s list of the world's recipes, made once.
+    #[cfg(feature = "mods")]
+    pub(super) server_recipes: Option<std::sync::Arc<Vec<horizon_mods::RecipeFacts>>>,
     /// `game-events`: each level's living mobs' health at the last tick's
     /// end, the players' too, and what happened since, to tell.
     #[cfg(feature = "mods")]

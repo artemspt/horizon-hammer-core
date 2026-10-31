@@ -34,6 +34,8 @@ mod before;
 mod events;
 mod items;
 pub use items::{DimensionFacts, ItemFacts, ModifierFacts, StackEdit, StackFacts};
+mod loot;
+pub use loot::{LOOT_STACKS, LootRoll, RecipeFacts};
 mod net;
 mod server_api;
 pub use net::{NET_BYTES, NET_PREFIX};
@@ -459,6 +461,42 @@ pub trait WorldView: std::any::Any + Send {
     }
     /// `dimensions`: every dimension the server has.
     fn dimensions(&self) -> Vec<DimensionFacts> {
+        Vec::new()
+    }
+    /// `loot`: what `roll` gives from `seed`, or why not.
+    fn loot(&self, _roll: &LootRoll, _seed: u64) -> Result<Vec<HostStack>, String> {
+        Err("this game rolls no loot".into())
+    }
+    fn loot_table_exists(&self, _table: &str) -> bool {
+        false
+    }
+    /// `recipes-server`: every recipe, made once.
+    fn recipes(&self) -> Option<std::sync::Arc<Vec<RecipeFacts>>> {
+        None
+    }
+    /// A recipe's file, as JSON.
+    fn recipe_json(&self, _id: &str) -> Option<String> {
+        None
+    }
+    /// What a 2 x 2 or 3 x 3 grid makes, and which recipe.
+    fn match_crafting(&self, _grid: &[Option<HostStack>]) -> Option<(String, HostStack)> {
+        None
+    }
+    /// What `kind` (`minecraft:smelting`) cooks `stack` into: the recipe,
+    /// the result, its ticks and experience.
+    fn match_cooking(
+        &self,
+        _kind: &str,
+        _stack: &HostStack,
+    ) -> Option<(String, HostStack, u32, f32)> {
+        None
+    }
+    /// What a stonecutter offers for `stack`.
+    fn match_stonecutting(&self, _stack: &HostStack) -> Vec<(String, HostStack)> {
+        Vec::new()
+    }
+    /// The recipe files of type `kind`: each id and its JSON.
+    fn recipes_of_type(&self, _kind: &str) -> Vec<(String, String)> {
         Vec::new()
     }
     fn mobs(&self, _dimension: &str) -> Vec<EntityInfo> {
@@ -1565,6 +1603,16 @@ impl Mods {
             )
             .map_err(|e| e.to_string())?;
             server_bindings::horizon::mods::dimensions::add_to_linker::<State, HasSelf<State>>(
+                &mut linker,
+                |s| s,
+            )
+            .map_err(|e| e.to_string())?;
+            server_bindings::horizon::mods::loot::add_to_linker::<State, HasSelf<State>>(
+                &mut linker,
+                |s| s,
+            )
+            .map_err(|e| e.to_string())?;
+            server_bindings::horizon::mods::recipes_server::add_to_linker::<State, HasSelf<State>>(
                 &mut linker,
                 |s| s,
             )
@@ -3657,6 +3705,16 @@ impl players::Host for State {
             "advancement grant {} only {advancement}",
             player.name
         ))
+    }
+    fn unlock_recipe(&mut self, player: String, recipe: String) -> Result<(), String> {
+        let player = self.online_player(&player)?;
+        check_game_id("recipe", &recipe)?;
+        self.console(format!("recipe give {} {recipe}", player.name))
+    }
+    fn lock_recipe(&mut self, player: String, recipe: String) -> Result<(), String> {
+        let player = self.online_player(&player)?;
+        check_game_id("recipe", &recipe)?;
+        self.console(format!("recipe take {} {recipe}", player.name))
     }
     fn revoke_advancement(&mut self, player: String, advancement: String) -> Result<(), String> {
         let player = self.online_player(&player)?;
