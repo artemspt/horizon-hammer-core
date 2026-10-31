@@ -312,6 +312,9 @@ impl Game<'_> {
             horizon_client::mobs::raider::finalize(&mut mob, reason);
         }
         let id = mob.id;
+        if self.mod_refuses_mob(&mob, "summoned") {
+            return None;
+        }
         self.mobs.push(mob);
         self.enchant_spawn_equipment(id);
         if !persistent && !scripted {
@@ -956,6 +959,15 @@ impl Game<'_> {
             }
         }
         let raider = horizon_client::mobs::raider::is_raider(m.species());
+        if let Some((stacks, xp)) = self.mod_mob_drops(m, &items, raider, consumed) {
+            for stack in stacks {
+                self.spawn_item(stack, pos, [0.0, 0.2, 0.0], 10);
+            }
+            if xp > 0 {
+                self.spawn_orbs(pos, xp);
+            }
+            return;
+        }
         for d in items {
             match d {
                 drops::Drop::Item(stack) => {
@@ -1364,7 +1376,9 @@ impl Game<'_> {
                 MobEvent::Spawn(mut m) => {
                     self.next_entity += 1;
                     m.id = self.next_entity;
-                    self.mobs.push(*m);
+                    if !self.mod_refuses_mob(&m, "mob") {
+                        self.mobs.push(*m);
+                    }
                 }
                 MobEvent::SpawnKind { kind, at, setup } => {
                     if let Some(id) = self.spawn_mob(&kind, at, setup.persistent) {
@@ -2107,6 +2121,7 @@ impl Game<'_> {
         // owner) caused the hit, not a player.
         let living_cause = attacker.or(owner).is_some();
         let mut outcome = horizon_client::health::BlockOutcome::default();
+        horizon_client::mod_gate::set_attacker(attacker.or(owner));
         if let Some(player) = self.player.as_mut()
             && let Some(id) = self.motion.health.damage.id(damage_type)
             && let Ok(o) = player.hurt_caused_by(
@@ -4603,7 +4618,7 @@ fn to_loot(stack: &ItemStack) -> horizon_world::loot::LootStack {
     }
 }
 /// A generated loot stack as a Horizon item stack.
-fn from_loot(stack: &horizon_world::loot::LootStack) -> ItemStack {
+pub(super) fn from_loot(stack: &horizon_world::loot::LootStack) -> ItemStack {
     let mut item = ItemStack {
         item: Arc::from(stack.item.as_str()),
         count: stack.count.max(1) as u32,

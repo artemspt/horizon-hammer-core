@@ -30,6 +30,7 @@ use wasmtime::{
     component::{Component, HasSelf, Linker},
 };
 
+mod before;
 mod events;
 mod net;
 mod server_api;
@@ -81,6 +82,18 @@ mod events_bindings {
     });
 }
 use events_bindings::EventsHost;
+/// `before-events`, as `game-events` is.
+mod before_bindings {
+    wasmtime::component::bindgen!({
+        path: "../horizon-mod-sdk/wit",
+        world: "before-events-host",
+        with: {
+            "horizon:mods/players": super::server_bindings::horizon::mods::players,
+            "horizon:mods/entities": super::server_bindings::horizon::mods::entities,
+        },
+    });
+}
+use before_bindings::BeforeEventsHost;
 /// `entity-events`, as `block-events` is.
 mod entity_bindings {
     wasmtime::component::bindgen!({
@@ -479,6 +492,8 @@ struct Running {
     blocks: Option<BlockHost>,
     /// A server mod's `game-events` export; none for one built before it.
     events: Option<EventsHost>,
+    /// A server mod's `before-events` export; none for one built before it.
+    before: Option<BeforeEventsHost>,
     /// A server mod's `entity-events` export; none for one built before it.
     entity_events: Option<EntityEventsHost>,
     /// A server mod's `logic-events` export; none for one built before it.
@@ -1681,10 +1696,14 @@ impl Mods {
         self.out.append(&mut store.data_mut().out);
         let entity_events = EntityEventsHost::new(&mut store, &instance).ok();
         let logic_events = LogicEventsHost::new(&mut store, &instance).ok();
+        let before = server
+            .then(|| BeforeEventsHost::new(&mut store, &instance).ok())
+            .flatten();
         Ok(Some(Running {
             entity_events,
             logic_events,
             events,
+            before,
             net_client,
             net_server,
             store,

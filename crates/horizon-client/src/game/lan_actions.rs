@@ -402,6 +402,7 @@ impl Game<'_> {
             self.lan_acting_name.replace(g.name.clone()),
             self.lan_acting_uuid.replace(g.uuid),
         );
+        horizon_client::mod_gate::set_actor(self.lan_acting_uuid);
         let packets = std::mem::take(&mut self.guest_packets);
         let entity_events = std::mem::take(&mut self.guest_entity_events);
         let swings = self.swings_started;
@@ -576,6 +577,7 @@ impl Game<'_> {
             );
         }
         (self.lan_acting, self.lan_acting_name, self.lan_acting_uuid) = acting;
+        horizon_client::mod_gate::set_actor(self.lan_acting_uuid);
         play.death_cause = std::mem::replace(&mut self.ui.death_cause, death_cause);
         // An ender chest the guest opened: the menu shows their inventory
         // itself (lan_open_container), not a stand-in block entity.
@@ -881,6 +883,9 @@ impl Game<'_> {
             };
             (menu, title, Slots::Block(pos))
         };
+        if self.mods_refuse_container(host, conn, [pos.0, pos.1, pos.2]) {
+            return true;
+        }
         let Some(items) = host
             .hub
             .guest(conn)
@@ -1103,7 +1108,7 @@ impl Game<'_> {
                     );
                 }
                 4 | 5 => {
-                    if !spectator {
+                    if !spectator && !self.mods_refuse_toss(host, conn, a.action == 4) {
                         self.as_guest(host, conn, |g| g.drop_held(a.action == 4));
                     }
                 }
@@ -1827,7 +1832,7 @@ impl Game<'_> {
                     .player
                     .as_mut()
                     .is_some_and(|p| std::mem::take(&mut p.health.sync_velocity));
-                g.attack();
+                g.mod_gated(|g| g.attack());
                 let p = g.player.as_mut()?;
                 let sent = std::mem::replace(&mut p.health.sync_velocity, marked);
                 sent.then_some(p.velocity)
@@ -2282,7 +2287,7 @@ impl Game<'_> {
                 play.attack_item = held;
             }
             self.guest_delayed_destroy(host, conn);
-            self.guest_server_tick(host, conn);
+            self.mod_gated(|g| g.guest_server_tick(host, conn));
             // Player.tick's statistics and ServerPlayer.tick's triggers, then
             // PlayerAdvancements.flushDirty.
             let sleeping = host.hub.guests[gi].sleeping;
@@ -3047,6 +3052,9 @@ impl Game<'_> {
             let (stack, item_id) = (self.dropped[i].stack.clone(), self.dropped[i].id);
             let before = stack.count;
             let picked = stack.clone();
+            if self.mods_refuse_pickup(host, conn, &picked) {
+                continue;
+            }
             let uuid = host
                 .hub
                 .guests

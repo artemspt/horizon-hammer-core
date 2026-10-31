@@ -554,6 +554,7 @@ impl Game<'_> {
         let ctx = horizon_client::sculk::Context::default();
         self.post_game_event("minecraft:explode", center, ctx);
         let mut targets = self.exploded_positions(center, radius, resists);
+        self.mod_spare_exploded(center, &mut targets);
         self.explosion_hurt_entities(center, radius, damage_type);
         if interaction != BlockInteraction::Keep {
             // Util.shuffle(list, level.random)

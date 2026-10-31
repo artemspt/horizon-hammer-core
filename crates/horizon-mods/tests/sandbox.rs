@@ -2077,3 +2077,81 @@ fn browser_lists_items_and_hears_the_player() {
     }
     assert_eq!(said(&mut mods, "browser_poll")[0], "256 events");
 }
+
+#[test]
+fn before_events_change_and_refuse_as_they_happen() {
+    let mut mods = load("core_tour.hmod");
+    assert_eq!(mods.entries()[0].status, Status::Running);
+    let mob = |kind: &str| EntityInfo {
+        id: "00000000-0000-0000-0000-00000000000a".into(),
+        kind: kind.into(),
+        pos: (0.5, 64.0, 0.5),
+        health: 20.0,
+    };
+    let dim = "minecraft:overworld";
+    // Damage: refused, doubled, or left alone (no answer when nothing changed).
+    let cow = mods.before_entity_hurt(dim, &mob("minecraft:cow"), "minecraft:arrow", None, 4.0);
+    assert_eq!(cow, Some(0.0));
+    let fire = mods.before_entity_hurt(
+        dim,
+        &mob("minecraft:zombie"),
+        "minecraft:on_fire",
+        None,
+        1.0,
+    );
+    assert_eq!(fire, Some(2.0));
+    assert_eq!(
+        mods.before_entity_hurt(dim, &mob("minecraft:pig"), "minecraft:arrow", None, 4.0),
+        None
+    );
+    // Hooks the manifest doesn't list are not asked.
+    assert!(!mods.wants_before("before-player-hurt"));
+    assert!(mods.wants_before("before-mob-drop"));
+    // Drops: the zombie's loot and an emerald; a skeleton's is its own.
+    let flesh = HostStack {
+        item: "minecraft:rotten_flesh".into(),
+        count: 2,
+        components: Vec::new(),
+        data: Default::default(),
+    };
+    let drops = mods
+        .before_mob_drop(
+            dim,
+            &mob("minecraft:zombie"),
+            None,
+            std::slice::from_ref(&flesh),
+        )
+        .unwrap();
+    let items: Vec<_> = drops.iter().map(|s| (s.item.as_str(), s.count)).collect();
+    assert_eq!(
+        items,
+        [("minecraft:rotten_flesh", 2), ("minecraft:emerald", 1)]
+    );
+    assert!(
+        mods.before_mob_drop(dim, &mob("minecraft:skeleton"), None, &[flesh])
+            .is_none()
+    );
+    assert_eq!(mods.before_xp_drop(dim, (0.5, 64.0, 0.5), "mob", 5), 10);
+    // A toss refused by item; the blocks that stay, out of those asked about.
+    let steve = ServerPlayer {
+        id: "00000000-0000-0000-0000-000000000001".into(),
+        name: "Steve".into(),
+        x: 0.5,
+        y: 64.0,
+        z: 0.5,
+        dimension: dim.into(),
+        game_mode: GameMode::Survival,
+        health: 20.0,
+    };
+    let stack = |item: &str| HostStack {
+        item: item.into(),
+        count: 1,
+        components: Vec::new(),
+        data: Default::default(),
+    };
+    assert!(mods.before_item_toss(&steve, &stack("minecraft:diamond")));
+    assert!(!mods.before_item_toss(&steve, &stack("minecraft:dirt")));
+    let spared =
+        mods.before_explosion_blocks(dim, (0.0, 64.0, 0.0), &[[0, 64, 0], [1, 64, 0], [2, 63, 5]]);
+    assert_eq!(spared, [[0, 64, 0], [2, 63, 5]]);
+}

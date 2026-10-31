@@ -337,6 +337,14 @@ impl PlayerMotion {
         let before = self.health.health() + self.health.absorption();
         let fire_ticks = self.fire_ticks;
         let source_name = source.definition().name.clone();
+        // `before-events.player-hurt`: a server mod may change or refuse it.
+        let at = [self.position.x, self.position.y, self.position.z];
+        let health = self.health.health();
+        let amount = match crate::mod_gate::player_hurt(&source_name, amount, at, health) {
+            Some(changed) if changed <= 0.0 => return Ok(BlockOutcome::default()),
+            Some(changed) => changed,
+            None => amount,
+        };
         let totem_ready = self.health.totem_ready;
         let invulnerable = self.invulnerable;
         let h = &mut self.health;
@@ -754,11 +762,13 @@ impl HurtWorld for Environment<'_> {
         Ok(())
     }
     fn death_protection(&mut self, _: &mut State) -> io::Result<bool> {
-        if !self.totem
-            || self
+        let protected = self.totem
+            && !self
                 .source
-                .immunity_tag(ImmunityTag::BypassesInvulnerability)
-        {
+                .immunity_tag(ImmunityTag::BypassesInvulnerability);
+        // `before-events.player-death`: a server mod keeps them alive as a
+        // totem would, with no totem to use up (`Game::apply_totem`).
+        if !protected && !crate::mod_gate::player_death(&self.source.definition().name) {
             return Ok(false);
         }
         self.totem_fired = true;

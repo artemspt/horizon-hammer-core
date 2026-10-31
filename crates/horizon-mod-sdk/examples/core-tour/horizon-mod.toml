@@ -6,4 +6,4 @@ authors = ["Horizon Hammer Core"]
 api = "0.3"
 side = "server"
 capabilities = ["players", "world", "entities", "storage", "registries"]
-events = ["entity-dying"]
+events = ["entity-dying", "before-entity-hurt", "before-mob-drop", "before-item-toss", "before-explosion-blocks", "before-xp-drop"]

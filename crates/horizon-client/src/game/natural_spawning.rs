@@ -403,6 +403,9 @@ impl<'a> Game<'a> {
             mob.id = self.next_entity;
             mob.persistent = persistent;
             let id = mob.id;
+            if self.mod_refuses_mob(&mob, if persistent { "chunk" } else { "natural" }) {
+                continue;
+            }
             self.mobs.push(mob);
             self.enchant_spawn_equipment(id);
             if !persistent {

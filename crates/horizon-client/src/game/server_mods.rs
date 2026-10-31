@@ -502,17 +502,19 @@ mod run {
             }
             let registry = self.pack.assets.registry;
             let biomes = self.res.biomes().clone();
-            self.mods.mods.lend_world(Box::new(LentWorld {
-                registry,
-                biomes,
-                dims,
-                more,
-            }));
+            self.mods_now(|m| {
+                m.lend_world(Box::new(LentWorld {
+                    registry,
+                    biomes,
+                    dims,
+                    more,
+                }))
+            });
         }
 
         /// Puts back the chunks [`Game::lend_world`] lent.
         pub(in crate::game) fn return_world(&mut self) {
-            let Some(view) = self.mods.mods.take_world() else {
+            let Some(view) = self.mods_now(|m| m.take_world()) else {
                 return;
             };
             let view: Box<dyn std::any::Any> = view;
@@ -598,7 +600,11 @@ mod run {
         }
 
         /// The server player of connection `conn`, as server mods see them.
-        fn guest_server_player(&self, host: &LanHost, conn: u32) -> Option<ServerPlayer> {
+        pub(in crate::game) fn guest_server_player(
+            &self,
+            host: &LanHost,
+            conn: u32,
+        ) -> Option<ServerPlayer> {
             let uuid = host.hub.guests.iter().find(|g| g.conn == conn)?.uuid;
             let id = uuid_string(uuid);
             self.server_players(Some(host))

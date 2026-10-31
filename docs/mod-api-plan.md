@@ -22,21 +22,26 @@ Hook names here live in the interface that fits; a hook is an export, so put it 
 
 Today spawn and hurt are found at the tick's end, so a cancel undoes the result. Mods need to change damage and refuse things as they happen. Top priority: most big mods lean on this.
 
-- [ ] `game-events.before-entity-spawn`: may refuse a mob spawning, natural or not
-- [ ] `game-events.before-entity-hurt`: may refuse or change the damage, with its type and attacker
-- [ ] `game-events.before-player-hurt`: the same for players
-- [ ] `game-events.before-entity-death`: may refuse a death, for mobs
-- [ ] `game-events.before-player-death`: may refuse a death, for players
-- [ ] `game-events.before-explosion-blocks`: which blocks an explosion breaks: may remove some
-- [ ] `game-events.before-item-pickup`: may refuse a player picking up an item
-- [ ] `game-events.before-item-toss`: may refuse a player dropping an item
-- [ ] `game-events.before-teleport`: may refuse or move a teleport
-- [ ] `game-events.before-dimension-change`: may refuse a change of dimension
-- [ ] `game-events.before-sleep`: may refuse a bed
-- [ ] `game-events.before-effect-added`: may refuse an effect
-- [ ] `game-events.before-block-drop`: may change what a broken block drops
-- [ ] `game-events.before-mob-drop`: may change what a dead mob drops
-- [ ] `game-events.before-xp-drop`: may change the experience dropped
+Landed hooks live in their own interface, `before-events` (world `before-events-host`), not in `game-events`: a mod built
+before them still binds its `game-events`. A manifest lists them as `before-<name>`. The game asks most of them where the
+thing happens (`game/mod_before.rs`); damage is asked inside the mob's own tick, where `Game::mod_gated` lends the mods
+to `horizon_client::mod_gate` for the phase.
+
+- [x] `game-events.before-entity-spawn`: may refuse a mob spawning, natural or not (`before-events.entity-spawn`, with a reason: natural, chunk, spawner, mob, summoned)
+- [x] `game-events.before-entity-hurt`: may refuse or change the damage, with its type and attacker (`before-events.entity-hurt`, asked inside the mob's tick through `horizon_client::mod_gate`; not yet for `/damage` and a conduit)
+- [x] `game-events.before-player-hurt`: the same for players (`before-events.player-hurt`, in `PlayerMotion::hurt_caused_by`, so fire, drowning and falls too)
+- [x] `game-events.before-entity-death`: may refuse a death, for mobs (already there as `entity-events.entity-dying` (level 17): no second hook)
+- [x] `game-events.before-player-death`: may refuse a death, for players (`before-events.player-death`, in the totem's place)
+- [x] `game-events.before-explosion-blocks`: which blocks an explosion breaks: may remove some (`before-events.explosion-blocks`: the answer is the blocks that stay)
+- [x] `game-events.before-item-pickup`: may refuse a player picking up an item (`before-events.item-pickup`, guests)
+- [x] `game-events.before-item-toss`: may refuse a player dropping an item (`before-events.item-toss`, the drop key; a refusal sends the inventory again)
+- [ ] `game-events.before-teleport`: may refuse or move a teleport (waits: `/tp`, pearls and chorus fruit each move the player their own way)
+- [ ] `game-events.before-dimension-change`: may refuse a change of dimension (waits: portals for guests run in `server_travel.rs`, not read yet)
+- [ ] `game-events.before-sleep`: may refuse a bed (waits: a guest's bed goes through the hub, not read yet)
+- [ ] `game-events.before-effect-added`: may refuse an effect (waits: effects go on in eight places in the game and in mob code; needs the gate around beacons and drinking)
+- [ ] `game-events.before-block-drop`: may change what a broken block drops (waits: drops of a broken block are spawned in the hub's dig code)
+- [x] `game-events.before-mob-drop`: may change what a dead mob drops (`before-events.mob-drop`)
+- [x] `game-events.before-xp-drop`: may change the experience dropped (`before-events.xp-drop`, a dead mob's so far (`source` = `mob`))
 - [ ] `game-events.before-crop-grow`: may refuse a growth step
 - [ ] `game-events.before-sapling-grow`: may refuse or replace a tree
 - [ ] `game-events.before-fluid-place`: may refuse a fluid source being placed
@@ -46,12 +51,12 @@ Today spawn and hurt are found at the tick's end, so a cancel undoes the result.
 - [ ] `game-events.before-portal-create`: may refuse a nether portal forming
 - [ ] `game-events.before-mob-target`: may refuse or change a mob's target
 - [ ] `game-events.before-mob-griefing`: may refuse a mob changing blocks
-- [ ] `game-events.before-container-open`: may refuse a window opening
+- [x] `game-events.before-container-open`: may refuse a window opening (`before-events.container-open`: chests, barrels, hoppers, furnaces, brewing stands, crafters; not yet crafting tables, anvils and the other stations)
 - [ ] `game-events.before-craft`: may refuse or change a crafted result
 - [ ] `game-events.before-smelt`: may refuse a furnace's step
 - [ ] `game-events.before-anvil`: may set an anvil's result and cost
 - [ ] `game-events.before-enchant`: may change an enchanting table's result
-- [ ] `game-events.before-chat`: may refuse or rewrite a chat line
+- [ ] `game-events.before-chat`: may refuse or rewrite a chat line (waits: the hub broadcasts a guest's chat before the game hears it (`HostEvent::PlayerChat`))
 
 ## 2. Events that only tell (35, kind C)
 

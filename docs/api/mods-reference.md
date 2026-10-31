@@ -30,6 +30,13 @@ The game's side of `game-events`.
 - Imports (what the game offers): `players`, `entities`
 - Exports (what the mod provides): `game-events`
 
+## World `before-events-host`
+
+The game's side of `before-events`.
+
+- Imports (what the game offers): `players`, `entities`
+- Exports (what the mod provides): `before-events`
+
 ## World `entity-events-host`
 
 - Imports (what the game offers): `players`, `entities`
@@ -78,7 +85,7 @@ A server mod (manifest `side = "server"`, `api = "0.3"`, experimental): runs whe
 What the SDK builds a server mod as: `horizon-server-mod` and the block hooks.
 
 - Imports (what the game offers): `log`, `storage`, `players`, `world`, `storages`, `entities`, `worldgen`, `server-net`
-- Exports (what the mod provides): `block-events`, `game-events`, `entity-events`, `logic-events`, `server-net-events`, `server-events`
+- Exports (what the mod provides): `block-events`, `game-events`, `before-events`, `entity-events`, `logic-events`, `server-net-events`, `server-events`
 
 ## World `horizon-ui-mod`
 
@@ -1187,6 +1194,37 @@ What happens to entities and the world, for server mods that list the event in t
 | `player-hurt` | `func(player: player, amount: f32)` | A player lost `amount` health this tick. |
 | `item-picked-up` | `func(player: player, stack: item-stack)` | A player picked up `stack` from the ground. |
 | `explosion` | `func(dimension: string, x: f64, y: f64, z: f64, power: f32) -> bool` | An explosion of `power` (TNT: 4) is about to go off: true stops it, with no damage and no blocks broken. Asked as it happens. |
+
+## `before-events`
+
+Access: exported by the mod: the game calls it.
+
+Asked before something happens, as it happens, of the server mods whose manifest lists the event with `before-` in front (`events = ["before-entity-hurt", ...]`), in order of `priority`. A hook that refuses stops the asking: the mods after it are not asked. A hook that changes a value hands the changed value to the next mod. What a mod does from here (`entities`, `world`...) waits for the tick's end, as always.
+
+### type `player`
+
+`type player = player`
+
+### type `item-stack`
+
+`type item-stack = item-stack`
+
+### type `entity`
+
+`type entity = entity`
+
+| Function | Signature | What it does |
+| --- | --- | --- |
+| `entity-spawn` | `func(dimension: string, entity: entity, reason: string) -> bool` | A mob is about to join the level in place: `reason` is `natural`, `chunk` (made with new terrain), `spawner`, `mob` (born of another: breeding, a slime splitting, a zombie's reinforcements) or `summoned` (a spawn egg, `/summon`, a raid, a patrol, an iron golem, a warden, another mod). True refuses it: the mob never appears. |
+| `entity-hurt` | `func(dimension: string, entity: entity, damage-type: string, attacker: option<string>, amount: f32) -> f32` | A mob is about to lose `amount` health to `damage-type` (`minecraft:arrow`), past invulnerability, before armor; `attacker` is the mob's or player's id when one dealt it. The answer is what it loses instead: `amount` to leave it, 0 or less refuses the hit. Asked inside the mob's tick for fire, drowning, falls and the like: there `world` reads answer nothing, the hook sees only its arguments. Not asked yet for `/damage` and a conduit's attack. |
+| `player-hurt` | `func(player: player, damage-type: string, attacker: option<string>, amount: f32) -> f32` | The same for a player, before armor and enchantments: the attacker is the mob behind a mob's hit, none for a player's (PvP). |
+| `player-death` | `func(player: player, damage-type: string) -> bool` | A player's health is about to reach 0 (after a totem had its say): true keeps them alive on 1 health. |
+| `explosion-blocks` | `func(dimension: string, x: f64, y: f64, z: f64, blocks: list<tuple<s32, s32, s32>>) -> list<tuple<s32, s32, s32>>` | An explosion at x y z will break `blocks`, after `game-events.explosion` let it go off: the answer is the ones that stay. Up to 4096 are asked of; the rest break. |
+| `item-pickup` | `func(player: player, stack: item-stack) -> bool` | `player` is about to pick up `stack` from the ground: true leaves it there. Asked again each tick they stand by it. |
+| `item-toss` | `func(player: player, stack: item-stack) -> bool` | `player` is about to drop `stack` with the drop key (Q, or ctrl+Q for all of it): true keeps it in their inventory. |
+| `mob-drop` | `func(dimension: string, entity: entity, killer: option<string>, drops: list<item-stack>) -> option<list<item-stack>>` | What a dead mob is about to drop, by `killer` when a player killed it: `none` leaves it, a list is what drops instead (up to 64 stacks). |
+| `xp-drop` | `func(dimension: string, x: f64, y: f64, z: f64, source: string, amount: u32) -> u32` | Experience about to drop at x y z: `source` is `mob` (a dead mob's, asked after `mob-drop`). The answer is what drops. |
+| `container-open` | `func(player: player, x: s32, y: s32, z: s32, block: string) -> bool` | `player` is about to open the window of `block` at x y z (a chest, barrel, ender chest, shulker box, hopper, dispenser, dropper, furnace, brewing stand or crafter): true keeps it shut. |
 
 ## `entity-events`
 

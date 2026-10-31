@@ -102,8 +102,9 @@ pub fn load_config(path: &Path, m: &Manifest) -> std::collections::BTreeMap<Stri
     values
 }
 
-/// The events of `game-events`, as a manifest's `events` names them.
-pub const EVENTS: [&str; 7] = [
+/// The events of `game-events`, as a manifest's `events` names them, then
+/// those of `before-events` with `before-` in front.
+pub const EVENTS: [&str; 17] = [
     "entity-dying",
     "entity-spawned",
     "entity-hurt",
@@ -111,6 +112,16 @@ pub const EVENTS: [&str; 7] = [
     "player-hurt",
     "item-picked-up",
     "explosion",
+    "before-entity-spawn",
+    "before-entity-hurt",
+    "before-player-hurt",
+    "before-player-death",
+    "before-explosion-blocks",
+    "before-item-pickup",
+    "before-item-toss",
+    "before-mob-drop",
+    "before-xp-drop",
+    "before-container-open",
 ];
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]

@@ -1090,6 +1090,9 @@ impl Game<'_> {
             if !self.warden_fits(&mob) {
                 continue;
             }
+            if self.mod_refuses_mob(&mob, "summoned") {
+                return false;
+            }
             self.mobs.push(mob);
             return true;
         }

@@ -202,6 +202,7 @@ pub mod server {
         },
     });
 
+    pub use exports::horizon::mods::before_events::Guest as __BeforeGuest;
     pub use exports::horizon::mods::block_events::Guest as __BlockGuest;
     pub use exports::horizon::mods::entity_events::Guest as __EntityGuest;
     pub use exports::horizon::mods::game_events::Guest as __EventsGuest;
@@ -417,6 +418,91 @@ pub mod server {
         }
         /// A message from `player`'s client mods on `channel` (capability `net`).
         fn net_received(&mut self, _player: &Player, _channel: &str, _data: &[u8]) {}
+
+        /// `before-events`, for the events the manifest lists with `before-`
+        /// in front (`events = ["before-entity-hurt", ...]`), asked as they
+        /// happen. A mob is about to appear (`reason`: `natural`, `spawner`,
+        /// `breeding`...): true refuses it.
+        fn before_entity_spawn(
+            &mut self,
+            _dimension: &str,
+            _entity: &Entity,
+            _reason: &str,
+        ) -> bool {
+            false
+        }
+        /// A mob is about to lose `amount` to `damage_type`: what it loses
+        /// instead (0 or less refuses the hit).
+        fn before_entity_hurt(
+            &mut self,
+            _dimension: &str,
+            _entity: &Entity,
+            _damage_type: &str,
+            _attacker: Option<&str>,
+            amount: f32,
+        ) -> f32 {
+            amount
+        }
+        /// The same for a player.
+        fn before_player_hurt(
+            &mut self,
+            _player: &Player,
+            _damage_type: &str,
+            _attacker: Option<&str>,
+            amount: f32,
+        ) -> f32 {
+            amount
+        }
+        /// A player is about to die: true keeps them alive on 1 health.
+        fn before_player_death(&mut self, _player: &Player, _damage_type: &str) -> bool {
+            false
+        }
+        /// The blocks an explosion is about to break: the ones that stay.
+        fn before_explosion_blocks(
+            &mut self,
+            _dimension: &str,
+            _at: (f64, f64, f64),
+            _blocks: &[BlockPos],
+        ) -> Vec<BlockPos> {
+            Vec::new()
+        }
+        /// A player is about to pick up `stack`: true leaves it on the ground.
+        fn before_item_pickup(&mut self, _player: &Player, _stack: &ItemStack) -> bool {
+            false
+        }
+        /// A player is about to drop `stack`: true keeps it.
+        fn before_item_toss(&mut self, _player: &Player, _stack: &ItemStack) -> bool {
+            false
+        }
+        /// What a dead mob is about to drop: `None` leaves it.
+        fn before_mob_drop(
+            &mut self,
+            _dimension: &str,
+            _entity: &Entity,
+            _killer: Option<&str>,
+            _drops: &[ItemStack],
+        ) -> Option<Vec<ItemStack>> {
+            None
+        }
+        /// Experience about to drop: what drops.
+        fn before_xp_drop(
+            &mut self,
+            _dimension: &str,
+            _at: (f64, f64, f64),
+            _source: &str,
+            amount: u32,
+        ) -> u32 {
+            amount
+        }
+        /// A player is about to open `block`'s window: true refuses it.
+        fn before_container_open(
+            &mut self,
+            _player: &Player,
+            _pos: BlockPos,
+            _block: &str,
+        ) -> bool {
+            false
+        }
     }
 
     impl Registration {
@@ -787,6 +873,104 @@ macro_rules! export_server_mod {
                 fn explosion(dimension: String, x: f64, y: f64, z: f64, power: f32) -> bool {
                     let mut out = false;
                     with(|m| out = m.explosion(&dimension, x, y, z, power));
+                    out
+                }
+            }
+            impl $crate::server::__BeforeGuest for Export {
+                fn entity_spawn(dimension: String, entity: Entity, reason: String) -> bool {
+                    let mut out = false;
+                    with(|m| out = m.before_entity_spawn(&dimension, &entity, &reason));
+                    out
+                }
+                fn entity_hurt(
+                    dimension: String,
+                    entity: Entity,
+                    damage_type: String,
+                    attacker: Option<String>,
+                    amount: f32,
+                ) -> f32 {
+                    let mut out = amount;
+                    with(|m| {
+                        out = m.before_entity_hurt(
+                            &dimension,
+                            &entity,
+                            &damage_type,
+                            attacker.as_deref(),
+                            amount,
+                        )
+                    });
+                    out
+                }
+                fn player_hurt(
+                    player: Player,
+                    damage_type: String,
+                    attacker: Option<String>,
+                    amount: f32,
+                ) -> f32 {
+                    let mut out = amount;
+                    with(|m| {
+                        out =
+                            m.before_player_hurt(&player, &damage_type, attacker.as_deref(), amount)
+                    });
+                    out
+                }
+                fn player_death(player: Player, damage_type: String) -> bool {
+                    let mut out = false;
+                    with(|m| out = m.before_player_death(&player, &damage_type));
+                    out
+                }
+                fn explosion_blocks(
+                    dimension: String,
+                    x: f64,
+                    y: f64,
+                    z: f64,
+                    blocks: Vec<(i32, i32, i32)>,
+                ) -> Vec<(i32, i32, i32)> {
+                    let blocks: Vec<BlockPos> = blocks
+                        .into_iter()
+                        .map(|(x, y, z)| BlockPos { x, y, z })
+                        .collect();
+                    let mut out = Vec::new();
+                    with(|m| out = m.before_explosion_blocks(&dimension, (x, y, z), &blocks));
+                    out.into_iter().map(|p| (p.x, p.y, p.z)).collect()
+                }
+                fn item_pickup(player: Player, stack: ItemStack) -> bool {
+                    let mut out = false;
+                    with(|m| out = m.before_item_pickup(&player, &stack));
+                    out
+                }
+                fn item_toss(player: Player, stack: ItemStack) -> bool {
+                    let mut out = false;
+                    with(|m| out = m.before_item_toss(&player, &stack));
+                    out
+                }
+                fn mob_drop(
+                    dimension: String,
+                    entity: Entity,
+                    killer: Option<String>,
+                    drops: Vec<ItemStack>,
+                ) -> Option<Vec<ItemStack>> {
+                    let mut out = None;
+                    with(|m| {
+                        out = m.before_mob_drop(&dimension, &entity, killer.as_deref(), &drops)
+                    });
+                    out
+                }
+                fn xp_drop(
+                    dimension: String,
+                    x: f64,
+                    y: f64,
+                    z: f64,
+                    source: String,
+                    amount: u32,
+                ) -> u32 {
+                    let mut out = amount;
+                    with(|m| out = m.before_xp_drop(&dimension, (x, y, z), &source, amount));
+                    out
+                }
+                fn container_open(player: Player, x: i32, y: i32, z: i32, block: String) -> bool {
+                    let mut out = false;
+                    with(|m| out = m.before_container_open(&player, BlockPos { x, y, z }, &block));
                     out
                 }
             }

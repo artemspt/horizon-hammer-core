@@ -125,6 +125,9 @@ impl Game<'_> {
             self.audio
                 .play(&format!("minecraft:{sound}"), Some(at), 1.0, 1.0);
         }
+        if self.mod_refuses_mob(&golem, "summoned") {
+            return false;
+        }
         self.mobs.push(golem);
         true
     }

@@ -125,6 +125,9 @@ impl Game<'_> {
                     self.next_entity += 1;
                     mob.id = self.next_entity;
                     let id = mob.id;
+                    if self.mod_refuses_mob(&mob, "spawner") {
+                        continue;
+                    }
                     self.mobs.push(mob);
                     self.enchant_spawn_equipment(id);
                     self.spawn_jockeys(id, true);

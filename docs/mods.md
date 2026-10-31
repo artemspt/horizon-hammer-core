@@ -600,6 +600,20 @@ cancelled spawn removes the mob, a cancelled hurt gives the mob its health
 back (the knockback stays). An interface used only for its types
 (`entities.{entity}` in these events) needs no capability.
 
+**Asked before (`before-events`).** The manifest lists them with `before-`
+in front: `before-entity-spawn`, `before-entity-hurt`, `before-player-hurt`,
+`before-player-death`, `before-explosion-blocks`, `before-item-pickup`,
+`before-item-toss`, `before-mob-drop`, `before-xp-drop`,
+`before-container-open`. Each is asked as the thing happens, before it does,
+in order of `priority`: a refusal ends the asking, a changed value (damage,
+drops, experience) goes on to the next mod. Damage is asked inside the
+mob's or player's own tick (fire, drowning, a fall), where the game can't
+lend the world: `world` reads answer nothing there, and the hook decides
+from its arguments. What a mod does from a hook waits for the tick's end,
+as always. `core-tour` cancels damage to cows, adds an emerald to a
+zombie's loot and keeps diamonds from being dropped; `/showcase before on`
+shows every hook in the game.
+
 **Network (capability `net`, level 11).** A client mod and a server mod
 talk on channels they agree on (`[a-z0-9_./-]`, 1-64 characters: put the
 mod's id in it). A client mod's `client-net.send(channel, data)` reaches

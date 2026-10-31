@@ -109,5 +109,59 @@ impl ServerMod for CoreTour {
         ));
         let _ = world::set_saved("report", report.join("|").as_bytes());
     }
+
+    // NeoForge's cancellable events, asked before they happen (`before-events`).
+    /// LivingIncomingDamageEvent: cows take nothing, fire burns zombies twice.
+    fn before_entity_hurt(
+        &mut self,
+        _dimension: &str,
+        entity: &Entity,
+        damage_type: &str,
+        _attacker: Option<&str>,
+        amount: f32,
+    ) -> f32 {
+        match (entity.kind.as_str(), damage_type) {
+            ("minecraft:cow", _) => 0.0,
+            ("minecraft:zombie", "minecraft:on_fire") => amount * 2.0,
+            _ => amount,
+        }
+    }
+    /// LivingDropsEvent: a zombie drops an emerald besides its own loot.
+    fn before_mob_drop(
+        &mut self,
+        _dimension: &str,
+        entity: &Entity,
+        _killer: Option<&str>,
+        drops: &[ItemStack],
+    ) -> Option<Vec<ItemStack>> {
+        (entity.kind == "minecraft:zombie").then(|| {
+            let mut drops = drops.to_vec();
+            drops.push(ItemStack::new("minecraft:emerald", 1));
+            drops
+        })
+    }
+    /// ItemTossEvent: diamonds stay in the inventory.
+    fn before_item_toss(&mut self, _player: &Player, stack: &ItemStack) -> bool {
+        stack.item == "minecraft:diamond"
+    }
+    /// ExplosionEvent.Detonate: blocks on even columns stay.
+    fn before_explosion_blocks(
+        &mut self,
+        _dimension: &str,
+        _at: (f64, f64, f64),
+        blocks: &[horizon_mod_sdk::server::BlockPos],
+    ) -> Vec<horizon_mod_sdk::server::BlockPos> {
+        blocks.iter().filter(|p| p.x % 2 == 0).copied().collect()
+    }
+    /// LivingExperienceDropEvent: twice the experience.
+    fn before_xp_drop(
+        &mut self,
+        _dimension: &str,
+        _at: (f64, f64, f64),
+        _source: &str,
+        amount: u32,
+    ) -> u32 {
+        amount * 2
+    }
 }
 horizon_mod_sdk::export_server_mod!(CoreTour);

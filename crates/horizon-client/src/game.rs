@@ -108,6 +108,7 @@ mod minecarts;
 mod mob_blocks;
 mod mob_gear;
 mod mob_sounds;
+mod mod_before;
 mod mod_browser;
 #[cfg(feature = "mods")]
 mod mod_browser_recipes;
@@ -5445,7 +5446,9 @@ impl Game<'_> {
     fn tick_world(&mut self, running: bool) -> Result<()> {
         self.share_spawn_conditions();
         self.update_chunk_tickets();
-        horizon_client::spans::time("tick_effects", || self.tick_effects(running));
+        horizon_client::spans::time("tick_effects", || {
+            self.mod_gated(|g| g.tick_effects(running))
+        });
         // Player.tick's ItemCooldowns.tick for the window's player (a
         // server's players count theirs down in `tick_guests`).
         self.shield_cooldown = self.shield_cooldown.saturating_sub(1);
@@ -5469,14 +5472,14 @@ impl Game<'_> {
             horizon_client::spans::time("tick_cushions", || self.tick_cushions());
             horizon_client::spans::time("tick_boats", || self.tick_boats());
             horizon_client::spans::time("tick_carts", || self.tick_carts());
-            horizon_client::spans::time("tick_thunder", || self.tick_thunder());
+            horizon_client::spans::time("tick_thunder", || self.mod_gated(|g| g.tick_thunder()));
             horizon_client::spans::time("tick_lecterns", || self.tick_lecterns());
             horizon_client::spans::time("tick_maps", || self.tick_maps());
             self.tick_lodestone_compasses();
-            horizon_client::spans::time("tick_bolts", || self.tick_bolts());
+            horizon_client::spans::time("tick_bolts", || self.mod_gated(|g| g.tick_bolts()));
             horizon_client::spans::time("tick_fishing", || self.tick_fishing());
-            horizon_client::spans::time("tick_tridents", || self.tick_tridents());
-            horizon_client::spans::time("tick_rockets", || self.tick_rockets());
+            horizon_client::spans::time("tick_tridents", || self.mod_gated(|g| g.tick_tridents()));
+            horizon_client::spans::time("tick_rockets", || self.mod_gated(|g| g.tick_rockets()));
             horizon_client::spans::time("tick_ominous_item_spawners", || {
                 self.tick_ominous_item_spawners()
             });
@@ -5506,8 +5509,8 @@ impl Game<'_> {
             horizon_client::spans::time("tick_end", || self.tick_end())?;
         }
         if running {
-            horizon_client::spans::time("tick_falling", || self.tick_falling())?;
-            horizon_client::spans::time("tick_tnt", || self.tick_tnt())?;
+            horizon_client::spans::time("tick_falling", || self.mod_gated(|g| g.tick_falling()))?;
+            horizon_client::spans::time("tick_tnt", || self.mod_gated(|g| g.tick_tnt()))?;
         }
         if running {
             horizon_client::spans::time("tick_block_entities", || self.tick_block_entities())?;
@@ -8883,7 +8886,7 @@ impl Game<'_> {
         .collect()
     }
     fn tick_mobs(&mut self) -> Result<()> {
-        self.tick_creatures()?;
+        self.mod_gated(|g| g.tick_creatures())?;
         self.position_rider();
         self.tick_stats();
         self.tick_scoreboard();

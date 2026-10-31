@@ -6,6 +6,7 @@
 //! - The guard: its own type, named and helmeted by code, walks and attacks when told, survives one death.
 //! - Events of every kind, data on players, mobs and the world, messages between mods, tags, and a HUD on the client
 //!   (`client.rs`, this mod's other half) fed over the mod's own network channel.
+mod before;
 mod client;
 
 use horizon_mod_sdk::server::{
@@ -42,6 +43,8 @@ struct Showcase {
     open: std::collections::HashMap<String, (String, BlockPos)>,
     /// Boomerangs in flight: who threw each, how long ago.
     boomerangs: std::collections::HashMap<String, (String, u32)>,
+    /// `/showcase before`: the `before-events` hooks.
+    before: before::Before,
 }
 
 fn say(player: &Player, text: &str) {
@@ -486,8 +489,24 @@ impl Showcase {
             // The API's level 18 in one go: `/showcase api set`, then, a tick later, `/showcase api check`,
             // then `/showcase api act` for what shows on screen.
             "api" => api_tour(player, arg, (fx + 8, fy + 5, fz)).map(Some),
+            // `before-events`: `on` turns each hook's rule on, `check` says how often each was asked.
+            "before" => match arg {
+                "on" | "off" => {
+                    self.before.switch(arg == "on");
+                    Ok(Some(match arg {
+                        "on" => format!("Before-hooks on: {}", before::RULES),
+                        _ => "Before-hooks off".into(),
+                    }))
+                }
+                "check" => Ok(Some(format!(
+                    "Before-hooks {} (asked/acted): {}",
+                    if self.before.on { "on" } else { "off" },
+                    self.before.report()
+                ))),
+                _ => Err("/showcase before on | off | check".into()),
+            },
             "help" => Ok(Some(
-                "/showcase api | demo | give | guard | bolt | test | menu | wipe | surface | learn | forget | undying | status | manual | tags | report | dial | plasma | shock | boomerang | go moon/deep/rift/home".into(),
+                "/showcase api | before | demo | give | guard | bolt | test | menu | wipe | surface | learn | forget | undying | status | manual | tags | report | dial | plasma | shock | boomerang | go moon/deep/rift/home".into(),
             )),
             // A stand beside the player: a floor, two reactors, a lamp and a wire.
             "demo" => {
@@ -714,6 +733,7 @@ impl ServerMod for Showcase {
             to_start: Vec::new(),
             open: Default::default(),
             boomerangs: Default::default(),
+            before: Default::default(),
         };
         let hooks = Registration::new()
             .on_tick()
@@ -991,6 +1011,71 @@ impl ServerMod for Showcase {
             self.explosions_stopped += 1;
         }
         near
+    }
+
+    fn before_entity_spawn(&mut self, _dimension: &str, entity: &Entity, _reason: &str) -> bool {
+        self.before.entity_spawn(entity)
+    }
+    fn before_entity_hurt(
+        &mut self,
+        _dimension: &str,
+        entity: &Entity,
+        _damage_type: &str,
+        _attacker: Option<&str>,
+        amount: f32,
+    ) -> f32 {
+        self.before.entity_hurt(entity, amount)
+    }
+    fn before_player_hurt(
+        &mut self,
+        _player: &Player,
+        damage_type: &str,
+        _attacker: Option<&str>,
+        amount: f32,
+    ) -> f32 {
+        self.before.player_hurt(damage_type, amount)
+    }
+    fn before_player_death(&mut self, player: &Player, _damage_type: &str) -> bool {
+        let spared = self.before.player_death();
+        if spared {
+            say(player, "Not this time (/showcase before)");
+        }
+        spared
+    }
+    fn before_explosion_blocks(
+        &mut self,
+        dimension: &str,
+        _at: (f64, f64, f64),
+        blocks: &[BlockPos],
+    ) -> Vec<BlockPos> {
+        self.before.explosion_blocks(dimension, blocks)
+    }
+    fn before_item_pickup(&mut self, _player: &Player, stack: &ItemStack) -> bool {
+        self.before.item_pickup(stack)
+    }
+    fn before_item_toss(&mut self, _player: &Player, stack: &ItemStack) -> bool {
+        self.before.item_toss(stack)
+    }
+    fn before_mob_drop(
+        &mut self,
+        _dimension: &str,
+        entity: &Entity,
+        _killer: Option<&str>,
+        drops: &[ItemStack],
+    ) -> Option<Vec<ItemStack>> {
+        self.before.mob_drop(entity, drops)
+    }
+    fn before_xp_drop(
+        &mut self,
+        _dimension: &str,
+        _at: (f64, f64, f64),
+        _source: &str,
+        amount: u32,
+    ) -> u32 {
+        self.before.xp_drop(amount)
+    }
+    fn before_container_open(&mut self, player: &Player, _pos: BlockPos, block: &str) -> bool {
+        self.before.container_open(player, block)
     }
 
     fn net_received(&mut self, player: &Player, channel: &str, _data: &[u8]) {

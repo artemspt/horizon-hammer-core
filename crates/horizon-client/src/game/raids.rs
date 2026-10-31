@@ -743,6 +743,9 @@ impl Game<'_> {
         spawning::finalize(&mut mob, &facts, &difficulty);
         raider::finalize(&mut mob, reason);
         let id = mob.id;
+        if self.mod_refuses_mob(&mob, "summoned") {
+            return None;
+        }
         self.mobs.push(mob);
         self.enchant_spawn_equipment(id);
         Some(id)

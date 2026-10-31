@@ -107,6 +107,7 @@ pub mod mipmap;
 pub mod mobs;
 pub mod mod_content;
 pub mod mod_dimensions;
+pub mod mod_gate;
 pub mod mod_list;
 pub mod mod_worldgen;
 mod model_library;

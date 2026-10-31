@@ -34,7 +34,7 @@ pub(super) struct ModMenu {
 }
 
 /// `UUID.toString()`.
-fn uuid_string(u: u128) -> String {
+pub(super) fn uuid_string(u: u128) -> String {
     let h = format!("{u:032x}");
     format!(
         "{}-{}-{}-{}-{}",
@@ -45,7 +45,7 @@ fn uuid_string(u: u128) -> String {
         &h[20..]
     )
 }
-fn uuid_words(w: [i32; 4]) -> u128 {
+pub(super) fn uuid_words(w: [i32; 4]) -> u128 {
     w.iter()
         .fold(0u128, |u, &x| (u << 32) | u128::from(x as u32))
 }
@@ -292,7 +292,7 @@ impl Game<'_> {
         }
     }
 
-    fn mod_acting_id(&self) -> String {
+    pub(super) fn mod_acting_id(&self) -> String {
         let [a, b, c, d] = self.acting_uuid().map(|w| w as u32);
         uuid_string(
             (u128::from(a) << 96) | (u128::from(b) << 64) | (u128::from(c) << 32) | u128::from(d),
@@ -1203,8 +1203,8 @@ impl Game<'_> {
             health: m.health,
         })
     }
-    fn hears_events(&self, event: &str) -> bool {
-        self.mods.server && self.remote.is_none() && self.mods.mods.wants_event(event)
+    fn hears_events(&mut self, event: &str) -> bool {
+        self.mods.server && self.remote.is_none() && self.mods_now(|m| m.wants_event(event))
     }
 
     /// `entity-events.entity-dying`, before anything of the death happens:
@@ -1224,7 +1224,7 @@ impl Game<'_> {
         let killer = self.mod_killer_id(killer);
         let dim = self.dim.id();
         self.lend_world();
-        let spared = self.mods.mods.entity_dying(dim, &entity, killer.as_deref());
+        let spared = self.mods_now(|m| m.entity_dying(dim, &entity, killer.as_deref()));
         self.return_world();
         spared
     }
@@ -1248,6 +1248,10 @@ impl Game<'_> {
         m: &horizon_client::mobs::Mob,
         killer: Option<Option<u32>>,
     ) {
+        if self.mods.server {
+            let id = self.mod_killer_id(killer);
+            self.mod_note_killer(m.id, id);
+        }
         if !self.hears_events("entity-died") {
             return;
         }
@@ -1282,10 +1286,8 @@ impl Game<'_> {
             return false;
         }
         self.lend_world();
-        let stop =
-            self.mods
-                .mods
-                .explosion(self.dim.id(), (center[0], center[1], center[2]), power);
+        let dim = self.dim.id();
+        let stop = self.mods_now(|m| m.explosion(dim, (center[0], center[1], center[2]), power));
         self.return_world();
         self.show_mod_output();
         stop

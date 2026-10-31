@@ -2265,6 +2265,12 @@ impl Mob {
         if !ai::accepts_damage(self, &source, amount) {
             return false;
         }
+        // `before-events.entity-hurt`: a server mod may change or refuse it.
+        let amount = match crate::mod_gate::entity_hurt(self, amount, &source) {
+            Some(changed) if changed <= 0.0 => return false,
+            Some(changed) => changed,
+            None => amount,
+        };
         let mut amount = if reflected { 1000.0 } else { amount };
         if self.species() == Species::Armadillo {
             amount = armadillo::reduce_damage(self, amount);

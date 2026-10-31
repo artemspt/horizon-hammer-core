@@ -5,7 +5,7 @@ use super::server_bindings::horizon::mods::entities::Entity;
 use super::{FUEL_EVENT, Mods, Running, ServerPlayer, State, events_bindings};
 use events_bindings::exports::horizon::mods::game_events::Guest;
 
-fn guest_entity(e: &EntityInfo) -> Entity {
+pub(super) fn guest_entity(e: &EntityInfo) -> Entity {
     Entity {
         id: e.id.clone(),
         kind: e.kind.clone(),

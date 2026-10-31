@@ -5,6 +5,12 @@ Fixed ones are removed from this list.
 
 ## Behaviour
 
+- **`before-entity-hurt` misses `/damage` and a conduit's attack**: they hurt mobs outside the phases
+  `Game::mod_gated` covers. In-frame single player's own attack isn't asked either.
+- **`before-player-hurt` names no attacker for PvP**: only `hurt_player_from` says which mob hit
+  (`mod_gate::set_attacker`).
+- **A phase's gate copies every mob's UUID** while a mod hears damage: fine for hundreds of mobs, not measured beyond.
+- **`before-item-pickup` asks each tick** a player stands by a refused stack, as NeoForge's event does.
 - **Spawn and hurt events cover one level.** The other levels' mobs and redstone work (`tick_parked_mod_levels`), but
   `entity-spawned` and `entity-hurt` still only compare the level in place. Their numbers lag a tick there.
 - **A mod's mob type shows its template** to every client, and vanilla code comparing `kind.id` with a name won't treat

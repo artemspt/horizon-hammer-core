@@ -25,6 +25,23 @@ The project has a working WASM mod system in `crates/horizon-mods/` with:
 
 ## Changelog
 
+### 2026-10-31 - Events asked before they happen (`before-events`)
+
+#### Added
+- **WIT `before-events`** (world `before-events-host`, exported by `horizon-server-block-mod`): `entity-spawn`,
+  `entity-hurt`, `player-hurt`, `player-death`, `explosion-blocks`, `item-pickup`, `item-toss`, `mob-drop`, `xp-drop`,
+  `container-open`; manifest names `before-<name>` in `manifest::EVENTS`
+- **Runtime** - `runtime/before.rs`: asked by `priority`, a refusal stops, a changed value goes on; `Mods::wants_before`
+- **Game** - `horizon_client::mod_gate`: `Mob::damage_with` and `PlayerMotion::hurt_caused_by` ask through it, and
+  the totem's death protection; `game/mod_before.rs` `Game::mod_gated` hands the mods to it around the creature, effect,
+  thunder, bolt, trident, rocket, falling block and TNT phases, a guest's tick and a guest's attack, and `mods_now` finds
+  them meanwhile (`hears_events`, `lend_world`, `entity-dying` and `explosion` go through it). Spawns are asked where mobs
+  join (`spawn_mob_for`, natural spawning, spawners, mob events, raids, iron golems, wardens); pickups, drops of the held
+  stack and container windows of guests; a dead mob's loot and experience; an explosion's blocks
+- **SDK** - `ServerMod::before_*`; **example** `core-tour` cancels and changes; **test** `before_events_change_and_refuse_as_they_happen`
+- **`/showcase before on|off|check`** - a rule on each hook, and how often the game asked it
+- Not run in the game yet: the machine it was written on had no game resources. Built, and the runtime tested
+
 ### 2026-10-31 - 75 smaller functions (API level 18)
 
 #### Added
