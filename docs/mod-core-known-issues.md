@@ -11,6 +11,9 @@ Fixed ones are removed from this list.
   (`mod_gate::set_attacker`).
 - **A phase's gate copies every mob's UUID** while a mod hears damage: fine for hundreds of mobs, not measured beyond.
 - **`before-item-pickup` asks each tick** a player stands by a refused stack, as NeoForge's event does.
+- **`/kill` and `/damage` on a player** skip `before-player-hurt` and `before-player-death`.
+- **`before-entity-spawn` repeats while it refuses**: a refused mob doesn't fill the mob cap, so natural spawning tries
+  again at once (about 1700 asks in 30 s when every spawn is refused).
 - **Spawn and hurt events cover one level.** The other levels' mobs and redstone work (`tick_parked_mod_levels`), but
   `entity-spawned` and `entity-hurt` still only compare the level in place. Their numbers lag a tick there.
 - **A mod's mob type shows its template** to every client, and vanilla code comparing `kind.id` with a name won't treat

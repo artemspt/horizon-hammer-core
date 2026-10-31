@@ -883,8 +883,10 @@ impl Game<'_> {
             };
             (menu, title, Slots::Block(pos))
         };
+        // Refused: as if nothing opened, so the caller closes the lid or barrel
+        // the click already counted.
         if self.mods_refuse_container(host, conn, [pos.0, pos.1, pos.2]) {
-            return true;
+            return false;
         }
         let Some(items) = host
             .hub
