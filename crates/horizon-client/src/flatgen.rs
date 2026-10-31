@@ -9,6 +9,24 @@ pub struct FlatTerrain {
     surface: Option<crate::lod::Surface>,
 }
 impl FlatTerrain {
+    /// A mod dimension's layers; an unknown block leaves its layers empty.
+    pub fn from_layers(
+        layers: &[horizon_mods::content::FlatLayer],
+        biome: Option<&str>,
+        registry: &BlockRegistry,
+        biomes: &crate::biome::Biomes,
+    ) -> Self {
+        let mut out = Vec::new();
+        for l in layers {
+            let state = registry.default_state(&l.block).map_or(0, |s| s.0);
+            out.extend(std::iter::repeat_n(state, l.height.min(384) as usize));
+        }
+        Self {
+            layers: out,
+            biome: biomes.id(biome.unwrap_or("minecraft:plains")),
+            surface: None,
+        }
+    }
     /// The overworld generator of `world_gen_settings` (`data.dimensions`), if it
     /// is flat. Its `features` and `lakes` decorate the world; a world without
     /// them (the default) gets only its layers, as FlatLevelSource places them.

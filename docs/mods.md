@@ -648,11 +648,57 @@ chat for the in-frame player and a system message for a connection;
 on, each of these points costs one branch (measured in the PR that added
 them).
 
+- *Redstone out (level 13).* `world.set-redstone-output` gives a block a weak
+  signal on every side, `set-comparator-output` what a comparator reads from
+  it. Both are saved and go with the block. Wires hear the signal but don't
+  turn to face a block that isn't a signal source by its state.
+- *Furnace windows (level 13).* A storage of 3 slots opens as a furnace's
+  window; `storages.set-menu-data` sets its flame and arrow.
+- *World data (level 13).* `world.get-saved`/`set-saved` keep a mod's bytes with
+  the world's save, not per block; `storage` is the same in every world.
+- *Closing recipes (level 13).* `world.set-locked-results` keeps crafting grids
+  from making the items listed. The recipe book still shows them.
+- *More windows (level 14).* `storages.open-menu-as` opens a storage as
+  `generic_9x1` to `generic_9x6`, `generic_3x3`, `shulker_box`, `hopper`,
+  `furnace`, `blast_furnace` or `smoker`, when its slots fit.
+- *Sneaking (level 14).* `players.sneaking(id)`: shift-click behaviours.
+- *Ores (level 14).* `worldgen.add-ore`: veins by biome (`*` for all), height,
+  size and count, in new chunks.
+- *Settings (level 14).* The manifest's `[config]` table is the defaults of
+  `horizon-mods/config/<id>.toml`, which the player can edit; `storage.config`
+  reads it, `/hmod reload` reads it again.
+- *SDK helpers.* `server::connected` walks joined blocks (cables, pipes,
+  multiblocks), `server::move_energy` moves FE between two storages.
+- *Data on players (level 15).* `players.get-data`/`set-data` keep a mod's
+  bytes on a player, saved with the world, through death and leaving.
+- *Player events (level 15).* `players.poll-events` in `tick`: `died`,
+  `respawned`, `changed-dimension`, `crafted` (not for the `--in-frame` player).
+- *Between mods (level 15).* `world.mod-loaded` for optional links,
+  `world.mod-send`/`mod-receive` for messages.
+- *Data files (level 15).* `storage.read-resource` reads a file of the mod's own
+  package. `world.item-has-tag` asks the game's item tags.
+- *Items and attributes (level 15).* `entities.drop-item` (the level in place
+  only) and `entities.set-attribute`.
+- *Mob types (level 16).* `data/<id>/horizon/entity/<name>.json` declares a type
+  from a vanilla `template` with `max_health`, `speed`, `attack_damage`, `armor`,
+  `follow_range`, `knockback_resistance`. `entities.spawn` spawns it. Players see
+  the template's model: a custom model needs a client that knows it.
+- *Driving mobs (level 16).* `entities.set-ai`, `set-name`, `set-velocity`,
+  `get-data`, `set-data`; `entities.near` reads every loaded level.
+- *Clicks on mobs (level 16).* `ServerMod::use_entity` and `attack_entity`, asked
+  as they happen: true takes the click from vanilla.
+- *A stack's look (level 16).* `players.style-stack`: name, lore, item model and
+  shine, seen by every client.
+- *Tags (level 16).* `world.block-has-tag`, `world.entity-has-tag`.
+- *Every level (level 16).* Redstone in and out, drops and spawns work in every
+  loaded dimension. What a storage held drops when its block goes, however it went.
+- *Code with content.* A server mod (`api = "0.3"`) may list `registries` and
+  ship `assets/` and `data/` beside its code: `mods/first_legacy` does.
+
 **Not yet.** Block events are a player's own breaking and placing, not
-explosions, pistons or other mods. Storages have no comparator output and
-emit no redstone; a storage's window has no progress bars; entity events
-(hurt, death) and models, particles of a mod's own and its own sounds are
-for later. Command arguments don't take entities,
+explosions, pistons or other mods. Models, particles of a mod's own and its
+own sounds, custom entity types, block entity rendering, custom dimensions,
+structures from a mod's data, and loot modifiers are for later. Command arguments don't take entities,
 items or block states yet, and `^` coordinates; in-frame single player's chat
 box lists server mods' commands by name only (the server still parses their
 arguments).
@@ -778,3 +824,136 @@ Modpacks ([modpacks.md](modpacks.md)) move data-driven `registries` first:
 API 0.2 is content-only `.hmod`s (blocks, items, recipes, loot, models and
 textures), then server hooks (0.3) and block entities, menus, capabilities and
 `net` (0.4), in the order the ATM10 inventory needs them.
+
+## Items, mobs and machines from data and code (API level 17)
+
+**Item components.** A mod's `data/<id>/horizon/item/<name>.json` may carry vanilla components over its template's:
+
+```json
+{
+  "template": "minecraft:iron_sword",
+  "components": {
+    "minecraft:max_damage": 700,
+    "minecraft:food": {"nutrition": 8, "saturation": 1.0},
+    "minecraft:consumable": {},
+    "minecraft:attribute_modifiers": [
+      {"type": "minecraft:attack_damage", "amount": 11.0, "id": "minecraft:base_attack_damage",
+       "operation": "add_value", "slot": "mainhand"}
+    ]
+  }
+}
+```
+
+Tools (`minecraft:tool`), armor (`minecraft:equippable`), food and durability are all components.
+
+**Mob types.** `data/<id>/horizon/entity/<name>.json`: `template`, and `max_health`, `speed`, `attack_damage`, `armor`,
+`follow_range`, `knockback_resistance`, `texture`. `/summon <id>:<name>` knows them. Clients see the template's model.
+
+**Mobs from code.** `entities.set-ai`, `move-to`, `set-target`, `set-equipment`, `set-name`, `set-velocity`. With its AI
+off a mob neither thinks nor moves, as vanilla's `NoAI`: `teleport` drives it.
+
+**Events.** `entity-events` asks as it happens: `use-entity` and `attack-entity` (mobs, players, boats, minecarts, armor
+stands, item frames, paintings) and `entity-dying` (list it in the manifest's `events`; true keeps the mob on 1 health).
+`players.poll-events` adds `tossed`, `used-item`, `broke-item`, `targeted`, `block-gone`. `players.set-undying` protects
+a player from a killing blow; set it in advance, there is no asking at the moment of death.
+
+**Machines.** `storages.set-slot-rule` makes a slot take-only or limits its items: what a player puts in against it goes
+back to their inventory. A wire beside a block with `world.set-redstone-output` turns towards it.
+
+## One mod, both sides
+
+`side = "both"` with `api = "0.3"` is one mod with two halves, like a Java mod with `@Mod` and `Dist`
+code. One crate, one `.hmod`, the content shared; `cargo horizon-mod build` compiles it twice:
+
+- `mod.wasm`, the server half, runs where the world runs (server thread, LAN host, dedicated server);
+- `client.wasm`, the client half, runs in each player's window.
+
+```rust
+mod client; // HUD, screens, client commands
+// ...the server half: ServerMod...
+horizon_mod_sdk::export_both!(client::MyHud, MyServer);
+```
+
+Wasm is sandboxed apart, so the halves share no memory: they talk over the `net` channels
+(`client_net::send`, `server::server_net::send`, `net_received`). `side = "both"` on an older api is
+still a mod with no server half. Example: `mods/showcase`.
+
+## A mob's look, display mobs, block shapes
+
+In `data/<id>/horizon/entity/<name>.json`, beside the template and its numbers:
+
+- `"texture": "<id>:entity/guard"` is `assets/<id>/textures/entity/guard.png`.
+- `"model"` replaces the template's shape: `texture_size`, then `parts` by name, each a `pivot` and
+  `cubes` of `origin`, `size` and `uv`, laid out on the texture as a vanilla cube. Parts named as the
+  template's (`head`, `right_arm`...) animate with it.
+- `"display": true` is a mob that is only a shape: no AI, no gravity, can't be hurt, doesn't despawn, silent.
+  `entities.set-rotation` turns it.
+- `"projectile": {"gravity": 0.02, "drag": 0.99}` flies by its velocity (`Motion` in `entities.spawn`'s NBT,
+  or `set-velocity`). On a hit, `entity-events::projectile-hit`; it is gone unless that returns true.
+- `"sounds": {"ambient": "<id>:guard.idle", "hurt": ..., "death": ...}`, events of `assets/<id>/sounds.json`.
+
+Clients without the mod see the template.
+
+`"properties": {"shape": [[2,0,2,14,4,14], [5,4,5,11,12,11]]}` on a block: boxes in pixels for its collision
+and outline; the look comes from its block model. `"shape_from": "minecraft:hopper"` borrows a vanilla shape.
+
+## Models in the world
+
+`data/<id>/horizon/model/<name>.json` has `texture` and the cubes of a mob's `model`. A client half's
+`render.set-models` places them, with `spin` turned smoothly by the game, and they stay until replaced: what a
+block entity renderer does in Java. The server half tells it where over `net`. Models are written as mobs': y
+grows down. Textures for models and mobs live in `assets/<id>/textures/entity/`.
+
+## Windows of any layout
+
+Real slots, in the mod's layout: the server half opens a window (`storages.open-menu-as`) with a title, and the
+client half gives that title a layout with `render.set-menu-layouts`: where each slot and the player's inventory
+go, and shapes for the background. Cursor, shift-click and slot rules are vanilla's. No layout, vanilla's window.
+
+A screen with no slots: `render.open-canvas(title, shapes, areas)`, a click in an area is `ui-events::select(id, 0)`.
+Both need capability `render`; a canvas also `ui`.
+
+Model parts move too: `"spin": [x, y, z]` on a part in the file (degrees a second, for mobs as well), and `parts`
+of `render.set-models` for poses the mod sets.
+
+## Creative tabs
+
+Every mod with blocks or items gets a tab, named by `itemGroup.<id>` in its lang file. Arrows over the screen page
+through them; search and inventory stay on every page. Its items are found by search and `/give`.
+
+## Trying a mod
+
+`./mods/build-all.sh` puts `.hmod` files in `horizon-mods/`. Turn a mod on in Options > Mods, or with a line
+`mod.<id>:true` in `horizon-mods.txt`, and **restart the game**: blocks and items are read at startup.
+
+## Slot rules and windows first
+
+`storages.set-slot-rule` is checked as the click happens, shift-click and drag included: a refused item never lands.
+A machine's `use-block` should open its window whatever is in hand, and return false while the player sneaks, so
+blocks can still be placed against it.
+
+## Declaring more in data
+
+Everything below sits in `data/<id>/horizon/` and needs a restart. `mods/showcase` has an example of each.
+
+- **Block properties**: `"states": {"level": [0, 1, 2, 3]}` in `block/*.json`, multiplied over the template's. The first
+  value is the default. Blockstate files, `/setblock id[level=2]`, `world.set-blocks` and `get-block` all see them.
+- **Fluids**: `fluid/plasma.json` with `like` (`water` or `lava`: how it treats swimmers and the other fluid), `still`,
+  `flow`, `color`, `light`, `tick_rate`, `drop_off`, `infinite`, `bucket`. It makes the block `<id>:plasma` and the item
+  `<id>:plasma_bucket`, and flows apart from vanilla's.
+- **Effects**: `effect/shock.json` with `type` (`beneficial`, `harmful`, `neutral`), `color`, `damage`, `heal`, `interval`,
+  `attributes`; icon `assets/<id>/textures/mob_effect/shock.png`, name `effect.<id>.shock`. `ServerMod::effect_tick` runs
+  each tick on whoever has it.
+- **Dimensions**: `dimension/moon.json` with `base` (`overworld`, `the_nether`, `the_end`: height, sky, fog) and `generator`:
+  `{"type": "flat", "layers": [{"block": "...", "height": 3}]}`, `{"type": "noise", "dimension": "minecraft:the_nether"}`, or
+  `{"type": "code"}`, which asks `ServerMod::generate_chunk`. Reach it with `entities.teleport`.
+- **Goals**: `"goals": [{"priority": 0, "goal": "<id>:patrol"}]` in `entity/*.json`. `goal_can_use`, `goal_tick`, `goal_stop`
+  on the mod; while one runs, the mob's vanilla goals wait.
+- **Entities flown by code**: `"ticks": true` calls `entity_tick` each tick; with `"projectile": {"gravity": 0, "drag": 1,
+  "through_blocks": true}` and `entities.set-velocity` that is a boomerang.
+
+## Smaller functions (API level 18)
+
+Conveniences over `players`, `world`, `entities` and `storages`, so a mod needn't write them: `world.get-blocks`, `find-blocks`
+and `count-blocks` read many blocks in one call, and `storages.transfer-item`, `transfer-energy` and `transfer-fluid` move only what
+fits. `/showcase api` calls them all. The list is in [api/mods-reference.md](api/mods-reference.md).

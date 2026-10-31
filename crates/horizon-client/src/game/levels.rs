@@ -151,7 +151,7 @@ impl Game<'_> {
             self.level.seed,
         )?;
         let mut world = World::new(self.res.facts().air, self.level.seed);
-        world.fast_lava = dim == Dim::Nether;
+        world.fast_lava = dim.base() == Dim::Nether;
         Ok(Parked {
             world,
             streaming,
@@ -443,6 +443,7 @@ impl Game<'_> {
             .map_or(&[][..], |h| h.hub.guests.as_slice());
         let mut dims: Vec<Dim> = [Dim::Overworld, Dim::Nether, Dim::End]
             .into_iter()
+            .chain((0..horizon_client::mod_dimensions::all().len() as u8).map(Dim::Mod))
             .filter(|d| {
                 let forced = if *d == self.dim {
                     !self.streaming.forced.is_empty()

@@ -20,6 +20,8 @@ pub struct Tab {
     pub column: u32,
     pub search: bool,
     pub inventory: bool,
+    /// 0 is vanilla's; a mod's tabs are on the pages after it.
+    pub page: u32,
 }
 /// What the client's creative search trees (SessionSearchTrees) index for one
 /// stack of the search tab: its creative tooltip lines and its item tags.
@@ -36,6 +38,8 @@ struct SearchEntry {
 pub struct Creative {
     pub tabs: Vec<Tab>,
     pub selected: usize,
+    /// Which page of tabs shows.
+    pub page: u32,
     /// Scroll position 0..1 (scrollOffs).
     pub scroll: f32,
     /// The scrollbar is held (scrolling): dragging moves it.
@@ -189,14 +193,95 @@ impl Creative {
     /// prepared before it fall back to `creative-tabs.json`'s item ids.
     pub fn load(root: &Path) -> Result<Self> {
         let path = root.join("creative-inventory.json");
-        if path.exists() {
-            Self::from_json(&serde_json::from_slice(&fs::read(path)?)?)
+        let mut creative = if path.exists() {
+            Self::from_json(&serde_json::from_slice(&fs::read(path)?)?)?
         } else {
             Self::from_legacy(&serde_json::from_slice(&fs::read(
                 root.join("creative-tabs.json"),
-            )?)?)
+            )?)?)?
+        };
+        creative.add_mod_tabs(root);
+        Ok(creative)
+    }
+    /// A tab for each mod with blocks or items, ten to a page after vanilla's.
+    fn add_mod_tabs(&mut self, root: &Path) {
+        let names = Names::load(root);
+        let mut count = 0u32;
+        for namespace in crate::mod_content::namespaces(root) {
+            let mut ids = Vec::new();
+            for kind in ["block", "item"] {
+                let dir = root.join(format!("data/{namespace}/horizon/{kind}"));
+                for file in fs::read_dir(dir).into_iter().flatten().flatten() {
+                    let path = file.path();
+                    let def: Value = fs::read(&path)
+                        .ok()
+                        .and_then(|b| serde_json::from_slice(&b).ok())
+                        .unwrap_or_default();
+                    if def["item"].as_bool() == Some(false) {
+                        continue;
+                    }
+                    if let Some(name) = path.file_stem().and_then(|n| n.to_str()) {
+                        ids.push(format!("{namespace}:{name}"));
+                    }
+                }
+            }
+            ids.sort();
+            ids.dedup();
+            let Some(icon) = ids.first().cloned() else {
+                continue;
+            };
+            for id in &ids {
+                self.search_items.push(ItemStack::new(id.as_str(), 1));
+                let (_, path) = id.split_once(':').unwrap_or_default();
+                self.search_index.push(SearchEntry {
+                    namespace: namespace.clone(),
+                    path: path.to_owned(),
+                    lines: vec![names.item(id).to_lowercase()],
+                    tags: Vec::new(),
+                });
+            }
+            let mut title = namespace.replace('_', " ");
+            if let Some(first) = title.get_mut(..1) {
+                first.make_ascii_uppercase();
+            }
+            self.tabs.push(Tab {
+                id: format!("{namespace}:{namespace}"),
+                title: names
+                    .get(&format!("itemGroup.{namespace}"))
+                    .map_or(title, str::to_owned),
+                icon,
+                items: ids
+                    .iter()
+                    .map(|id| ItemStack::new(id.as_str(), 1))
+                    .collect(),
+                top: count % 10 < 5,
+                column: count % 5,
+                search: false,
+                inventory: false,
+                page: 1 + count / 10,
+            });
+            count += 1;
         }
     }
+    /// How many pages of tabs there are.
+    pub fn pages(&self) -> u32 {
+        self.tabs.iter().map(|t| t.page).max().unwrap_or(0) + 1
+    }
+    /// Whether a tab shows now: search and inventory stay on every page.
+    pub fn on_page(&self, tab: &Tab) -> bool {
+        tab.page == self.page || (tab.page == 0 && tab.column >= 5)
+    }
+    /// Goes `by` pages on, round the ends, to that page's first tab.
+    pub fn turn_page(&mut self, by: i32) {
+        let pages = self.pages() as i32;
+        self.page = (self.page as i32 + by).rem_euclid(pages) as u32;
+        let page = self.page;
+        if let Some(first) = self.tabs.iter().position(|t| t.page == page) {
+            self.select(first);
+        }
+    }
+    /// The page arrows and their label: left `x`, right `x`, `y`.
+    pub const PAGE_ARROWS: (f32, f32, f32) = (0.0, Self::WIDTH - 20.0, -50.0);
     pub fn from_json(raw: &Value) -> Result<Self> {
         let mut tabs = Vec::new();
         let mut search_items = Vec::new();
@@ -244,6 +329,7 @@ impl Creative {
                 column: t["column"].as_u64().unwrap_or(0) as u32,
                 search: kind == "SEARCH",
                 inventory: kind == "INVENTORY",
+                page: 0,
             });
         }
         Ok(Self::new(tabs, search_items, search_index))
@@ -277,6 +363,7 @@ impl Creative {
                 column: t["column"].as_u64().unwrap_or(0) as u32,
                 search: kind == "SEARCH",
                 inventory: kind == "INVENTORY",
+                page: 0,
             });
         }
         let search_index = search_items
@@ -296,6 +383,7 @@ impl Creative {
         Self {
             tabs,
             selected: 0,
+            page: 0,
             scroll: 0.0,
             scrolling: false,
             search: {
@@ -333,6 +421,7 @@ impl Creative {
                 column: t.column,
                 search: t.search,
                 inventory: t.inventory,
+                page: t.page,
             })
             .collect()
     }

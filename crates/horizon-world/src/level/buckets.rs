@@ -17,6 +17,8 @@ use std::sync::Arc;
 pub enum BucketContent {
     /// Water or lava (mob buckets hold water).
     Fluid(FluidKind),
+    /// A mod's fluid (its family).
+    ModFluid(u8),
     /// `SolidBucketItem`: the block placed into an empty space (powder snow).
     Powder,
     /// `MobBucketItem` holding water: its empty sound posts no `FLUID_PLACE`.
@@ -31,7 +33,10 @@ impl<L: LevelAccess + ?Sized> Sim<'_, L> {
     pub(crate) fn bucket_pickup(&mut self, pos: BlockPos) -> Option<&'static str> {
         let b = self.b;
         let state = self.state(pos);
-        let item = if b.instance_of(state, Class::Liquid) {
+        let item = if let Some(own) = crate::fluid::mod_fluid(b.fluid(state).family()) {
+            let item: &'static str = own.bucket.as_deref()?;
+            item
+        } else if b.instance_of(state, Class::Liquid) {
             match b.fluid(state).kind() {
                 FluidKind::Water | FluidKind::FlowingWater => "minecraft:water_bucket",
                 FluidKind::Lava | FluidKind::FlowingLava => "minecraft:lava_bucket",
@@ -57,6 +62,7 @@ impl<L: LevelAccess + ?Sized> Sim<'_, L> {
         sound: &str,
     ) -> bool {
         let b = self.b;
+        let mut family_of = 0;
         let fluid = match content {
             BucketContent::Powder => {
                 if self.is_in_valid_bounds(pos) && b.is_air(self.state(pos)) {
@@ -77,7 +83,15 @@ impl<L: LevelAccess + ?Sized> Sim<'_, L> {
             }
             BucketContent::MobWater => FluidKind::Water,
             BucketContent::Fluid(fluid) => fluid,
+            BucketContent::ModFluid(family) => {
+                family_of = family;
+                match crate::fluid::mod_fluid(family) {
+                    Some(f) if f.lava_like => FluidKind::Lava,
+                    _ => FluidKind::Water,
+                }
+            }
         };
+        self.fluid_family.set(family_of);
         let mob = content == BucketContent::MobWater;
         let state = self.state(pos);
         // canBeReplaced(fluid): replaceable or not solid (portals refuse).
@@ -91,7 +105,7 @@ impl<L: LevelAccess + ?Sized> Sim<'_, L> {
             return false;
         }
         let water = matches!(fluid, FluidKind::Water | FluidKind::FlowingWater);
-        if water && self.level.dimension() == Dimension::Nether {
+        if water && family_of == 0 && self.level.dimension() == Dimension::Nether {
             // WATER_EVAPORATES: the water hisses away.
             let pitch = 2.6 + (self.random().next_float() - self.random().next_float()) * 0.8;
             self.emit(super::LevelEvent::Sound {
@@ -102,7 +116,7 @@ impl<L: LevelAccess + ?Sized> Sim<'_, L> {
             });
             return true;
         }
-        if liquid_container && water {
+        if liquid_container && water && family_of == 0 {
             self.place_liquid(pos, state, FluidState::new(FluidKind::Water, 8, false));
             self.empty_sound(pos, sound, mob);
             return true;
@@ -118,7 +132,8 @@ impl<L: LevelAccess + ?Sized> Sim<'_, L> {
             },
             8,
             false,
-        );
+        )
+        .in_family(family_of);
         let legacy: BlockStateId = b.legacy_block(source);
         if !self.set_block(pos, legacy, super::flags::UPDATE_ALL_IMMEDIATE)
             && !self.fluid_at(pos).is_source()

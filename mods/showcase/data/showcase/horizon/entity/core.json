@@ -1,0 +1,39 @@
+{
+  "template": "minecraft:armadillo",
+  "display": true,
+  "max_health": 1,
+  "texture": "showcase:entity/core",
+  "model": {
+    "texture_size": [
+      32,
+      16
+    ],
+    "parts": {
+      "body": {
+        "pivot": [
+          0,
+          18,
+          0
+        ],
+        "cubes": [
+          {
+            "origin": [
+              -4,
+              -8,
+              -4
+            ],
+            "size": [
+              8,
+              8,
+              8
+            ],
+            "uv": [
+              0,
+              0
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

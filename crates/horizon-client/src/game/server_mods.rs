@@ -58,6 +58,15 @@ impl Game<'_> {
     ) -> bool {
         false
     }
+    pub(super) fn mods_take_entity(
+        &mut self,
+        _host: &mut LanHost,
+        _conn: u32,
+        _id: i32,
+        _attack: bool,
+    ) -> bool {
+        false
+    }
     pub(super) fn mods_take_use(
         &mut self,
         _host: &mut LanHost,
@@ -90,6 +99,18 @@ impl Game<'_> {
         _m: &horizon_client::mobs::Mob,
         _killer: Option<Option<u32>>,
     ) {
+    }
+    pub(super) fn mod_crafted(&mut self, _uuid: u128, _recipes: &[String]) {}
+    pub(super) fn mod_item_event(&mut self, _kind: &str, _item: &str) {}
+    pub(super) fn mod_undying(&self) -> bool {
+        false
+    }
+    pub(super) fn mod_spares_mob(
+        &mut self,
+        _m: &horizon_client::mobs::Mob,
+        _killer: Option<Option<u32>>,
+    ) -> bool {
+        false
     }
     pub(super) fn mod_picked_up(
         &mut self,
@@ -155,7 +176,7 @@ mod run {
             matches!(
                 dimension,
                 "minecraft:overworld" | "minecraft:the_nether" | "minecraft:the_end"
-            )
+            ) || horizon_client::mod_dimensions::index_of(dimension).is_some()
         }
         fn check_state(&self, state: &str) -> Result<(), String> {
             crate::game::render_control::parse_state(self.registry, state)
@@ -164,6 +185,31 @@ mod run {
         }
         fn redstone(&self, dimension: &str, x: i32, y: i32, z: i32) -> Option<u8> {
             self.more.redstone(dimension, x, y, z)
+        }
+        fn item_has_tag(&self, item: &str, tag: &str) -> bool {
+            self.more
+                .item_tags
+                .get(tag.trim_start_matches('#'))
+                .is_some_and(|t| t.contains(item))
+        }
+        fn block_has_tag(&self, block: &str, tag: &str) -> bool {
+            self.more
+                .block_tags
+                .get(tag.trim_start_matches('#'))
+                .is_some_and(|t| t.contains(block))
+        }
+        fn entity_has_tag(&self, kind: &str, tag: &str) -> bool {
+            self.more
+                .entity_tags
+                .get(tag.trim_start_matches('#'))
+                .is_some_and(|t| t.contains(kind))
+        }
+        fn style_stack(
+            &self,
+            stack: &horizon_mods::HostStack,
+            look: &horizon_mods::StackLook,
+        ) -> Result<horizon_mods::HostStack, String> {
+            crate::game::mod_machines::style_stack(stack, look)
         }
         fn max_stack(&self, item: &str) -> Option<u32> {
             self.more.max_stack(item)
@@ -340,14 +386,22 @@ mod run {
                 self.reload_dev_mods();
             }
             self.send_server_mod_commands();
+            self.sync_mod_locked();
             if !self.mods.server {
                 return;
             }
             self.sync_mod_menus();
+            self.tick_parked_mod_levels();
             let players = self.server_players(None);
+            self.mod_name_mobs();
             let mut snapshot = self.mod_snapshot_with(players.clone());
-            snapshot.inventories = self.mod_inventories();
+            snapshot.inventories = self.mod_inventories(None);
+            snapshot.sneaking = self.mod_sneaking(None);
+            snapshot.looks = self.mod_looks(None);
+            snapshot.player_events = self.mod_player_events(&players);
             self.mods.mods.set_snapshot(snapshot);
+            // Before the world is lent: a flight reads the blocks in its way.
+            self.tick_mod_projectiles(&players);
             self.lend_world();
             let before = std::mem::take(&mut self.mods.players);
             for p in before
@@ -417,6 +471,8 @@ mod run {
             self.show_mod_output();
             self.apply_mod_block_writes();
             self.apply_mod_actions();
+            self.sync_mod_redstone();
+            self.spill_gone_storages();
         }
 
         /// Players' command trees list the running server mods' commands
@@ -565,20 +621,23 @@ mod run {
                 return false;
             };
             // In the guest's level: its block, and the world lent for the call.
-            self.as_guest(host, conn, |g| {
-                let state = g.state_string(g.world.block(pos[0], pos[1], pos[2]));
-                g.lend_world();
-                let at = BlockPos {
-                    x: pos[0],
-                    y: pos[1],
-                    z: pos[2],
-                };
-                let refused = g.mods.mods.break_block(&player, at, &state);
-                g.return_world();
-                g.show_mod_output();
-                refused
-            })
-            .unwrap_or(false)
+            let answer = self
+                .as_guest(host, conn, |g| {
+                    let state = g.state_string(g.world.block(pos[0], pos[1], pos[2]));
+                    g.lend_world();
+                    let at = BlockPos {
+                        x: pos[0],
+                        y: pos[1],
+                        z: pos[2],
+                    };
+                    let refused = g.mods.mods.break_block(&player, at, &state);
+                    g.return_world();
+                    refused
+                })
+                .unwrap_or(false);
+            // The hub is out of `self.lan` here: what the mod said goes through it.
+            self.route_mod_output(Some(host));
+            answer
         }
 
         /// Asks server mods before vanilla acts on guest `conn`'s right click
@@ -597,28 +656,98 @@ mod run {
             let Some(player) = self.guest_server_player(host, conn) else {
                 return false;
             };
-            self.as_guest(host, conn, |g| {
-                let state = g.state_string(g.world.block(pos[0], pos[1], pos[2]));
-                let slot = if off_hand {
-                    crate::game::shield::OFFHAND_SLOT
-                } else {
-                    g.selected
-                };
-                let item = g
-                    .stack_in(slot)
-                    .map_or_else(|| "minecraft:air".to_owned(), |s| s.item.to_string());
-                g.lend_world();
-                let at = BlockPos {
-                    x: pos[0],
-                    y: pos[1],
-                    z: pos[2],
-                };
-                let taken = g.mods.mods.use_block(&player, at, &state, &item);
-                g.return_world();
-                g.show_mod_output();
-                taken
-            })
-            .unwrap_or(false)
+            let answer = self
+                .as_guest(host, conn, |g| {
+                    let state = g.state_string(g.world.block(pos[0], pos[1], pos[2]));
+                    let slot = if off_hand {
+                        crate::game::shield::OFFHAND_SLOT
+                    } else {
+                        g.selected
+                    };
+                    let item = g
+                        .stack_in(slot)
+                        .map_or_else(|| "minecraft:air".to_owned(), |s| s.item.to_string());
+                    g.lend_world();
+                    let at = BlockPos {
+                        x: pos[0],
+                        y: pos[1],
+                        z: pos[2],
+                    };
+                    let taken = g.mods.mods.use_block(&player, at, &state, &item);
+                    g.return_world();
+                    taken
+                })
+                .unwrap_or(false);
+            // The hub is out of `self.lan` here: what the mod said goes through it.
+            self.route_mod_output(Some(host));
+            answer
+        }
+
+        /// A guest clicks mob `id`: true when a server mod takes the click
+        /// (`entity-events`).
+        pub(in crate::game) fn mods_take_entity(
+            &mut self,
+            host: &mut LanHost,
+            conn: u32,
+            id: i32,
+            attack: bool,
+        ) -> bool {
+            if !self.hears_players() {
+                return false;
+            }
+            let Some(player) = self.guest_server_player(host, conn) else {
+                return false;
+            };
+            // Another player: a guest, or the window's own.
+            let other_player = host
+                .hub
+                .guests
+                .iter()
+                .find(|g| g.entity_id == id)
+                .map(|g| horizon_mods::EntityInfo {
+                    id: uuid_string(g.uuid),
+                    kind: "minecraft:player".to_owned(),
+                    pos: (g.position[0], g.position[1], g.position[2]),
+                    health: g.health,
+                })
+                .or_else(|| {
+                    let p = self.player.as_ref().filter(|_| host.host_entity == id)?;
+                    Some(horizon_mods::EntityInfo {
+                        id: self.player_uuid_string(),
+                        kind: "minecraft:player".to_owned(),
+                        pos: (p.position.x, p.position.y, p.position.z),
+                        health: p.health.health(),
+                    })
+                });
+            let answer = self
+                .as_guest(host, conn, |g| {
+                    g.mod_name_mobs();
+                    let info = g
+                        .mobs
+                        .iter()
+                        .find(|m| m.id as i32 == id)
+                        .and_then(|m| g.mob_info(m))
+                        .or_else(|| other_player.clone())
+                        .or_else(|| g.mod_object_info(id));
+                    let Some(info) = info else {
+                        return false;
+                    };
+                    let item = g
+                        .stack_in(g.selected)
+                        .map_or_else(|| "minecraft:air".to_owned(), |s| s.item.to_string());
+                    g.lend_world();
+                    let taken = if attack {
+                        g.mods.mods.attack_entity(&player, &info, &item)
+                    } else {
+                        g.mods.mods.use_entity(&player, &info, &item)
+                    };
+                    g.return_world();
+                    taken
+                })
+                .unwrap_or(false);
+            // The hub is out of `self.lan` here: what the mod said goes through it.
+            self.route_mod_output(Some(host));
+            answer
         }
 
         /// Asks server mods before guest `conn` places the held block item
@@ -639,40 +768,43 @@ mod run {
             let Some(player) = self.guest_server_player(host, conn) else {
                 return false;
             };
-            self.as_guest(host, conn, |g| {
-                let slot = if off_hand {
-                    crate::game::shield::OFFHAND_SLOT
-                } else {
-                    g.selected
-                };
-                let Some(item) = g.stack_in(slot).map(|s| s.item.clone()) else {
-                    return false;
-                };
-                if g.res.items().get(&item).is_none_or(|i| i.block.is_none()) {
-                    return false;
-                }
-                let at = g.world.block(clicked[0], clicked[1], clicked[2]);
-                let target = if g.res.facts().get(at).replaceable {
-                    clicked
-                } else {
-                    [
-                        clicked[0] + face[0],
-                        clicked[1] + face[1],
-                        clicked[2] + face[2],
-                    ]
-                };
-                g.lend_world();
-                let at = BlockPos {
-                    x: target[0],
-                    y: target[1],
-                    z: target[2],
-                };
-                let refused = g.mods.mods.place_block(&player, at, &item);
-                g.return_world();
-                g.show_mod_output();
-                refused
-            })
-            .unwrap_or(false)
+            let answer = self
+                .as_guest(host, conn, |g| {
+                    let slot = if off_hand {
+                        crate::game::shield::OFFHAND_SLOT
+                    } else {
+                        g.selected
+                    };
+                    let Some(item) = g.stack_in(slot).map(|s| s.item.clone()) else {
+                        return false;
+                    };
+                    if g.res.items().get(&item).is_none_or(|i| i.block.is_none()) {
+                        return false;
+                    }
+                    let at = g.world.block(clicked[0], clicked[1], clicked[2]);
+                    let target = if g.res.facts().get(at).replaceable {
+                        clicked
+                    } else {
+                        [
+                            clicked[0] + face[0],
+                            clicked[1] + face[1],
+                            clicked[2] + face[2],
+                        ]
+                    };
+                    g.lend_world();
+                    let at = BlockPos {
+                        x: target[0],
+                        y: target[1],
+                        z: target[2],
+                    };
+                    let refused = g.mods.mods.place_block(&player, at, &item);
+                    g.return_world();
+                    refused
+                })
+                .unwrap_or(false);
+            // The hub is out of `self.lan` here: what the mod said goes through it.
+            self.route_mod_output(Some(host));
+            answer
         }
 
         /// Asks server mods before vanilla uses guest `conn`'s held item on
@@ -689,23 +821,26 @@ mod run {
             let Some(player) = self.guest_server_player(host, conn) else {
                 return false;
             };
-            self.as_guest(host, conn, |g| {
-                let slot = if off_hand {
-                    crate::game::shield::OFFHAND_SLOT
-                } else {
-                    g.selected
-                };
-                let Some(stack) = g.stack_in(slot).map(crate::game::mod_machines::host_stack)
-                else {
-                    return false;
-                };
-                g.lend_world();
-                let taken = g.mods.mods.use_item(&player, &stack, off_hand);
-                g.return_world();
-                g.show_mod_output();
-                taken
-            })
-            .unwrap_or(false)
+            let answer = self
+                .as_guest(host, conn, |g| {
+                    let slot = if off_hand {
+                        crate::game::shield::OFFHAND_SLOT
+                    } else {
+                        g.selected
+                    };
+                    let Some(stack) = g.stack_in(slot).map(crate::game::mod_machines::host_stack)
+                    else {
+                        return false;
+                    };
+                    g.lend_world();
+                    let taken = g.mods.mods.use_item(&player, &stack, off_hand);
+                    g.return_world();
+                    taken
+                })
+                .unwrap_or(false);
+            // The hub is out of `self.lan` here: what the mod said goes through it.
+            self.route_mod_output(Some(host));
+            answer
         }
 
         /// A `client-net` message from guest `conn`'s client mods.
@@ -768,7 +903,10 @@ mod run {
             let Some(me) = players.first().cloned() else {
                 return false;
             };
-            let snapshot = self.mod_snapshot_with(players);
+            let mut snapshot = self.mod_snapshot_with(players);
+            snapshot.inventories = self.mod_inventories(None);
+            snapshot.sneaking = self.mod_sneaking(None);
+            snapshot.looks = self.mod_looks(None);
             self.mods.mods.set_snapshot(snapshot);
             self.lend_world();
             let owned = self.mods.mods.server_command(&me, line);
@@ -872,7 +1010,10 @@ mod run {
             let Some(me) = players.iter().find(|p| p.id == id).cloned() else {
                 return false;
             };
-            let snapshot = self.mod_snapshot_with(players);
+            let mut snapshot = self.mod_snapshot_with(players);
+            snapshot.inventories = self.mod_inventories(Some(host));
+            snapshot.sneaking = self.mod_sneaking(Some(host));
+            snapshot.looks = self.mod_looks(Some(host));
             self.mods.mods.set_snapshot(snapshot);
             self.lend_world();
             let owned = self.mods.mods.server_command(&me, line);

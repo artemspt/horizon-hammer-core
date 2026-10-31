@@ -589,6 +589,9 @@ impl Game<'_> {
     /// A click while a screen with a recipe book is open; true when the book
     /// used it.
     pub(super) fn recipe_book_click(&mut self, right: bool) -> bool {
+        if self.mod_menu_size().is_some() {
+            return false;
+        }
         let Some(book_type) = self.active_book() else {
             return false;
         };
@@ -1049,6 +1052,9 @@ impl Game<'_> {
 
     /// The book button, ghost recipe and the open book.
     pub(super) fn draw_recipe_book(&mut self, batch: &mut HudBatch) {
+        if self.mod_menu_size().is_some() {
+            return;
+        }
         let Some(book_type) = self.active_book() else {
             return;
         };

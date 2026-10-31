@@ -1,0 +1,39 @@
+{
+  "name": "Печь Первого",
+  "unlocks": [
+    "minecraft:blast_furnace"
+  ],
+  "parts": [
+    {
+      "text": "Корпус сложен из обожжённого камня, который не боится жара.",
+      "hint": "Корпус из чего-то тяжёлого, что не пропускает жар.",
+      "candidates": [
+        "minecraft:bricks",
+        "minecraft:nether_bricks",
+        "minecraft:smooth_stone",
+        "minecraft:deepslate_bricks"
+      ]
+    },
+    {
+      "text": "Внутри плавят железо: оно и стенки держит, и работу делает.",
+      "hint": "Нутро сделано из того, что принято плавить.",
+      "candidates": [
+        "minecraft:iron_ingot",
+        "minecraft:raw_iron",
+        "minecraft:iron_block"
+      ]
+    },
+    {
+      "text": "Топят не дровами, а чёрным камнем: он горит дольше и жарче.",
+      "hint": "Топят чем-то, что горит дольше дров.",
+      "candidates": [
+        "minecraft:coal",
+        "minecraft:charcoal",
+        "minecraft:coal_block"
+      ]
+    }
+  ],
+  "requires": [
+    "firstlegacy:first_infuser"
+  ]
+}

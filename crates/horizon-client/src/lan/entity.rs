@@ -69,6 +69,9 @@ pub struct EntityState {
     pub leash: Option<i32>,
 }
 
+/// Tells a client which of a mod's types an entity is: its id, then the type.
+pub const MOD_MOB_CHANNEL: &str = "horizon_mods:mob_type";
+
 impl EntityState {
     /// The entity `id` of type `kind` as a fresh state has it: at the origin,
     /// at rest, with no data, equipment or attributes. Keeps the allocations
@@ -295,6 +298,17 @@ impl ServerEntity {
             head_yaw: pack_degrees(e.head_yaw),
             data: e.data,
         }));
+        // Clients are told the template's type: a client with the mod hears its own.
+        if !e.kind.starts_with("minecraft:") {
+            let mut data = e.id.to_be_bytes().to_vec();
+            data.extend_from_slice(e.kind.as_bytes());
+            out.push(play::Clientbound::CustomPayload(
+                horizon_protocol::packets::configuration::CustomPayload {
+                    channel: MOD_MOB_CHANNEL.to_owned(),
+                    data,
+                },
+            ));
+        }
         if !self.meta.is_empty() {
             out.push(play::Clientbound::SetEntityData(SetEntityData {
                 id: e.id,

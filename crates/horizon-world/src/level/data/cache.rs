@@ -20,7 +20,7 @@ use std::{
 };
 
 const MAGIC: &[u8; 8] = b"HZBEHAV\0";
-const VERSION: u32 = 2;
+const VERSION: u32 = 3;
 const FILE_NAME: &str = "behaviours-v2.bin";
 const MAX_FILE_BYTES: usize = 128 * 1024 * 1024;
 const MAX_DECODED_BYTES: usize = 256 * 1024 * 1024;
@@ -53,6 +53,7 @@ struct Fact {
     fluid_kind: u8,
     fluid_amount: u8,
     fluid_falling: bool,
+    fluid_family: u8,
     emission: u8,
     dampening: u8,
     hardness: f32,
@@ -379,6 +380,7 @@ impl Snapshot {
                 fluid_kind: fact.fluid.kind() as u8,
                 fluid_amount: fact.fluid.amount(),
                 fluid_falling: fact.fluid.falling(),
+                fluid_family: fact.fluid.family(),
                 emission: fact.emission,
                 dampening: fact.dampening,
                 hardness: fact.hardness,
@@ -572,7 +574,8 @@ impl Snapshot {
                     sturdy: wire.sturdy,
                     weak: wire.weak,
                     strong: wire.strong,
-                    fluid: FluidState::new(fluid_kind, wire.fluid_amount, wire.fluid_falling),
+                    fluid: FluidState::new(fluid_kind, wire.fluid_amount, wire.fluid_falling)
+                        .in_family(wire.fluid_family),
                     emission: wire.emission,
                     dampening: wire.dampening,
                     hardness: wire.hardness,

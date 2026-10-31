@@ -1,0 +1,7 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "equipment",
+  "key": { "C": "showcase:charged_cell", "S": "minecraft:stick" },
+  "pattern": ["C", "C", "S"],
+  "result": { "count": 1, "id": "showcase:sun_blade" }
+}

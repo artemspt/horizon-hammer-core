@@ -241,6 +241,8 @@ impl Hub {
             sent: Vec::new(),
             drag: None,
             sent_data: Vec::new(),
+            mod_data: Vec::new(),
+            mod_rules: Default::default(),
         });
         self.send_menu_content(i, items);
     }
@@ -564,6 +566,9 @@ impl Hub {
         // AbstractFurnaceBlockEntity.dataAccess, BrewingStandBlockEntity.dataAccess,
         // CrafterBlockEntity.containerData.
         let data = match world.block_entities.get(&pos) {
+            Some(BlockEntity::Chest(_)) if !m.mod_data.is_empty() => {
+                m.mod_data.iter().map(|&v| i32::from(v)).collect()
+            }
             Some(BlockEntity::Furnace(f)) => vec![
                 f.lit_remaining,
                 f.lit_total,

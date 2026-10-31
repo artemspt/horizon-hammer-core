@@ -1,0 +1,19 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "I": "minecraft:iron_ingot",
+    "C": "minecraft:copper_ingot",
+    "F": "minecraft:furnace",
+    "R": "minecraft:redstone"
+  },
+  "pattern": [
+    "ICI",
+    "CFC",
+    "IRI"
+  ],
+  "result": {
+    "count": 1,
+    "id": "firstlegacy:first_generator"
+  }
+}

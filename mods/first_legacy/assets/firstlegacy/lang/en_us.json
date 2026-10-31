@@ -1,0 +1,11 @@
+{
+  "item.firstlegacy.note": "Note of the First",
+  "block.firstlegacy.research_station": "Research Station Core",
+  "block.firstlegacy.station_casing": "Station Casing",
+  "block.firstlegacy.station_input_gate": "Input Gate",
+  "block.firstlegacy.station_output_gate": "Output Gate",
+  "block.firstlegacy.station_lava_bay": "Lava Bay",
+  "block.firstlegacy.thermal_converter": "Thermal Converter",
+  "block.firstlegacy.first_generator": "First Generator",
+  "tooltip.firstlegacy.dev_recipe_hidden": "In the normal version this recipe is hidden until learned."
+}

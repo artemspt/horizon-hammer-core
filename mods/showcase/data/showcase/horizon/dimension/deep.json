@@ -1,0 +1,7 @@
+{
+  "base": "the_nether",
+  "generator": {
+    "type": "noise",
+    "dimension": "minecraft:the_nether"
+  }
+}

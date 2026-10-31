@@ -364,6 +364,19 @@ pub struct MobType {
     /// (e.g. `sheep#wool`, `zombie_baby#main`).
     pub layers: HashMap<String, Arc<Part>>,
     pub texture: String,
+    /// A mod's `display`: nothing but a shape in the world, for machines to
+    /// show moving parts. No AI, no gravity, can't be hurt.
+    pub display: bool,
+    /// A mod's `projectile`: a display that flies, `[gravity, drag]` a tick.
+    pub projectile: Option<[f64; 2]>,
+    /// A mod's projectile flies through blocks.
+    pub through_blocks: bool,
+    /// A mod's type: `entity-tick` every tick.
+    pub ticks: bool,
+    /// A mod's own goals, `(priority, name)`, lowest first.
+    pub mod_goals: Vec<(i32, String)>,
+    /// A mod's model's parts that turn by themselves.
+    pub part_spin: Vec<(String, [f32; 3])>,
     pub brain: Brain,
     pub anim: Anim,
     /// Ambient, hurt and death sound events (without the namespace).
@@ -403,6 +416,200 @@ fn exact_attributes(bytes: &[u8]) -> HashMap<String, HashMap<String, f64>> {
 pub struct MobTypes {
     pub types: HashMap<String, MobType>,
 }
+/// The resource tree the mob types came from (mods' content merged in), for
+/// mods' questions about its tags.
+static LOADED_ROOT: std::sync::RwLock<Option<std::path::PathBuf>> = std::sync::RwLock::new(None);
+pub fn loaded_root() -> Option<std::path::PathBuf> {
+    LOADED_ROOT.read().ok()?.clone()
+}
+/// A mod's mob type → the vanilla one players' clients are told it is.
+static MOD_MOB_BASES: std::sync::RwLock<Option<HashMap<String, String>>> =
+    std::sync::RwLock::new(None);
+/// The vanilla type a mod's mob type is built on.
+pub fn mod_mob_base(kind: &str) -> Option<String> {
+    let bases = MOD_MOB_BASES.read().ok()?;
+    bases.as_ref()?.get(kind).cloned()
+}
+
+/// A mod's model into the baked form of `entity-models.json`: `parts` by name
+/// (the template's names animate: `head`, `right_arm`...), each a `pivot` and
+/// `cubes` of `origin`, `size` and `uv`, laid out on the texture as vanilla's
+/// `ModelPart.Cube`; `texture_size` defaults to 64 x 64.
+/// A model's parts with a `spin`: degrees a second about x, y and z.
+pub(crate) fn part_spins(model: &Value) -> Vec<(String, [f32; 3])> {
+    let parts = model["parts"].as_object().into_iter().flatten();
+    parts
+        .filter(|(_, part)| part["spin"].is_array())
+        .map(|(name, part)| {
+            let turn = [0, 1, 2].map(|i| part["spin"][i].as_f64().unwrap_or(0.0) as f32);
+            (name.clone(), turn)
+        })
+        .collect()
+}
+
+pub(crate) fn bake_mod_model(model: &Value) -> Value {
+    use serde_json::json;
+    let triple = |v: &Value| [0, 1, 2].map(|i| v[i].as_f64().unwrap_or(0.0));
+    let tw = model["texture_size"][0].as_f64().unwrap_or(64.0);
+    let th = model["texture_size"][1].as_f64().unwrap_or(64.0);
+    let mut children = serde_json::Map::new();
+    for (name, part) in model["parts"].as_object().into_iter().flatten() {
+        let pivot = triple(&part["pivot"]);
+        let mut polygons = Vec::new();
+        for cube in part["cubes"].as_array().into_iter().flatten() {
+            let [x0, y0, z0] = triple(&cube["origin"]);
+            let [w, h, d] = triple(&cube["size"]);
+            let (x1, y1, z1) = (x0 + w, y0 + h, z0 + d);
+            let (u, v) = (
+                cube["uv"][0].as_f64().unwrap_or(0.0),
+                cube["uv"][1].as_f64().unwrap_or(0.0),
+            );
+            let t0 = [x0, y0, z0];
+            let t1 = [x1, y0, z0];
+            let t2 = [x1, y1, z0];
+            let t3 = [x0, y1, z0];
+            let l0 = [x0, y0, z1];
+            let l1 = [x1, y0, z1];
+            let l2 = [x1, y1, z1];
+            let l3 = [x0, y1, z1];
+            let faces = [
+                ([l1, l0, t0, t1], [u + d, v, u + d + w, v + d]),
+                ([t2, t3, l3, l2], [u + d + w, v + d, u + d + w + w, v]),
+                ([t0, l0, l3, t3], [u, v + d, u + d, v + d + h]),
+                ([t1, t0, t3, t2], [u + d, v + d, u + d + w, v + d + h]),
+                (
+                    [l1, t1, t2, l2],
+                    [u + d + w, v + d, u + d + w + d, v + d + h],
+                ),
+                (
+                    [l0, l1, l2, l3],
+                    [u + d + w + d, v + d, u + 2.0 * (d + w), v + d + h],
+                ),
+            ];
+            for (corners, [ua, va, ub, vb]) in faces {
+                let uvs = [(ub, va), (ua, va), (ua, vb), (ub, vb)];
+                let verts: Vec<Value> = corners
+                    .iter()
+                    .zip(uvs)
+                    .map(|(c, (pu, pv))| json!([c[0], c[1], c[2], pu / tw, pv / th]))
+                    .collect();
+                polygons.push(Value::Array(verts));
+            }
+        }
+        children.insert(
+            name.clone(),
+            json!({
+                "pose": [pivot[0], pivot[1], pivot[2], 0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                "polygons": polygons,
+                "children": {},
+            }),
+        );
+    }
+    json!({ "pose": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0], "polygons": [], "children": children })
+}
+
+/// `data/<namespace>/horizon/entity/<name>.json`: a mod's mob type, a vanilla
+/// `template` (its model, AI and sounds) with other numbers.
+fn load_mod_mobs(root: &Path, out: &mut HashMap<String, MobType>) {
+    if let Ok(mut loaded) = LOADED_ROOT.write() {
+        *loaded = Some(root.to_owned());
+    }
+    let mut bases = HashMap::new();
+    for namespace in crate::mod_content::namespaces(root) {
+        let dir = root.join(format!("data/{namespace}/horizon/entity"));
+        let Ok(files) = fs::read_dir(dir) else {
+            continue;
+        };
+        for file in files.flatten() {
+            let path = file.path();
+            let Some(name) = path.file_stem().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            let Ok(def) = fs::read(&path)
+                .map_err(|e| e.to_string())
+                .and_then(|b| serde_json::from_slice::<Value>(&b).map_err(|e| e.to_string()))
+            else {
+                log::warn!("Horizon: mob type {} is not readable", path.display());
+                continue;
+            };
+            let template = def["template"].as_str().unwrap_or_default();
+            let Some(mut t) = out.get(template).cloned() else {
+                log::warn!("Horizon: mob type {namespace}:{name}: no template {template:?}");
+                continue;
+            };
+            let id = format!("{namespace}:{name}");
+            let number = |k: &str| def[k].as_f64();
+            if let Some(v) = number("max_health") {
+                t.max_health = v as f32;
+            }
+            if let Some(v) = number("speed") {
+                t.speed = v;
+            }
+            if let Some(v) = number("attack_damage") {
+                t.attack_damage = v as f32;
+            }
+            if let Some(v) = number("armor") {
+                t.armor = v as f32;
+            }
+            if let Some(v) = number("follow_range") {
+                t.follow_range = v;
+            }
+            if let Some(v) = number("knockback_resistance") {
+                t.knockback_resistance = v;
+            }
+            if let Some(v) = def["texture"].as_str() {
+                // `mymod:entity/guard`: assets/mymod/textures/entity/guard.png.
+                t.texture = v.to_owned();
+            }
+            if !def["model"].is_null() {
+                t.model = Arc::new(Part::parse("root", &bake_mod_model(&def["model"])));
+                t.part_spin = part_spins(&def["model"]);
+                // Its own shape in place of the template's main layers; the
+                // rest (armor) stays.
+                t.layers.retain(|k, _| !k.ends_with("#main"));
+            }
+            t.projectile = def["projectile"].is_object().then(|| {
+                let p = &def["projectile"];
+                [
+                    p["gravity"].as_f64().unwrap_or(0.03),
+                    p["drag"].as_f64().unwrap_or(0.99),
+                ]
+            });
+            t.through_blocks = def["projectile"]["through_blocks"]
+                .as_bool()
+                .unwrap_or(false);
+            t.ticks = def["ticks"].as_bool().unwrap_or(false);
+            if let Some(goals) = def["goals"].as_array() {
+                t.mod_goals = goals
+                    .iter()
+                    .filter_map(|g| {
+                        let name = g["goal"].as_str()?.to_owned();
+                        Some((g["priority"].as_i64().unwrap_or(0) as i32, name))
+                    })
+                    .collect();
+                t.mod_goals.sort_by_key(|g| g.0);
+            }
+            t.display = def["display"].as_bool().unwrap_or(t.projectile.is_some());
+            if t.display {
+                t.sounds = ["", "", ""];
+            }
+            // `mymod:guard.idle`, from assets/mymod/sounds.json; a type lives as
+            // long as the game, so its names may too.
+            for (slot, key) in t.sounds.iter_mut().zip(["ambient", "hurt", "death"]) {
+                if let Some(v) = def["sounds"][key].as_str() {
+                    *slot = Box::leak(v.to_owned().into_boxed_str());
+                }
+            }
+            t.id = id.clone();
+            bases.insert(id.clone(), template.to_owned());
+            out.insert(id, t);
+        }
+    }
+    if let Ok(mut all) = MOD_MOB_BASES.write() {
+        *all = Some(bases);
+    }
+}
+
 impl MobTypes {
     pub fn load(root: &Path) -> crate::Result<Self> {
         let bytes = fs::read(root.join("entity-types.json"))?;
@@ -483,6 +690,12 @@ impl MobTypes {
                     model: Arc::new(Part::parse("root", model)),
                     layers,
                     texture: def.texture.to_owned(),
+                    display: false,
+                    projectile: None,
+                    through_blocks: false,
+                    ticks: false,
+                    mod_goals: Vec::new(),
+                    part_spin: Vec::new(),
                     brain: def.brain(),
                     anim: def.anim,
                     sounds: def.sounds,
@@ -501,6 +714,7 @@ impl MobTypes {
                 },
             );
         }
+        load_mod_mobs(root, &mut out);
         Ok(Self { types: out })
     }
 }
@@ -667,6 +881,8 @@ pub const WOLF_ARMOR_DURABILITY: i32 = 64;
 /// Species-specific persistent state (variants, colours, taming, ageing...).
 #[derive(Clone, Debug, Default)]
 pub struct Extra {
+    /// The mod goal running, an index in the type's `mod_goals`.
+    pub mod_goal: Option<u8>,
     /// Players: crouching and riding (HumanoidModel's poses).
     pub crouching: bool,
     /// A player's or mannequin's synced pose (`Entity.DATA_POSE`), which
@@ -911,6 +1127,8 @@ pub struct Mob {
     pub supporting: Option<[i32; 3]>,
     /// `NoAI`: no goals and no movement.
     pub no_ai: bool,
+    /// `entities.move-to`: where a mod sends this mob, and how fast.
+    pub mod_move: Option<([f64; 3], f64)>,
     /// `Silent`.
     pub silent: bool,
     /// `Invulnerable`: immune to damage (but not to `/kill`).
@@ -1882,7 +2100,7 @@ impl Mob {
             fall_distance: 0.0,
             stuck_multiplier: Vec3::ZERO,
             piston: Default::default(),
-            persistent: false,
+            persistent: kind.display,
             random,
             ai: Box::default(),
             extra: Extra::default(),
@@ -1891,9 +2109,10 @@ impl Mob {
             first_tick: true,
             no_gravity: false,
             supporting: None,
-            no_ai: false,
+            no_ai: kind.display,
+            mod_move: None,
             silent: false,
-            invulnerable_flag: false,
+            invulnerable_flag: kind.display,
             climbing: false,
             fire_ticks: 0,
             ticks_frozen: 0,
@@ -2773,6 +2992,62 @@ mod sensor_scan_tests {
     use horizon_core::geometry::Vec3;
     use serde_json::json;
 
+    #[test]
+    fn a_mods_cube_bakes_six_faces_on_its_texture() {
+        let baked = bake_mod_model(&json!({
+            "parts": {"head": {"pivot": [0, 1, 0], "cubes": [
+                {"origin": [-4, -8, -4], "size": [8, 8, 8], "uv": [0, 0]}
+            ]}}
+        }));
+        let head = &baked["children"]["head"];
+        assert_eq!(head["polygons"].as_array().unwrap().len(), 6);
+        // The north face: from u 8 to 16, v 8 to 16, as vanilla's head.
+        assert_eq!(head["polygons"][3][1][3], 8.0 / 64.0);
+        assert_eq!(head["polygons"][3][2][4], 16.0 / 64.0);
+        assert_eq!(head["pose"][1], 1.0);
+    }
+
+    #[test]
+    fn a_mob_without_ai_neither_thinks_nor_moves() {
+        let src = include_str!("mobs/ai.rs");
+        let step = &src[src.find("fn ai_step(").expect("ai_step")..];
+        assert!(step.contains("|| m.no_ai;"), "goals run under NoAI");
+        assert!(
+            step.contains("if !m.no_ai {\n        m.travel"),
+            "NoAI travels"
+        );
+    }
+
+    #[test]
+    fn a_mod_declares_a_mob_type_from_a_template() {
+        let root = std::env::temp_dir().join(format!("horizon-mod-mobs-{}", std::process::id()));
+        let dir = root.join("data/testmod/horizon/entity");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("big.json"),
+            r#"{"template":"minecraft:zombie","max_health":200,"speed":0.4,"attack_damage":9}"#,
+        )
+        .unwrap();
+        fs::write(
+            root.join(horizon_items::content_namespaces::MARKER),
+            r#"["testmod"]"#,
+        )
+        .unwrap();
+        let mut types = HashMap::new();
+        types.insert("minecraft:zombie".to_owned(), (*kind()).clone());
+        load_mod_mobs(&root, &mut types);
+        let namespaces = crate::mod_content::namespaces(&root);
+        assert!(namespaces.contains(&"testmod".to_owned()), "{namespaces:?}");
+        let big = &types["testmod:big"];
+        assert_eq!(big.max_health, 200.0);
+        assert_eq!(big.attack_damage, 9.0);
+        assert_eq!(
+            mod_mob_base("testmod:big").as_deref(),
+            Some("minecraft:zombie")
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
     pub(super) fn kind() -> Arc<MobType> {
         Arc::new(MobType {
             id: "minecraft:cow".into(),
@@ -2811,6 +3086,12 @@ mod sensor_scan_tests {
             model: Arc::new(Part::parse("root", &json!({}))),
             layers: HashMap::new(),
             texture: String::new(),
+            display: false,
+            projectile: None,
+            through_blocks: false,
+            ticks: false,
+            mod_goals: Vec::new(),
+            part_spin: Vec::new(),
             brain: Brain::Passive,
             anim: Anim::Rabbit,
             sounds: [""; 3],

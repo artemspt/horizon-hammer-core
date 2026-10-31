@@ -755,7 +755,7 @@ impl Game<'_> {
     }
 
     /// Whether a block stops movement, for the path finder.
-    fn blocks_motion(&self, pos: [i32; 3]) -> bool {
+    pub(super) fn blocks_motion(&self, pos: [i32; 3]) -> bool {
         let f = self
             .res
             .facts()

@@ -1,0 +1,14 @@
+id = "showcase"
+name = "Core Showcase"
+version = "0.1.0"
+description = "Everything the mod core does in one mod. Type /showcase demo, then /showcase help."
+authors = ["Horizon Hammer Core"]
+api = "0.3"
+side = "both"
+capabilities = ["players", "world", "entities", "storage", "registries", "net", "worldgen", "hud", "chat", "ui", "render", "game-read", "command", "input", "recipes"]
+experimental = ["worldgen", "ui", "render", "game-read", "command", "input", "recipes"]
+events = ["entity-spawned", "entity-hurt", "entity-died", "player-hurt", "item-picked-up", "explosion", "entity-dying"]
+priority = 5
+
+[config]
+fuel_value = "1600"

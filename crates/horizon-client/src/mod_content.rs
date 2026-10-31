@@ -122,6 +122,181 @@ impl Serialize for J {
         }
     }
 }
+/// Most copies of a template's states a block's own properties may make.
+const MAX_COMBOS: u32 = 4096;
+
+/// A row of `facts.json`: `[name, .., "Block{id}[a=b]", {properties, id}]`.
+fn add_facts_properties(row: &mut J, values: &[(&str, &str)]) {
+    let J::Arr(cols) = row else {
+        return;
+    };
+    if values.is_empty() {
+        return;
+    }
+    let extra: Vec<String> = values.iter().map(|(k, v)| format!("{k}={v}")).collect();
+    if let Some(J::Str(text)) = cols.get_mut(3) {
+        *text = match text.strip_suffix(']') {
+            Some(open) => format!("{open},{}]", extra.join(",")),
+            None => format!("{text}[{}]", extra.join(",")),
+        };
+    }
+    if let Some(desc) = cols.get_mut(4) {
+        if desc.get("properties").is_none() {
+            desc.set("properties", J::Obj(Vec::new()));
+        }
+        if let Some(J::Obj(props)) = desc.get_mut("properties") {
+            props.extend(
+                values
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), J::Str(v.to_string()))),
+            );
+        }
+    }
+}
+
+/// A state in an NBT table: `{id, properties: {..}}`.
+fn add_nbt_properties(state: &mut Tag, values: &[(&str, &str)]) {
+    let Tag::Compound(map) = state else {
+        return;
+    };
+    let props = map
+        .entry(JavaString::from("properties"))
+        .or_insert_with(|| Tag::Compound(Default::default()));
+    if let Tag::Compound(props) = props {
+        for (k, v) in values {
+            props.insert((*k).into(), Tag::String((*v).into()));
+        }
+    }
+}
+
+/// A by-name entry (`model-states.json`, `render-definitions.json`) with the
+/// block's own properties: `states` holds every copy.
+fn add_table_properties(v: &mut J, b: &NewBlock, ids: bool) {
+    if b.rename.combos <= 1 {
+        return;
+    }
+    let combos = b.decl.state_values();
+    if let Some(J::Obj(schema)) = v.get_mut("schema") {
+        for (k, values) in &b.decl.states {
+            let list = values.iter().map(|x| J::Str(x.clone())).collect();
+            schema.push((k.clone(), J::Obj(vec![("named".into(), J::Arr(list))])));
+        }
+    }
+    let Some(J::Arr(states)) = v.get_mut("states") else {
+        return;
+    };
+    if ids {
+        let n = b.rename.states.len() as u32 * b.rename.combos;
+        *states = (b.rename.first..b.rename.first + n)
+            .map(|id| J::Num(id.into()))
+            .collect();
+    } else {
+        let mut out = Vec::with_capacity(states.len() * combos.len());
+        for state in states.iter() {
+            for values in &combos {
+                let mut s = state.clone();
+                for (k, x) in values {
+                    s.set(k, J::Str(x.to_string()));
+                }
+                out.push(s);
+            }
+        }
+        *states = out;
+    }
+}
+
+/// A block's own boxes on its gameplay row: outline and edges in block space.
+fn set_shape_row(row: &mut J, boxes: &[[f32; 6]]) {
+    let list = |rows: Vec<[f64; 6]>| {
+        J::Arr(
+            rows.iter()
+                .map(|r| J::Arr(r.iter().map(|v| J::f64(*v)).collect()))
+                .collect(),
+        )
+    };
+    let unit = |b: &[f32; 6]| b.map(|v| f64::from(v) / 16.0);
+    let mut edges = Vec::new();
+    for b in boxes.iter().map(unit) {
+        let [x0, y0, z0, x1, y1, z1] = b;
+        for (y, z) in [(y0, z0), (y1, z0), (y0, z1), (y1, z1)] {
+            edges.push([x0, y, z, x1, y, z]);
+        }
+        for (x, z) in [(x0, z0), (x1, z0), (x0, z1), (x1, z1)] {
+            edges.push([x, y0, z, x, y1, z]);
+        }
+        for (x, y) in [(x0, y0), (x1, y0), (x0, y1), (x1, y1)] {
+            edges.push([x, y, z0, x, y, z1]);
+        }
+    }
+    row.set("outline", list(boxes.iter().map(unit).collect()));
+    row.set("outline_edges", list(edges));
+    for key in [
+        "full_collision",
+        "can_occlude",
+        "solid_render",
+        "shape_occlusion",
+    ] {
+        row.set(key, J::Bool(false));
+    }
+    row.set("skylight_down", J::Bool(true));
+    row.set("dampening", J::Num(0.into()));
+}
+
+/// A block's own boxes as an entry of the collision tables: the grid their
+/// edges make, a cell occupied when a box holds its centre.
+fn shape_entry(boxes: &[[f32; 6]]) -> Tag {
+    let coords: [Vec<f64>; 3] = std::array::from_fn(|axis| {
+        let mut c: Vec<f64> = boxes
+            .iter()
+            .flat_map(|b| [b[axis], b[axis + 3]])
+            .map(|v| f64::from(v) / 16.0)
+            .collect();
+        c.sort_by(f64::total_cmp);
+        c.dedup();
+        c
+    });
+    let sizes = [
+        coords[0].len() - 1,
+        coords[1].len() - 1,
+        coords[2].len() - 1,
+    ];
+    let mut occupied = Vec::with_capacity(sizes[0] * sizes[1] * sizes[2]);
+    let (mut min, mut max) = ([i32::MAX; 3], [0; 3]);
+    for x in 0..sizes[0] {
+        for y in 0..sizes[1] {
+            for z in 0..sizes[2] {
+                let at = [
+                    (coords[0][x] + coords[0][x + 1]) * 8.0,
+                    (coords[1][y] + coords[1][y + 1]) * 8.0,
+                    (coords[2][z] + coords[2][z + 1]) * 8.0,
+                ];
+                let full = boxes.iter().any(|b| {
+                    (0..3).all(|i| f64::from(b[i]) < at[i] && at[i] < f64::from(b[i + 3]))
+                });
+                occupied.push(u8::from(full));
+                if full {
+                    for (i, p) in [x, y, z].into_iter().enumerate() {
+                        min[i] = min[i].min(p as i32);
+                        max[i] = max[i].max(p as i32 + 1);
+                    }
+                }
+            }
+        }
+    }
+    let bits = |c: &Vec<f64>| Tag::LongArray(c.iter().map(|v| v.to_bits() as i64).collect());
+    Tag::compound([
+        ("canonical", Tag::Byte(0)),
+        ("x", bits(&coords[0])),
+        ("y", bits(&coords[1])),
+        ("z", bits(&coords[2])),
+        ("occupied", Tag::ByteArray(occupied)),
+        ("cube_axes", Tag::Byte(0)),
+        ("discrete_min", Tag::IntArray(min.to_vec())),
+        ("discrete_max", Tag::IntArray(max.to_vec())),
+        ("cube", Tag::Byte(0)),
+    ])
+}
+
 impl J {
     fn get(&self, key: &str) -> Option<&J> {
         match self {
@@ -190,6 +365,10 @@ struct Rename {
     to: String,
     states: Range<u32>,
     first: u32,
+    /// The block's own properties: copies of each template state, and which
+    /// copy this is.
+    combos: u32,
+    combo: u32,
 }
 impl Rename {
     fn new(from: &str, to: &str) -> Self {
@@ -198,6 +377,8 @@ impl Rename {
             to: to.to_owned(),
             states: 0..0,
             first: 0,
+            combos: 1,
+            combo: 0,
         }
     }
     /// The id itself, `Block{id}`, and `block.<ns>.<path>` / `item.<ns>.<path>` keys.
@@ -219,7 +400,7 @@ impl Rename {
     fn id(&self, id: u32) -> Option<u32> {
         self.states
             .contains(&id)
-            .then(|| self.first + (id - self.states.start))
+            .then(|| self.first + (id - self.states.start) * self.combos + self.combo)
     }
 }
 
@@ -235,6 +416,7 @@ struct NewItem {
     rename: Rename,
     max_stack_size: Option<u8>,
     rarity: Option<Rarity>,
+    components: BTreeMap<String, serde_json::Value>,
 }
 
 struct Plan<'a> {
@@ -246,6 +428,8 @@ struct Plan<'a> {
     defaults: BTreeMap<String, u32>,
     /// The gameplay rows' sound objects, by block, for `sounds` overrides.
     sounds: BTreeMap<String, J>,
+    /// The mods' effects.
+    effects: Vec<String>,
 }
 
 fn read_json(path: &Path) -> Result<J> {
@@ -299,7 +483,15 @@ impl<'a> Plan<'a> {
                 })?;
                 let mut rename = Rename::new(&decl.template, &decl.id);
                 rename.first = next;
-                next += states.len() as u32;
+                rename.combos = decl.state_combos();
+                if rename.combos > MAX_COMBOS {
+                    return Err(format!(
+                        "{}: {} states of its own, over {MAX_COMBOS}",
+                        decl.id, rename.combos
+                    )
+                    .into());
+                }
+                next += states.len() as u32 * rename.combos;
                 rename.states = states;
                 if let Some(s) = &decl.properties.sounds {
                     if !defaults.contains_key(s) {
@@ -319,7 +511,7 @@ impl<'a> Plan<'a> {
             for b in &blocks {
                 *by_mod
                     .entry(&b.decl.id[..b.decl.id.find(':').unwrap_or(0)])
-                    .or_default() += b.rename.states.len() as u32;
+                    .or_default() += b.rename.states.len() as u32 * b.rename.combos;
             }
             let list: Vec<String> = by_mod.iter().map(|(m, n)| format!("{m} {n}")).collect();
             return Err(format!(
@@ -356,6 +548,7 @@ impl<'a> Plan<'a> {
                     rename: Rename::new(item, &b.decl.id),
                     max_stack_size: None,
                     rarity: None,
+                    components: BTreeMap::new(),
                 });
             }
         }
@@ -365,6 +558,7 @@ impl<'a> Plan<'a> {
                     rename: Rename::new(&i.template, &i.id),
                     max_stack_size: i.max_stack_size,
                     rarity: i.rarity,
+                    components: i.components.clone(),
                 });
             }
         }
@@ -374,6 +568,10 @@ impl<'a> Plan<'a> {
             states: names.len(),
             defaults,
             sounds,
+            effects: sorted
+                .iter()
+                .flat_map(|m| m.content.effects.iter().map(|e| e.id.clone()))
+                .collect(),
         })
     }
 
@@ -381,7 +579,14 @@ impl<'a> Plan<'a> {
     /// block, and the template's item when it has another name. A block
     /// without an item gets `minecraft:air` where rows name one.
     fn renames(&self, b: &NewBlock) -> Vec<Rename> {
-        let mut out = vec![b.rename.clone()];
+        self.renames_of(b, 0)
+    }
+
+    /// As [`Plan::renames`], onto the `combo`th copy of the states.
+    fn renames_of(&self, b: &NewBlock, combo: u32) -> Vec<Rename> {
+        let mut first = b.rename.clone();
+        first.combo = combo;
+        let mut out = vec![first];
         if let Some(item) = b.item.as_deref().filter(|i| *i != b.decl.template)
             && b.decl.item
         {
@@ -393,27 +598,64 @@ impl<'a> Plan<'a> {
     /// Appends each new block's copies of the template's states to `list`;
     /// `gameplay` rows get their index and the declared overrides.
     fn states(&self, list: &mut Vec<J>, ids: bool, gameplay: bool) -> Result<()> {
+        self.states_of(list, ids, gameplay, false)
+    }
+
+    fn states_of(&self, list: &mut Vec<J>, ids: bool, gameplay: bool, facts: bool) -> Result<()> {
         if list.len() != self.states {
             return Err(format!("{} states, not {}", list.len(), self.states).into());
         }
         for b in &self.blocks {
-            let renames = self.renames(b);
+            let combos = b.decl.state_values();
             for (i, id) in b.rename.states.clone().enumerate() {
-                let mut row = list[id as usize].clone();
-                for r in &renames {
-                    row.rename(r, ids);
-                }
-                if gameplay {
-                    row.set("id", J::Num((b.rename.first + i as u32).into()));
-                    if !b.decl.item {
-                        row.set("item", J::Str("minecraft:air".into()));
+                for (combo, values) in combos.iter().enumerate() {
+                    let renames = self.renames_of(b, combo as u32);
+                    let mut row = list[id as usize].clone();
+                    for r in &renames {
+                        row.rename(r, ids);
                     }
-                    self.override_gameplay(b, &mut row);
+                    if facts {
+                        add_facts_properties(&mut row, values);
+                    }
+                    if gameplay {
+                        let at = b.rename.first + i as u32 * b.rename.combos + combo as u32;
+                        row.set("id", J::Num(at.into()));
+                        if !b.decl.item {
+                            row.set("item", J::Str("minecraft:air".into()));
+                        }
+                        self.override_gameplay(b, &mut row);
+                        if let Some(from) = self.shape_state(b) {
+                            for key in [
+                                "outline",
+                                "outline_edges",
+                                "outline_offset",
+                                "full_collision",
+                                "can_occlude",
+                                "solid_render",
+                                "shape_occlusion",
+                                "skylight_down",
+                                "dampening",
+                            ] {
+                                if let Some(v) = list[from as usize].get(key).cloned() {
+                                    row.set(key, v);
+                                }
+                            }
+                        }
+                    }
+                    if gameplay && let Some(boxes) = &b.decl.properties.shape {
+                        set_shape_row(&mut row, boxes);
+                    }
+                    list.push(row);
                 }
-                list.push(row);
             }
         }
         Ok(())
+    }
+
+    /// The state whose shape a new block takes (`shape_from`).
+    fn shape_state(&self, b: &NewBlock) -> Option<u32> {
+        let from = b.decl.properties.shape_from.as_ref()?;
+        self.defaults.get(from).copied()
     }
 
     /// The declared properties, on a gameplay row.
@@ -451,6 +693,7 @@ impl<'a> Plan<'a> {
                 for r in &self.renames(b) {
                     v.rename(r, ids);
                 }
+                add_table_properties(&mut v, b, ids);
                 map.set(&b.decl.id, v);
             }
         }
@@ -478,6 +721,11 @@ impl<'a> Plan<'a> {
                     };
                     v.set("minecraft:rarity", J::Str(r.into()));
                 }
+                for (name, value) in &i.components {
+                    if let Ok(value) = serde_json::from_value(value.clone()) {
+                        v.set(name, value);
+                    }
+                }
             }
             map.set(&i.rename.to, v);
         }
@@ -493,7 +741,10 @@ impl<'a> Plan<'a> {
         };
         match name {
             "facts.json" => {
-                states(doc, "states", false, false)?;
+                match doc.at("states") {
+                    Some(J::Arr(a)) => self.states_of(a, false, false, true)?,
+                    _ => return Err("no list at /states".into()),
+                }
                 let defaults = doc.at("defaults").ok_or("no defaults")?;
                 for b in &self.blocks {
                     let default = self.defaults[&b.decl.template];
@@ -546,6 +797,7 @@ impl<'a> Plan<'a> {
                 for (registry, names) in [
                     ("minecraft:item", new_items.collect::<Vec<_>>()),
                     ("minecraft:block", new_blocks.collect()),
+                    ("minecraft:mob_effect", self.effects.clone()),
                 ] {
                     let Some(J::Obj(entries)) =
                         doc.get_mut(registry).and_then(|r| r.get_mut("entries"))
@@ -571,6 +823,15 @@ impl<'a> Plan<'a> {
             }
             "command-registries.json" => {
                 self.names(doc.at("blocks").ok_or("no blocks")?, false);
+                let blocks = doc.at("blocks").ok_or("no blocks")?;
+                for b in &self.blocks {
+                    if let Some(J::Arr(props)) = blocks.get_mut(&b.decl.id) {
+                        props.extend(b.decl.states.iter().map(|(k, v)| {
+                            let values = v.iter().map(|x| J::Str(x.clone())).collect();
+                            J::Arr(vec![J::Str(k.clone()), J::Arr(values)])
+                        }));
+                    }
+                }
                 let new_items = || self.items.iter().map(|i| J::Str(i.rename.to.clone()));
                 let new_blocks = || self.blocks.iter().map(|b| J::Str(b.decl.id.clone()));
                 let Some(J::Arr(items)) = doc.at("items") else {
@@ -584,6 +845,9 @@ impl<'a> Plan<'a> {
                 if let Some(J::Arr(ids)) = doc.at("by_registry/minecraft:block/ids") {
                     ids.extend(new_blocks());
                 }
+                if let Some(J::Arr(ids)) = doc.at("by_registry/minecraft:mob_effect/ids") {
+                    ids.extend(self.effects.iter().map(|e| J::Str(e.clone())));
+                }
             }
             "mob-data.json" => states(doc, "states", false, false)?,
             "worldgen/block_flags.json" => states(doc, "", false, false)?,
@@ -591,7 +855,11 @@ impl<'a> Plan<'a> {
                 for key in ["rotate", "mirror", "full_block"] {
                     states(doc, key, true, false)?;
                 }
-                let added: usize = self.blocks.iter().map(|b| b.rename.states.len()).sum();
+                let added: usize = self
+                    .blocks
+                    .iter()
+                    .map(|b| b.rename.states.len() * b.rename.combos as usize)
+                    .sum();
                 doc.set("states", J::Num(((self.states + added) as u64).into()));
             }
             _ => return Err("no rule for this table".into()),
@@ -605,24 +873,50 @@ impl<'a> Plan<'a> {
         let Tag::Compound(c) = tag else {
             return;
         };
+        // The blocks' own shapes go after the table's.
+        let first_shape = match c.get(&JavaString::from("shapes")) {
+            Some(Tag::List(list)) => list.len() as i32,
+            _ => 0,
+        };
+        let own_shapes = || {
+            self.blocks
+                .iter()
+                .filter_map(|b| b.decl.properties.shape.as_ref())
+        };
         for (key, value) in c.iter_mut() {
             match (key.to_string_lossy().as_str(), value) {
+                ("shapes", Tag::List(list)) => list.extend(own_shapes().map(|s| shape_entry(s))),
                 ("states", Tag::List(list)) if list.len() == self.states => {
                     for b in &self.blocks {
                         for id in b.rename.states.clone() {
-                            let mut state = list[id as usize].clone();
-                            if let Some(slot) = state.get_mut("id") {
-                                *slot = Tag::String(b.decl.id.as_str().into());
+                            for values in b.decl.state_values() {
+                                let mut state = list[id as usize].clone();
+                                if let Some(slot) = state.get_mut("id") {
+                                    *slot = Tag::String(b.decl.id.as_str().into());
+                                }
+                                if !values.is_empty() {
+                                    add_nbt_properties(&mut state, &values);
+                                }
+                                list.push(state);
                             }
-                            list.push(state);
                         }
                     }
                 }
                 ("cached_shapes", Tag::IntArray(a)) if a.len() == self.states => {
+                    let mut own = 0;
                     for b in &self.blocks {
                         let r = &b.rename.states;
-                        let copy = a[r.start as usize..r.end as usize].to_vec();
-                        a.extend(copy);
+                        let mut copy = a[r.start as usize..r.end as usize].to_vec();
+                        if let Some(from) = self.shape_state(b) {
+                            copy.fill(a[from as usize]);
+                        }
+                        if b.decl.properties.shape.is_some() {
+                            copy.fill(first_shape + own);
+                            own += 1;
+                        }
+                        for v in copy {
+                            a.extend(std::iter::repeat_n(v, b.rename.combos as usize));
+                        }
                     }
                 }
                 ("blocks", Tag::Compound(map)) => {
@@ -1091,7 +1385,6 @@ pub fn build(base: &Path, mods: &[ContentMod], out: &Path) -> Result<Vec<String>
     let mut worldgen: BTreeMap<&str, Vec<(String, String)>> = BTreeMap::new();
     let mut additions: BTreeMap<&str, Vec<Addition>> = BTreeMap::new();
     for m in mods {
-        let declarations = format!("data/{}/horizon/", m.id);
         let mut reader = m.content.reader()?;
         for file in &m.content.files {
             let bytes = reader.read(file)?;
@@ -1106,7 +1399,7 @@ pub fn build(base: &Path, mods: &[ContentMod], out: &Path) -> Result<Vec<String>
                 let shared = !m.content.namespaces.iter().any(|n| n == ns);
                 let merge = tags.entry(file.clone()).or_default();
                 warnings.extend(merge.add(&m.id, file, replace, shared, values));
-            } else if !file.starts_with(&declarations) {
+            } else {
                 overlay.write(file, &bytes)?;
                 if let Some((bundle, id)) = worldgen_entry(file) {
                     let text = String::from_utf8(bytes).map_err(|e| format!("{file}: {e}"))?;
@@ -1239,6 +1532,7 @@ pub fn build(base: &Path, mods: &[ContentMod], out: &Path) -> Result<Vec<String>
 /// and mod files reuse it. With ATM10's carried mods a build takes about
 /// 25 s and peaks above 3 GB, more than everything the game keeps.
 pub fn resource_root(base: &Path, mods: &[ContentMod], cache: &Path) -> Result<PathBuf> {
+    set_mod_tables(mods);
     if mods.iter().all(|m| m.content.is_empty()) {
         return Ok(base.to_owned());
     }
@@ -1255,6 +1549,61 @@ pub fn resource_root(base: &Path, mods: &[ContentMod], cache: &Path) -> Result<P
     }
     fs::write(out.join(STAMP), stamp)?;
     Ok(out)
+}
+
+/// Tells the loaders what the mods' states and effects mean, before they read
+/// the root. Fluids in a stable order: a saved world holds block names, the
+/// families only live here.
+fn set_mod_tables(mods: &[ContentMod]) {
+    let mut sorted: Vec<&ContentMod> = mods.iter().collect();
+    sorted.sort_by(|a, b| a.id.cmp(&b.id));
+    let fluids = sorted.iter().flat_map(|m| &m.content.fluids);
+    horizon_world::fluid::set_mod_fluids(
+        fluids
+            .map(|f| horizon_world::fluid::ModFluid {
+                block: f.id.clone(),
+                bucket: f.file.bucket.then(|| format!("{}_bucket", f.id)),
+                lava_like: f.file.like == "lava",
+                still: f.file.still.clone(),
+                flow: f.file.flow.clone(),
+                color: f.file.color,
+                light: f.file.light,
+                tick_rate: f.file.tick_rate,
+                drop_off: f.file.drop_off,
+                infinite: f.file.infinite,
+            })
+            .collect(),
+    );
+    crate::mod_dimensions::set(
+        sorted
+            .iter()
+            .flat_map(|m| &m.content.dimensions)
+            .map(|d| crate::mod_dimensions::ModDimension {
+                id: Box::leak(d.id.clone().into_boxed_str()),
+                base: Box::leak(format!("minecraft:{}", d.file.base).into_boxed_str()),
+                generator: d.file.generator.clone(),
+            })
+            .collect(),
+    );
+    let effects = sorted.iter().flat_map(|m| &m.content.effects);
+    horizon_client_core::potions::set_mod_effects(
+        effects
+            .map(|e| horizon_client_core::potions::ModEffectDecl {
+                id: e.id.clone(),
+                color: e.file.color,
+                category: e.file.category.clone(),
+                damage: e.file.damage,
+                heal: e.file.heal,
+                interval: e.file.interval,
+                attributes: e
+                    .file
+                    .attributes
+                    .iter()
+                    .map(|a| (a.attribute.clone(), a.amount, a.operation.clone()))
+                    .collect(),
+            })
+            .collect(),
+    );
 }
 
 /// In a root built by [`build`]: its warnings, one per line.

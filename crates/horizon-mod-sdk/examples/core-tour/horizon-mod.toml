@@ -1,0 +1,9 @@
+id = "core_tour"
+name = "Core Tour"
+version = "0.1.0"
+description = "Counts deaths on each player, reads its own data file, sends itself a message, answers tags"
+authors = ["Horizon Hammer Core"]
+api = "0.3"
+side = "server"
+capabilities = ["players", "world", "entities", "storage", "registries"]
+events = ["entity-dying"]

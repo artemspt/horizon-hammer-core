@@ -1,0 +1,42 @@
+{
+  "name": "Металлургический наполнитель",
+  "unlocks": [
+    "mekanism:metallurgic_infuser",
+    "mekanism:basic_control_circuit",
+    "mekanism:advanced_control_circuit",
+    "mekanism:elite_control_circuit",
+    "mekanism:ultimate_control_circuit",
+    "mekanism:alloy_infused",
+    "mekanism:alloy_reinforced",
+    "mekanism:alloy_atomic",
+    "mekanism:enriched_iron",
+    "mekanism:dust_steel",
+    "mekanism:ingot_steel",
+    "mekanism:dust_bronze",
+    "mekanism:ingot_bronze",
+    "mekanism:dust_netherite",
+    "mekanism:dust_refined_obsidian",
+    "mekanism:steel_casing",
+    "mekanism:basic_infusing_factory",
+    "mekanism:advanced_infusing_factory",
+    "mekanism:elite_infusing_factory",
+    "mekanism:ultimate_infusing_factory"
+  ],
+  "parts": [
+    {
+      "text": "Корпус — железный, с медными рёбрами: металл держит жар, медь разгоняет его.",
+      "hint": "Корпус из металла, который держит жар, с медными рёбрами.",
+      "candidates": ["minecraft:iron_ingot", "minecraft:copper_ingot", "minecraft:iron_block"]
+    },
+    {
+      "text": "Внутри — красный порошок: он не горит, а меняет вещество.",
+      "hint": "Внутри что-то красное, что не сгорает, а меняет вещество.",
+      "candidates": ["minecraft:redstone", "minecraft:redstone_block"]
+    },
+    {
+      "text": "Сверху — воронка и второе гнездо: машина берёт два потока и смешивает их.",
+      "hint": "Сверху два гнезда, чтобы смешать два потока.",
+      "candidates": ["minecraft:hopper", "minecraft:iron_ingot", "minecraft:copper_ingot"]
+    }
+  ]
+}

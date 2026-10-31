@@ -15,8 +15,30 @@ use std::{
     collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{
+        Arc, RwLock,
+        atomic::{AtomicBool, Ordering},
+    },
 };
+
+/// What server mods keep crafting grids from making (`world.set-locked-results`).
+/// `ANY_LOCKED` keeps a game with none to one load per craft.
+static ANY_LOCKED: AtomicBool = AtomicBool::new(false);
+static LOCKED: RwLock<Option<HashSet<String>>> = RwLock::new(None);
+
+/// Publishes what server mods have closed.
+pub fn set_locked_results(items: HashSet<String>) {
+    ANY_LOCKED.store(!items.is_empty(), Ordering::Relaxed);
+    if let Ok(mut locked) = LOCKED.write() {
+        *locked = Some(items);
+    }
+}
+fn result_locked(item: &str) -> bool {
+    ANY_LOCKED.load(Ordering::Relaxed)
+        && LOCKED
+            .read()
+            .is_ok_and(|l| l.as_ref().is_some_and(|l| l.contains(item)))
+}
 
 /// A set of accepted items (expanded from an item, list or tag), and the
 /// items in its `HolderSet` order (`Ingredient.display`'s `TagSlotDisplay`).
@@ -1451,7 +1473,9 @@ impl Recipes {
         };
         for (name, recipe) in &self.crafting {
             if let Some(result) = Self::assemble_if_matches(&ctx, &input, recipe) {
-                return result.map(|r| (name.as_str(), r));
+                return result
+                    .filter(|r| !result_locked(&r.item))
+                    .map(|r| (name.as_str(), r));
             }
         }
         None

@@ -495,6 +495,14 @@ impl ChunkGenerator for VanillaTerrain {
             }
             #[cfg(feature = "mods")]
             if let Some(snapshot) = crate::mod_worldgen::snapshot()
+                && !snapshot.ores.is_empty()
+            {
+                for chunk in &mut array {
+                    place_mod_ores(chunk, &snapshot.ores);
+                }
+            }
+            #[cfg(feature = "mods")]
+            if let Some(snapshot) = crate::mod_worldgen::snapshot()
                 && !snapshot.surface_blocks.is_empty()
             {
                 for chunk in &mut array {
@@ -727,5 +735,56 @@ mod default_block_entity_tests {
             (1, 1),
             "a placed block entity is kept, not doubled"
         );
+    }
+}
+
+/// `worldgen.add-ore` in a decorated chunk: veins as random walks kept inside
+/// it, the same for the same chunk (a chunk may be decorated with its region more
+/// than once). // ponytail: veins stop at chunk edges, spanning needs the feature pipeline.
+#[cfg(feature = "mods")]
+fn place_mod_ores(chunk: &mut ProtoChunk, ores: &[horizon_mods::OreDefinition]) {
+    let pos = chunk.terrain.position();
+    let (cx, cz) = (pos.x, pos.z);
+    let reg = chunk.data().registry();
+    for (index, ore) in ores.iter().enumerate() {
+        let Some(state) = reg.default_state(&ore.block) else {
+            continue;
+        };
+        let replaces: Vec<_> = ore
+            .replaces
+            .iter()
+            .filter_map(|b| reg.default_state(b))
+            .collect();
+        let mut seed = (i64::from(cx).wrapping_mul(341_873_128_712)
+            ^ i64::from(cz).wrapping_mul(132_897_987_541)
+            ^ (index as i64).wrapping_mul(0x9E37_79B9)) as u64
+            | 1;
+        let mut next = move |bound: i32| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed % bound.max(1) as u64) as i32
+        };
+        let span = ore.max_y.saturating_sub(ore.min_y).saturating_add(1);
+        for _ in 0..ore.per_chunk {
+            let (mut x, mut y, mut z) = (next(16), ore.min_y + next(span), next(16));
+            for _ in 0..ore.size {
+                let inside = (0..16).contains(&x)
+                    && (0..16).contains(&z)
+                    && (ore.min_y..=ore.max_y).contains(&y)
+                    && y >= chunk.terrain.min_y();
+                if inside {
+                    let here = chunk.terrain.block(x, y, z);
+                    if (ore.biome == "*" || chunk.biome_at(x, y, z) == ore.biome)
+                        && replaces.contains(&here)
+                    {
+                        let _ = chunk.terrain.set_block_worldgen(x, y, z, state);
+                    }
+                }
+                x += next(3) - 1;
+                y += next(3) - 1;
+                z += next(3) - 1;
+            }
+        }
     }
 }

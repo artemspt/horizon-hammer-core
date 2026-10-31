@@ -1,0 +1,6 @@
+{
+  "model": {
+    "type": "minecraft:model",
+    "model": "firstlegacy:block/first_generator"
+  }
+}

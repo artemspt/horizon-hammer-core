@@ -1,0 +1,22 @@
+{
+  "block.showcase.reactor": "Реактор",
+  "item.showcase.reactor": "Реактор",
+  "block.showcase.sun_ore": "Солнечная руда",
+  "item.showcase.sun_ore": "Солнечная руда",
+  "item.showcase.sun_blade": "Солнечный клинок",
+  "item.showcase.sun_bread": "Солнечный хлеб",
+  "item.showcase.charged_cell": "Заряженная ячейка",
+  "item.showcase.wand": "Жезл витрины",
+  "entity.showcase.guard": "Страж реактора",
+  "block.showcase.pedestal": "Пьедестал",
+  "item.showcase.pedestal": "Пьедестал",
+  "entity.showcase.core": "Ядро реактора",
+  "entity.showcase.bolt": "Солнечный заряд",
+  "block.showcase.funnel": "Воронка",
+  "item.showcase.funnel": "Воронка",
+  "block.showcase.dial": "Циферблат",
+  "item.showcase.dial": "Циферблат",
+  "block.showcase.plasma": "Плазма",
+  "item.showcase.plasma_bucket": "Ведро плазмы",
+  "effect.showcase.shock": "Шок"
+}

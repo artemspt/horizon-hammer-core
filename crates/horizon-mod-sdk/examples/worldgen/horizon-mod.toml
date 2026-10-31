@@ -5,5 +5,8 @@ description = "Plains are surfaced with diamond blocks: a world generation rule 
 authors = ["Horizon Hammer Core"]
 api = "0.3"
 side = "server"
-capabilities = ["worldgen"]
+capabilities = ["worldgen", "storage"]
 experimental = ["worldgen"]
+
+[config]
+surface = "minecraft:diamond_block"

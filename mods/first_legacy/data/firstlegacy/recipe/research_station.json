@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "DGD",
+    "WKW",
+    "CCC"
+  ],
+  "key": {
+    "D": "minecraft:diamond",
+    "G": "minecraft:glass",
+    "W": "#minecraft:wool",
+    "C": "minecraft:copper_ingot",
+    "K": "firstlegacy:station_casing"
+  },
+  "result": {
+    "id": "firstlegacy:research_station"
+  }
+}

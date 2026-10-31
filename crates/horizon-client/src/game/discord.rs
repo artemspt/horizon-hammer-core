@@ -32,10 +32,10 @@ impl Game<'_> {
         };
         Status::World {
             play,
-            dimension: match self.dim {
-                Dim::Overworld => Dimension::Overworld,
+            dimension: match self.dim.base() {
                 Dim::Nether => Dimension::Nether,
                 Dim::End => Dimension::End,
+                _ => Dimension::Overworld,
             },
             mode: self.mode,
         }

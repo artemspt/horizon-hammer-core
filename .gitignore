@@ -37,3 +37,4 @@
 
 # Release-only compiled original exporter bundle.
 /exporters/
+/mods/*/target/

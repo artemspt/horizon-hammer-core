@@ -30,6 +30,16 @@ The game's side of `game-events`.
 - Imports (what the game offers): `players`, `entities`
 - Exports (what the mod provides): `game-events`
 
+## World `entity-events-host`
+
+- Imports (what the game offers): `players`, `entities`
+- Exports (what the mod provides): `entity-events`
+
+## World `logic-events-host`
+
+- Imports (what the game offers): `players`, `entities`
+- Exports (what the mod provides): `logic-events`
+
 ## World `client-net-host`
 
 The game's side of `client-net-events`.
@@ -68,7 +78,7 @@ A server mod (manifest `side = "server"`, `api = "0.3"`, experimental): runs whe
 What the SDK builds a server mod as: `horizon-server-mod` and the block hooks.
 
 - Imports (what the game offers): `log`, `storage`, `players`, `world`, `storages`, `entities`, `worldgen`, `server-net`
-- Exports (what the mod provides): `block-events`, `game-events`, `server-net-events`, `server-events`
+- Exports (what the mod provides): `block-events`, `game-events`, `entity-events`, `logic-events`, `server-net-events`, `server-events`
 
 ## World `horizon-ui-mod`
 
@@ -211,6 +221,8 @@ Capability `storage`: a per-mod folder of small key/value files, quota'd (docs/m
 | `get` | `func(key: string) -> option<list<u8>>` | None if `key` has never been `set`, or the key is not well-formed. |
 | `set` | `func(key: string, value: list<u8>) -> result<_, string>` | Errs on a malformed key or over quota (bytes for the whole mod). |
 | `delete` | `func(key: string)` | No error if `key` was already absent. |
+| `config` | `func(key: string) -> option<string>` | A setting the player can edit: `horizon-mods/config/<mod id>.toml`, made on first run from the manifest's `[config]` table, which also fills what the file leaves out. Read when the mod starts: `/hmod reload` reads it again. None for a key in neither. |
+| `read-resource` | `func(path: string) -> option<list<u8>>` | A file of the mod's own package: `data/<mod id>/machines.json`, the data a NeoForge mod loads with a reload listener. Only under `assets/` or `data/`, in a mod with capability `registries`. None when absent. |
 
 ## `command`
 
@@ -446,6 +458,60 @@ Any four-cornered shape (a wheel's segment, an arrow): the corners in order roun
 | `item` | `item-shape` |  |
 | `text` | `text-shape` |  |
 
+### record `part-pose`
+
+One part of a placed model, moved from where the file puts it.
+
+| Field | Type | |
+| --- | --- | --- |
+| `part` | `string` | As in the model's `parts`. |
+| `x` | `f32` | Pixels added to its position. |
+| `y` | `f32` |  |
+| `z` | `f32` |  |
+| `pitch` | `f32` | Degrees added to its rotation. |
+| `yaw` | `f32` |  |
+| `roll` | `f32` |  |
+
+### record `placed-model`
+
+A model of `data/<mod>/horizon/model/<name>.json` standing in the world.
+
+| Field | Type | |
+| --- | --- | --- |
+| `model` | `string` | `<mod>:<name>`; an unknown one draws nothing. |
+| `dimension` | `string` |  |
+| `x` | `f64` |  |
+| `y` | `f64` |  |
+| `z` | `f64` |  |
+| `yaw` | `f32` | Degrees. |
+| `pitch` | `f32` |  |
+| `roll` | `f32` |  |
+| `spin` | `f32` | Degrees of yaw a second, turned smoothly by the game. |
+| `scale` | `f32` | 1.0 is the model's own size. |
+| `parts` | `list<part-pose>` | Its parts' poses now; a part's `spin` in the file turns by itself. |
+
+### record `menu-layout`
+
+How the windows titled `title` look: real menus (`storages.open-menu`), their slots, cursor and shift-clicks all the server's, laid out by the mod.
+
+| Field | Type | |
+| --- | --- | --- |
+| `title` | `string` |  |
+| `width` | `f32` | The window's size in GUI pixels. |
+| `height` | `f32` |  |
+| `slots` | `list<point>` | Where each of the storage's slots goes, in order; one not listed is hidden. |
+| `inventory` | `point` | The top left of the player's inventory, the hotbar 58 below it. |
+| `shapes` | `list<shape>` | Drawn under the slots, from the window's top left. |
+
+### record `canvas-area`
+
+A place on a canvas that hears clicks: `ui-events::select(id, 0)`.
+
+| Field | Type | |
+| --- | --- | --- |
+| `id` | `u32` |  |
+| `rect` | `rect` |  |
+
 ### record `frame-rate`
 
 | Field | Type | |
@@ -481,6 +547,9 @@ Any four-cornered shape (a wheel's segment, an arrow): the corners in order roun
 
 | Function | Signature | What it does |
 | --- | --- | --- |
+| `set-models` | `func(models: list<placed-model>)` | Replaces the models the mod has in the world, up to 1024: drawn every frame until replaced, the way a block entity renderer draws a machine's moving parts. An empty list removes them. |
+| `set-menu-layouts` | `func(layouts: list<menu-layout>)` | Replaces the mod's window layouts. |
+| `open-canvas` | `func(title: string, shapes: list<shape>, areas: list<canvas-area>)` | Opens or updates a screen drawn entirely by the mod (it needs capability `ui` too): `shapes` in GUI pixels, up to 1024, in any layout, a machine's slots and gauges among them. It leaves as `ui.open-screen`'s does. |
 | `set-hud` | `func(shapes: list<shape>)` | Replaces the mod's HUD shapes: up to 1024, drawn every frame in order over the HUD (after the hotbar, under chat and screens), hidden with the HUD (F1). An empty list removes them. |
 | `gui-size` | `func() -> tuple<f32, f32>` | The screen's size in GUI pixels (width, height), as of this tick. |
 | `shake` | `func(strength: f32, seconds: f32)` | Shakes the camera: a jolt of `strength` (0 to 1, 1 the hardest) that fades out over `seconds` (at most 10). Jolts add up to 1. The view turns, the player doesn't, and the player's Distortion Effects option scales it (0 turns it off). |
@@ -697,6 +766,27 @@ Capability `players`, server mods only (manifest `api = "0.3"`, experimental): t
 | `game-mode` | `game-mode` |  |
 | `health` | `f32` | Hit points as vanilla counts them: 20 is full health without effects. |
 
+### record `item-look`
+
+How a stack looks, beyond its item.
+
+| Field | Type | |
+| --- | --- | --- |
+| `name` | `option<string>` | Its name, as an anvil's: none keeps what it has. |
+| `lore` | `list<string>` | Lines under its name. |
+| `model` | `option<string>` | The item model it shows: `mymod:press_tier_2`. |
+| `glint` | `option<bool>` | Forces the enchanted shine on or off. |
+
+### record `player-event`
+
+What happened to players since the last tick, for a mod's `tick`.
+
+| Field | Type | |
+| --- | --- | --- |
+| `player` | `string` |  |
+| `kind` | `string` | `died`, `respawned`, `changed-dimension` (detail: the new one), `crafted` (detail: the recipe), `tossed`, `used-item`, `broke-item` (detail: the item) or `targeted` (detail: the mob's id). With no player, `block-gone` (detail: `dimension x y z`): a storage's block went, however it did. New kinds may appear: ignore others. |
+| `detail` | `string` |  |
+
 ### record `item-stack`
 
 An item stack, as server mods hand it around (inventories, block storages, item events).
@@ -710,6 +800,13 @@ An item stack, as server mods hand it around (inventories, block storages, item 
 
 | Function | Signature | What it does |
 | --- | --- | --- |
+| `style-stack` | `func(stack: item-stack, look: item-look) -> result<item-stack, string>` | The same stack with this look, seen by every client. |
+| `set-undying` | `func(player: string, on: bool) -> result<_, string>` | While on, a blow that would kill this player leaves them on 1 health, as a totem does with no totem used and no effects. Until the world closes. |
+| `sneaking` | `func(player: string) -> bool` | Whether a player is holding sneak, as of the tick's start. |
+| `look` | `func(player: string) -> option<tuple<f32, f32>>` | Where the player looks: yaw and pitch in degrees, as F3 shows them. |
+| `get-data` | `func(player: string, key: string) -> option<list<u8>>` | The mod's bytes on a player under `key`, as `set-data` left them: saved with the world, kept through death and leaving (NeoForge's data attachments). Each mod sees only its own. |
+| `set-data` | `func(player: string, key: string, data: list<u8>) -> result<_, string>` | Keeps up to 65536 bytes on a player, up to 64 keys per mod and player. Empty `data` removes the key. |
+| `poll-events` | `func() -> list<player-event>` | This tick's player events. Asking twice in a tick gives them twice. |
 | `online` | `func() -> list<player>` | The players online, in the order they joined. |
 | `tell` | `func(player: string, text: string) -> bool` | A system message to one player, after the mod's name; false when no player with that id is online. Up to 8 messages per call. |
 | `broadcast` | `func(text: string)` | A system message to every player and the server's log, after the mod's name. Counts toward the same 8 per call. |
@@ -718,6 +815,31 @@ An item stack, as server mods hand it around (inventories, block storages, item 
 | `give` | `func(player: string, stack: item-stack) -> result<_, string>` | Gives a stack as `/give` does: into the inventory, the rest dropped at the player's feet. Changes to inventories are made in order at the tick's end. Err for an unknown item or a player not online. |
 | `set-slot` | `func(player: string, slot: u32, stack: option<item-stack>) -> result<_, string>` | Puts a stack in a slot (`inventory`'s numbering), none empties it. |
 | `take` | `func(player: string, item: string, count: u32) -> u32` | Takes up to `count` of `item` (any bytes and components) from the inventory, as `/clear` does: how many it holds of it now, so how many go at the tick's end. |
+| `by-name` | `func(name: string) -> option<player>` | The online player with this name. |
+| `by-id` | `func(id: string) -> option<player>` | The online player with this id. |
+| `is-online` | `func(id: string) -> bool` | Whether a player with this id is online. |
+| `count` | `func() -> u32` | How many players are online. |
+| `near` | `func(dimension: string, x: f64, y: f64, z: f64, radius: f64) -> list<player>` | The players in a dimension within `radius` blocks, nearest first. |
+| `held-item` | `func(player: string) -> option<item-stack>` | What the player holds in the main hand, as of the tick's start. |
+| `offhand-item` | `func(player: string) -> option<item-stack>` | What the player holds in the off hand, as of the tick's start. |
+| `armor` | `func(player: string) -> list<option<item-stack>>` | What the player wears: feet, legs, chest, head. Empty when not online. |
+| `count-item` | `func(player: string, item: string) -> u32` | How many of `item` the whole inventory holds. |
+| `has-item` | `func(player: string, item: string, count: u32) -> bool` | Whether the inventory holds at least `count` of `item`. |
+| `free-slots` | `func(player: string) -> u32` | Empty slots in the hotbar and main inventory. |
+| `find-item` | `func(player: string, item: string) -> option<u32>` | The first slot (`inventory`'s numbering) holding `item`. |
+| `set-game-mode` | `func(player: string, mode: game-mode) -> result<_, string>` | `/gamemode`. |
+| `clear-inventory` | `func(player: string) -> result<_, string>` | `/clear`: empties the whole inventory. |
+| `show-title` | `func(player: string, title: string, subtitle: option<string>) -> result<_, string>` | `/title`: a big line on the player's screen, and a smaller one under it. |
+| `action-bar` | `func(player: string, text: string) -> result<_, string>` | `/title actionbar`: a line over the hotbar. |
+| `set-title-times` | `func(player: string, fade-in: u32, stay: u32, fade-out: u32) -> result<_, string>` | `/title times`: fade in, stay and fade out, in ticks. |
+| `add-experience` | `func(player: string, points: s32) -> result<_, string>` | `/experience add`: experience points; negative takes them away. |
+| `add-levels` | `func(player: string, levels: s32) -> result<_, string>` | `/experience add`: whole levels; negative takes them away. |
+| `set-spawn` | `func(player: string, dimension: string, x: s32, y: s32, z: s32) -> result<_, string>` | `/spawnpoint`: where the player respawns. |
+| `kick` | `func(player: string, reason: string) -> result<_, string>` | `/kick`. Single player's owner can't be kicked, as in vanilla. |
+| `play-sound` | `func(player: string, sound: string, volume: f32, pitch: f32) -> result<_, string>` | `/playsound`: a sound only this player hears, where they stand. |
+| `stop-sounds` | `func(player: string) -> result<_, string>` | `/stopsound`: stops every sound this player hears. |
+| `grant-advancement` | `func(player: string, advancement: string) -> result<_, string>` | `/advancement grant ... only`. |
+| `revoke-advancement` | `func(player: string, advancement: string) -> result<_, string>` | `/advancement revoke ... only`. |
 
 ## `world`
 
@@ -744,6 +866,45 @@ Capability `world`, server mods only (manifest `api = "0.3"`, experimental): the
 | `data-positions` | `func(dimension: string) -> list<tuple<s32, s32, s32>>` | Every position in `dimension` where the mod keeps data (some may be stale until read: `get-data` says), for a tick over its machines. |
 | `schedule-tick` | `func(dimension: string, x: s32, y: s32, z: s32, delay: u32) -> result<_, string>` | Calls `block-events.block-tick` for this mod at a position after `delay` server ticks (1 to 72000), as long as the same block is there then: a machine's timer, a growing crop. Saved with the world. Err where no chunk is loaded, or past 65536 waiting per mod. |
 | `redstone-power` | `func(dimension: string, x: s32, y: s32, z: s32) -> option<u8>` | The strongest redstone signal reaching the block at a position from its neighbours (0 to 15, `getBestNeighborSignal`), as of the tick's start. Known for blocks a server mod keeps data or a storage on; none elsewhere. |
+| `set-redstone-output` | `func(dimension: string, x: s32, y: s32, z: s32, signal: u8) -> result<_, string>` | The block at a position gives this weak redstone signal (0 to 15) on every side: wires, lamps and pistons beside it hear it from the next tick. Saved with the world, gone with the block; 0 stops it. Works in the level the server ticks last. |
+| `set-comparator-output` | `func(dimension: string, x: s32, y: s32, z: s32, signal: u8) -> result<_, string>` | What a comparator reads from the block at a position (0 to 15), as a chest's fill level: saved and gone as `set-redstone-output`. |
+| `get-saved` | `func(key: string) -> option<list<u8>>` | The mod's own bytes saved with this world under `key`, as `set-saved` left them: what a world has learned or owns, unlike `storage`, which is the same in every world. Each mod sees only its own. Worlds lend these after `init`: read them from the first tick on. |
+| `set-saved` | `func(key: string, data: list<u8>) -> result<_, string>` | Keeps `data` (up to 1 MiB) under `key` (up to 64 keys per mod) in this world's save. Empty `data` removes it. |
+| `mod-loaded` | `func(id: string) -> bool` | Whether a mod with this id is running: for optional links between mods (NeoForge's `ModList.isLoaded`). Known from the first tick on. |
+| `mod-send` | `func(target: string, channel: string, data: list<u8>) -> result<_, string>` | Leaves a message for a running mod, which reads it with `mod-receive`. Up to 64 KiB each, and 1024 waiting per mod. |
+| `mod-receive` | `func() -> list<tuple<string, string, list<u8>>>` | The messages waiting for this mod, oldest first, as (sender, channel, data). They are not saved. |
+| `item-has-tag` | `func(item: string, tag: string) -> bool` | Whether an item is in an item tag: `c:ingots`, `minecraft:logs`. |
+| `block-has-tag` | `func(block: string, tag: string) -> bool` | Whether a block is in a block tag: `minecraft:mineable/pickaxe`. |
+| `entity-has-tag` | `func(kind: string, tag: string) -> bool` | Whether an entity type is in an entity type tag: `minecraft:undead`. |
+| `set-locked-results` | `func(items: list<string>) -> result<_, string>` | Items no crafting grid makes while this list stands (per mod, the last call wins; everyone's lists add up), for mods that open recipes by progress. Vanilla's and other mods' recipes alike; at most 4096. |
+| `get-blocks` | `func(dimension: string, positions: list<tuple<s32, s32, s32>>) -> result<list<option<string>>, string>` | Block states at many positions at once, in order: cheaper than asking one by one. None where no chunk is loaded. At most 4096. |
+| `is-loaded` | `func(dimension: string, x: s32, z: s32) -> bool` | Whether the chunk holding this column is loaded. |
+| `is-air` | `func(dimension: string, x: s32, y: s32, z: s32) -> bool` | Whether the block is air of any kind; false where no chunk is loaded. |
+| `block-id` | `func(dimension: string, x: s32, y: s32, z: s32) -> option<string>` | The block's id without its properties: `minecraft:oak_log`. |
+| `block-property` | `func(dimension: string, x: s32, y: s32, z: s32, name: string) -> option<string>` | One property of the block's state: `axis` of an oak log gives `y`. |
+| `set-block` | `func(dimension: string, x: s32, y: s32, z: s32, state: string) -> result<_, string>` | `set-blocks` for one block. |
+| `set-block-property` | `func(dimension: string, x: s32, y: s32, z: s32, name: string, value: string) -> result<_, string>` | Changes one property of the block's state, keeping the others. |
+| `break-block` | `func(dimension: string, x: s32, y: s32, z: s32, drop: bool) -> result<_, string>` | Removes a block as `/setblock ... destroy` does, with its drops and particles when `drop`, or quietly. |
+| `fill` | `func(dimension: string, x1: s32, y1: s32, z1: s32, x2: s32, y2: s32, z2: s32, state: string) -> result<_, string>` | Sets every block of a box, corners included: at most 4096. |
+| `find-blocks` | `func(dimension: string, x1: s32, y1: s32, z1: s32, x2: s32, y2: s32, z2: s32, block: string, limit: u32) -> result<list<tuple<s32, s32, s32>>, string>` | Positions in a box holding `block` (an id, or a full state), up to `limit` (at most 4096). A box of up to 65536 blocks. |
+| `count-blocks` | `func(dimension: string, x1: s32, y1: s32, z1: s32, x2: s32, y2: s32, z2: s32, block: string) -> result<u32, string>` | How many blocks of a box hold `block`. A box of up to 65536 blocks. |
+| `height-at` | `func(dimension: string, x: s32, z: s32) -> option<s32>` | The y of the highest block that isn't air in a column. |
+| `game-time` | `func() -> option<u64>` | Ticks the world has run, as of the tick's start. |
+| `day-time` | `func() -> option<u64>` | The time of day (0 to 24000 is one day, and it goes on counting). |
+| `set-time` | `func(ticks: u32) -> result<_, string>` | `/time set`. |
+| `set-weather` | `func(weather: string, seconds: u32) -> result<_, string>` | `/weather`: `clear`, `rain` or `thunder` for `seconds` (at least 1). |
+| `set-gamerule` | `func(rule: string, value: string) -> result<_, string>` | `/gamerule`: `keep_inventory`, `true`. |
+| `set-difficulty` | `func(difficulty: string) -> result<_, string>` | `/difficulty`: `peaceful`, `easy`, `normal` or `hard`. |
+| `set-world-spawn` | `func(x: s32, y: s32, z: s32) -> result<_, string>` | `/setworldspawn`. |
+| `lightning` | `func(dimension: string, x: f64, y: f64, z: f64) -> result<_, string>` | Strikes lightning at a position. |
+| `explode` | `func(dimension: string, x: f64, y: f64, z: f64, power: f32) -> result<_, string>` | An explosion of `power` (a creeper's is 3, TNT's 4), at most 16, as game rules allow, asked of `game-events.explosion`. |
+| `has-data` | `func(dimension: string, x: s32, y: s32, z: s32) -> bool` | Whether the mod keeps data on this block. |
+| `saved-keys` | `func() -> list<string>` | The keys this mod has under `set-saved`. |
+| `running-mods` | `func() -> list<string>` | The ids of the running mods. |
+| `is-valid-state` | `func(state: string) -> bool` | Whether a string names a block state: check before storing one. |
+| `item-exists` | `func(item: string) -> bool` | Whether the game knows this item. |
+| `max-stack-size` | `func(item: string) -> option<u32>` | An item's stack size; none for an item the game doesn't know. |
+| `random-u32` | `func() -> u32` | A random number, different on each call (the sandbox has no clock to seed one from). |
 
 ## `storages`
 
@@ -774,6 +935,15 @@ What a storage holds: slots (up to 54), energy (FE, the unit NeoForge mods use) 
 | `energy-capacity` | `u64` |  |
 | `tanks` | `list<u32>` |  |
 
+### record `slot-rule`
+
+What players may do with a slot of the mod's storage in a window.
+
+| Field | Type | |
+| --- | --- | --- |
+| `take-only` | `bool` | Nothing goes in by hand: an output. |
+| `items` | `list<string>` | The only items that go in; empty: any. |
+
 | Function | Signature | What it does |
 | --- | --- | --- |
 | `declare` | `func(dimension: string, x: s32, y: s32, z: s32, shape: storage-shape) -> result<_, string>` | Gives the block at a position a storage of this shape, for this mod. Declared again with another shape it keeps what fits. Err where no chunk is loaded, on air, on another mod's storage or a vanilla container, or past 65536 storages per mod. |
@@ -792,12 +962,31 @@ What a storage holds: slots (up to 54), energy (FE, the unit NeoForge mods use) 
 | `extract-fluid` | `func(dimension: string, x: s32, y: s32, z: s32, fluid: option<string>, amount: u32, simulate: bool) -> option<fluid-stack>` | Drains up to `amount` mB from the first tank holding `fluid` (none: any). |
 | `set-fluid` | `func(dimension: string, x: s32, y: s32, z: s32, tank: u32, fluid: option<fluid-stack>) -> result<_, string>` | Sets a tank of the mod's own storage (clamped to its capacity). |
 | `open-menu` | `func(player: string, dimension: string, x: s32, y: s32, z: s32, title: string) -> result<_, string>` | Opens a window with the storage's slots and the player's inventory, as a chest's: the server runs every click, shift-click and drag, so the mod only reads its slots. The window has rows of 9 (a storage of 9, 18, ... 54 slots) or is a hopper's (5 slots); `title` is plain text. It closes when the player leaves or the storage goes. Err for another shape, or a player not online. |
+| `open-menu-as` | `func(player: string, dimension: string, x: s32, y: s32, z: s32, title: string, kind: string) -> result<_, string>` | `open-menu` with the window chosen by name: `minecraft:generic_9x1` to `generic_9x6`, `generic_3x3`, `shulker_box` (27 slots), `hopper` (5), `furnace`, `blast_furnace`, `smoker` (3). Err when the storage's slots don't fit it, or for another name. |
+| `set-menu-data` | `func(dimension: string, x: s32, y: s32, z: s32, data: list<s16>) -> result<_, string>` | A storage of 3 slots opens as a furnace's window (input, fuel, output); these are its bars: flame left, flame total, arrow progress, arrow total. Sent to whoever has the window open when they change. Err for another mod's storage or not 4 values. |
+| `set-slot-rule` | `func(dimension: string, x: s32, y: s32, z: s32, slot: u32, rule: option<slot-rule>) -> result<_, string>` | Sets a slot's rule; none lifts it. What a window's player puts in against it goes back to their inventory. Mods' own calls ignore rules. Err for another mod's storage or a slot it doesn't have. |
+| `has-storage` | `func(dimension: string, x: s32, y: s32, z: s32) -> bool` | Whether a mod's storage is on this block (vanilla containers: no). |
+| `is-empty` | `func(dimension: string, x: s32, y: s32, z: s32) -> bool` | Whether the storage or vanilla container there holds nothing at all. |
+| `is-full` | `func(dimension: string, x: s32, y: s32, z: s32) -> bool` | Whether every slot there holds a full stack. |
+| `free-slots` | `func(dimension: string, x: s32, y: s32, z: s32) -> u32` | Empty slots there. |
+| `count-item` | `func(dimension: string, x: s32, y: s32, z: s32, item: string) -> u32` | How many of `item` the slots there hold. |
+| `clear` | `func(dimension: string, x: s32, y: s32, z: s32) -> result<_, string>` | Empties the mod's own storage: items, energy and fluids. |
+| `positions` | `func(dimension: string) -> list<tuple<s32, s32, s32>>` | Every position in `dimension` of this mod's storages. |
+| `free-energy` | `func(dimension: string, x: s32, y: s32, z: s32) -> u64` | How much more energy fits there, in FE. |
+| `fluid-amount` | `func(dimension: string, x: s32, y: s32, z: s32, fluid: string) -> u32` | How many mB of `fluid` the tanks there hold. |
+| `transfer-item` | `func(dimension: string, from: tuple<s32, s32, s32>, to: tuple<s32, s32, s32>, item: option<string>, count: u32) -> u32` | Moves up to `count` of `item` (none: any) from one block to another as a hopper would, only as much as fits: how many moved. |
+| `transfer-energy` | `func(dimension: string, from: tuple<s32, s32, s32>, to: tuple<s32, s32, s32>, amount: u64) -> u64` | Moves up to `amount` FE, only as much as fits: how much moved. |
+| `transfer-fluid` | `func(dimension: string, from: tuple<s32, s32, s32>, to: tuple<s32, s32, s32>, fluid: option<string>, amount: u32) -> u32` | Moves up to `amount` mB of `fluid` (none: any): how many moved. |
 
 ## `entities`
 
 Access: capability `entities`.
 
 Capability `entities` (server mods): the mobs of the loaded level, and the server's own commands for entities, effects, particles and sounds. Changes are made in order at the end of the call's tick, as the server console would make them.
+
+### type `item-stack`
+
+`type item-stack = item-stack`
 
 ### record `entity`
 
@@ -815,11 +1004,32 @@ Capability `entities` (server mods): the mobs of the loaded level, and the serve
 | `near` | `func(dimension: string, x: f64, y: f64, z: f64, radius: f64) -> list<entity>` | The living mobs within `radius` (up to 128) blocks of a position, as of the tick's start, nearest first, at most 256. Mobs of the level the server ticks last (single player: the owner's) only. |
 | `spawn` | `func(dimension: string, kind: string, x: f64, y: f64, z: f64, nbt: string) -> result<_, string>` | `/summon`: `kind` at a position, with `nbt` (SNBT, empty for none). |
 | `hurt` | `func(id: string, amount: f32) -> result<_, string>` | `/damage`: hurts an entity or player by its id. |
+| `get-data` | `func(id: string, key: string) -> option<list<u8>>` | The mod's bytes on an entity (or player) by id: saved with the world, the data attachments of NeoForge. Each mod sees only its own. |
+| `set-data` | `func(id: string, key: string, data: list<u8>) -> result<_, string>` | Up to 65536 bytes, 64 keys per mod and entity; empty removes the key. |
+| `set-ai` | `func(id: string, on: bool) -> result<_, string>` | Turns a mob's own AI off (`NoAI`) or back on, so a mod can drive it. |
+| `set-name` | `func(id: string, name: option<string>) -> result<_, string>` | The name over a mob's head; none removes it. |
+| `set-velocity` | `func(id: string, x: f64, y: f64, z: f64) -> result<_, string>` | Sets a mob's motion, in blocks per tick. A mob with its AI off doesn't move: `teleport` drives it. |
+| `set-rotation` | `func(id: string, yaw: f32, pitch: f32) -> result<_, string>` | `/rotate`: which way an entity faces, in degrees: how a display mob (`"display": true` in its type) turns its moving parts. |
+| `move-to` | `func(id: string, x: f64, y: f64, z: f64, speed: f64) -> result<_, string>` | Sends a mob walking to a position at `speed` times its own (1.0 is its walk), as a goal would. Its goals may send it elsewhere later. |
+| `set-target` | `func(id: string, target: option<string>) -> result<_, string>` | The entity a mob attacks: a mob's or player's id; none: no one. |
+| `set-equipment` | `func(id: string, slot: string, stack: item-stack) -> result<_, string>` | `/item replace entity`: what a mob or player wears or holds. `slot`: `weapon.mainhand`, `weapon.offhand`, `armor.head`, `armor.chest`... A stack's `data` isn't carried. |
+| `drop-item` | `func(dimension: string, x: s32, y: s32, z: s32, stack: item-stack) -> result<_, string>` | Drops a stack on the ground as an item at a block, at the end of the tick (of that dimension's next turn, if it isn't in place). |
+| `set-attribute` | `func(id: string, attribute: string, value: f64) -> result<_, string>` | `/attribute`: sets the base value of an attribute (`minecraft:max_health`) of an entity or player. |
 | `kill` | `func(id: string) -> result<_, string>` | `/kill`. |
 | `teleport` | `func(id: string, dimension: string, x: f64, y: f64, z: f64) -> result<_, string>` | `/tp`: to a position in a dimension. |
 | `effect` | `func(id: string, effect: string, seconds: u32, amplifier: u8) -> result<_, string>` | `/effect give`: `effect` (`minecraft:speed`) for `seconds` at `amplifier` (0 is level I). |
 | `particle` | `func(dimension: string, particle: string, x: f64, y: f64, z: f64, dx: f32, dy: f32, dz: f32, speed: f32, count: u32) -> result<_, string>` | `/particle`: `count` of `particle` (`minecraft:flame`) spread over `dx dy dz`, at `speed`, seen by every player in range. |
 | `sound` | `func(dimension: string, sound: string, x: f64, y: f64, z: f64, volume: f32, pitch: f32) -> result<_, string>` | `/playsound`: `sound` (`minecraft:block.anvil.use`) at a position for every player in range. |
+| `get` | `func(dimension: string, id: string) -> option<entity>` | A living mob of a dimension by its id, as of the tick's start. |
+| `exists` | `func(dimension: string, id: string) -> bool` | Whether that mob is alive there. |
+| `of-kind` | `func(dimension: string, kind: string, x: f64, y: f64, z: f64, radius: f64) -> list<entity>` | `near`, only mobs of `kind`. |
+| `nearest` | `func(dimension: string, x: f64, y: f64, z: f64, radius: f64, kind: option<string>) -> option<entity>` | The nearest mob within `radius`, of `kind` if given. |
+| `count-near` | `func(dimension: string, x: f64, y: f64, z: f64, radius: f64) -> u32` | How many mobs are within `radius` (up to 128). |
+| `clear-effects` | `func(id: string) -> result<_, string>` | `/effect clear`: every effect of an entity or player. |
+| `remove-effect` | `func(id: string, effect: string) -> result<_, string>` | `/effect clear`: one effect of an entity or player. |
+| `heal` | `func(id: string, amount: f32) -> result<_, string>` | Heals a mob, up to its maximum health. |
+| `set-health` | `func(id: string, health: f32) -> result<_, string>` | Sets a mob's health, from above 0 up to its maximum. |
+| `swing` | `func(id: string) -> result<_, string>` | `/swing`: an entity or player swings its main hand. |
 
 ## `worldgen`
 
@@ -827,9 +1037,24 @@ Access: capability `worldgen`.
 
 Capability `worldgen`, server mods only (experimental): world generation modifiers. Today one surface block per biome, applied to the chunks the game decorates while the rule is set.
 
+### record `ore`
+
+A vein of ore, in the chunks the game decorates while it is set.
+
+| Field | Type | |
+| --- | --- | --- |
+| `biome` | `string` | `minecraft:plains`, or `*` for every biome. |
+| `block` | `string` | What the vein is made of. |
+| `replaces` | `list<string>` | What it may replace (`minecraft:stone`, ...). |
+| `min-y` | `s32` |  |
+| `max-y` | `s32` |  |
+| `size` | `u32` | Blocks in a vein, 1 to 64. |
+| `per-chunk` | `u32` | Veins tried per chunk, 1 to 64. |
+
 | Function | Signature | What it does |
 | --- | --- | --- |
 | `set-surface-rule` | `func(biome: string, surface: string) -> result<_, string>` | The block the game puts at the top of `biome`'s terrain, e.g. `minecraft:stone`. The last rule for a biome wins. |
+| `add-ore` | `func(ore: ore) -> result<_, string>` | Adds veins of ore to new chunks. A mod may add up to 64. |
 
 ## `server-events`
 
@@ -962,6 +1187,57 @@ What happens to entities and the world, for server mods that list the event in t
 | `player-hurt` | `func(player: player, amount: f32)` | A player lost `amount` health this tick. |
 | `item-picked-up` | `func(player: player, stack: item-stack)` | A player picked up `stack` from the ground. |
 | `explosion` | `func(dimension: string, x: f64, y: f64, z: f64, power: f32) -> bool` | An explosion of `power` (TNT: 4) is about to go off: true stops it, with no damage and no blocks broken. Asked as it happens. |
+
+## `entity-events`
+
+Access: exported by the mod: the game calls it.
+
+Asked as they happen, of every server mod built since this interface: the first that answers true takes it, and vanilla does nothing with it.
+
+### type `player`
+
+`type player = player`
+
+### type `entity`
+
+`type entity = entity`
+
+| Function | Signature | What it does |
+| --- | --- | --- |
+| `use-entity` | `func(player: player, entity: entity, item: string) -> bool` | A right click on an entity, holding `item` (`minecraft:air`: empty hand). A mob, a player (`minecraft:player`, id: the player's) or an object (boat, minecart, armor stand, item frame, painting; id: its network id, which `entities` calls don't take). |
+| `attack-entity` | `func(player: player, entity: entity, item: string) -> bool` | An attack on an entity, holding `item`. As `use-entity`. |
+| `entity-dying` | `func(dimension: string, entity: entity, killer: option<string>) -> bool` | A mob's health reached 0; `killer` is the player who last hurt it. True keeps it alive on 1 health. Only for mods listing `entity-dying` in the manifest's `events`. |
+| `projectile-hit` | `func(dimension: string, projectile: entity, target: option<string>, x: f64, y: f64, z: f64) -> bool` | A mob type with `projectile` hit a block or, with `target`'s id, a living thing, at x y z. True keeps it flying; otherwise it is gone. |
+
+## `logic-events`
+
+Access: exported by the mod: the game calls it.
+
+Code behind what a mod declares in data; each is asked only of the mod whose id is the declaration's namespace.
+
+### type `entity`
+
+`type entity = entity`
+
+### record `chunk-fill`
+
+What a chunk holds: `blocks` index `palette` (`ns:block[a=b]`), 256 a layer, x then z in a layer, layers from `min-y` up. 0 in `palette` may be `minecraft:air`.
+
+| Field | Type | |
+| --- | --- | --- |
+| `palette` | `list<string>` |  |
+| `min-y` | `s32` |  |
+| `blocks` | `list<u16>` |  |
+| `biome` | `option<string>` |  |
+
+| Function | Signature | What it does |
+| --- | --- | --- |
+| `generate-chunk` | `func(dimension: string, x: s32, z: s32) -> option<chunk-fill>` | A chunk of a dimension declared with `"generator": {"type": "code"}`. |
+| `goal-can-use` | `func(goal: string, mob: entity) -> bool` | Whether a mob may start `goal` (a name in its type's `goals`), asked every few ticks for goals above the one it runs. While one runs the mob's vanilla goals wait; drive it with `entities`. |
+| `goal-tick` | `func(goal: string, mob: entity) -> bool` | A running goal's tick: false ends it. |
+| `goal-stop` | `func(goal: string, mob: entity)` | A goal ended or was replaced by one above it. |
+| `entity-tick` | `func(dimension: string, entity: entity)` | Each tick of a mob whose type says `"ticks": true`. |
+| `effect-tick` | `func(effect: string, target: string, amplifier: u8)` | Each tick of a mob or player under this mod's effect, level `amplifier`. |
 
 ## `client-net`
 

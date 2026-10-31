@@ -130,6 +130,8 @@ impl Game<'_> {
         let equipped = std::mem::take(&mut menu.equipped);
         let brewed = std::mem::take(&mut menu.brewed);
         menu.drops.clear();
+        let uuid = host.hub.guests[gi].uuid;
+        self.mod_crafted(uuid, &menu.crafted);
         menu.crafted.clear();
         store_player(menu, &mut host.hub.guests[gi]);
         if !brewed.is_empty() {

@@ -105,6 +105,14 @@ fn avatar(m: &Mob) -> bool {
 }
 /// The model layer key and texture for the mob's body.
 pub fn body(m: &Mob) -> (String, String) {
+    let (model, texture) = template_body(m);
+    // A mod's texture, `mymod:entity/guard`, over its template's.
+    if m.kind.texture.contains(':') && !m.kind.id.starts_with("minecraft:") {
+        return (model, m.kind.texture.clone());
+    }
+    (model, texture)
+}
+fn template_body(m: &Mob) -> (String, String) {
     use Species as S;
     let baby = m.is_baby();
     let b = |s: &str| {
@@ -1204,6 +1212,12 @@ fn render_visible(
         .unwrap_or_else(|| m.kind.model.clone());
     let mut poses = Poses::new(&model);
     anim::setup(m, &s, &mut poses, &data.animations);
+    for (part, turn) in &m.kind.part_spin {
+        let p = poses.get(part);
+        for i in 0..3 {
+            p[3 + i] += (turn[i] * s.age / 20.0).to_radians();
+        }
+    }
     let draw_body = |out: &mut Vec<Vertex>| {
         if let Some(uv) = atlas(&texture) {
             draw(

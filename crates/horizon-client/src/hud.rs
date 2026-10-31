@@ -194,6 +194,23 @@ fn atlas_sprites(root: &Path, packed: &[PackedImage]) -> Vec<PackedImage> {
     let mut names: Vec<(String, Vec<(usize, SpriteOrigin)>)> = Vec::new();
     let mut slots = std::collections::HashMap::new();
     let mut order = 0;
+    // A mod's entity textures: no atlas lists them, the game's are walked.
+    for texture in &textures {
+        let own = !texture.starts_with("minecraft:")
+            && texture
+                .split_once(':')
+                .is_some_and(|(_, p)| p.starts_with("entity/") || p.starts_with("mob_effect/"));
+        if own && !have.contains(texture.as_str()) {
+            let slot = *slots.entry(texture.clone()).or_insert_with(|| {
+                names.push((texture.clone(), Vec::new()));
+                names.len() - 1
+            });
+            names[slot]
+                .1
+                .push((order, SpriteOrigin::File(texture.clone())));
+            order += 1;
+        }
+    }
     for (atlas, sources) in atlas_sources::atlases(root) {
         // The other atlases' renamed files (GUI sprites, particles...) are
         // looked up by their texture paths here.

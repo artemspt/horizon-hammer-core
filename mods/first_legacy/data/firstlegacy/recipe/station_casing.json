@@ -1,0 +1,16 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "SCS",
+    "C C",
+    "SCS"
+  ],
+  "key": {
+    "S": "minecraft:cobblestone",
+    "C": "minecraft:copper_ingot"
+  },
+  "result": {
+    "id": "firstlegacy:station_casing",
+    "count": 8
+  }
+}

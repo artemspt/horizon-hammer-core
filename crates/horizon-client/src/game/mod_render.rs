@@ -77,6 +77,15 @@ impl Shake {
 #[cfg(not(feature = "mods"))]
 impl Game<'_> {
     pub(super) fn draw_mod_shapes(&self, _batch: &mut HudBatch) {}
+    pub(super) fn mod_menu_slot(&self, _slot: usize) -> Option<(f32, f32)> {
+        None
+    }
+    pub(super) fn mod_menu_size(&self) -> Option<(f32, f32)> {
+        None
+    }
+    pub(super) fn draw_mod_menu(&self, _batch: &mut HudBatch, _ox: f32, _oy: f32) -> bool {
+        false
+    }
     pub(super) fn shaken_view(&mut self, yaw: f32, pitch: f32) -> (f32, f32) {
         (yaw, pitch)
     }
@@ -84,6 +93,42 @@ impl Game<'_> {
 
 #[cfg(feature = "mods")]
 impl Game<'_> {
+    /// The layout a mod gave the window that is open.
+    fn mod_menu(&self) -> Option<&horizon_mods::MenuLayout> {
+        self.container?;
+        let title = match self.remote_menu_title() {
+            Some(title) => title.plain(),
+            None => self.container_title(String::new()),
+        };
+        self.mods.mods.menu_layout(&title)
+    }
+    pub(super) fn mod_menu_size(&self) -> Option<(f32, f32)> {
+        self.mod_menu().map(|l| (l.width, l.height))
+    }
+    /// Where a layout puts a slot: 0..36 the player's, 300.. the storage's.
+    pub(super) fn mod_menu_slot(&self, i: usize) -> Option<(f32, f32)> {
+        let l = self.mod_menu()?;
+        let (x, y) = (l.inventory.x, l.inventory.y);
+        Some(match i {
+            0..9 => (x + i as f32 * 18.0, y + 58.0),
+            9..36 => (
+                x + ((i - 9) % 9) as f32 * 18.0,
+                y + ((i - 9) / 9) as f32 * 18.0,
+            ),
+            300..500 => l
+                .slots
+                .get(i - 300)
+                .map_or((-10_000.0, -10_000.0), |p| (p.x, p.y)),
+            _ => return None,
+        })
+    }
+    pub(super) fn draw_mod_menu(&self, batch: &mut HudBatch, ox: f32, oy: f32) -> bool {
+        let Some(l) = self.mod_menu() else {
+            return false;
+        };
+        self.draw_shapes(batch, &l.shapes, (ox, oy));
+        true
+    }
     /// The running mods' HUD shapes, in order, over the HUD.
     pub(super) fn draw_mod_shapes(&self, batch: &mut HudBatch) {
         for shape in self.mods.mods.hud_shapes() {

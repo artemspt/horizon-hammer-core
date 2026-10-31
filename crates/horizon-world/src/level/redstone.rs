@@ -30,6 +30,13 @@ impl<L: LevelAccess + ?Sized> Sim<'_, L> {
     fn nibble(word: u32, direction: Direction) -> i32 {
         ((word >> (4 * direction as u32)) & 15) as i32
     }
+    /// A server mod's block: (weak signal, comparator reading).
+    fn mod_output(&self, pos: BlockPos) -> Option<(i32, i32)> {
+        if self.ticks.mod_outputs.is_empty() {
+            return None;
+        }
+        self.ticks.mod_outputs.get(&pos).copied()
+    }
     pub(crate) fn is_signal_source(&self, state: BlockStateId) -> bool {
         if self.b.is_block(state, self.b.named.redstone_wire) {
             return !self.wire_signal_off.get();
@@ -44,6 +51,9 @@ impl<L: LevelAccess + ?Sized> Sim<'_, L> {
         direction: Direction,
     ) -> i32 {
         let b = self.b;
+        if let Some((signal, _)) = self.mod_output(pos) {
+            return signal;
+        }
         if !b.has_flag(state, state_flags::SIGNAL_SOURCE) {
             return 0;
         }
@@ -227,6 +237,7 @@ impl<L: LevelAccess + ?Sized> Sim<'_, L> {
             }
         }
         if !self.should_wire_connect_to(relative, Some(direction))
+            && !self.ticks.mod_outputs.contains_key(&relative_pos)
             && (self.is_redstone_conductor(relative, relative_pos)
                 || !self.should_wire_connect_to(self.state(below(relative_pos)), None))
         {
@@ -488,14 +499,17 @@ impl<L: LevelAccess + ?Sized> Sim<'_, L> {
         };
         if b.instance_of(state, Class::Comparator) {
             let target_state = self.state(target);
-            if b.has_flag(target_state, state_flags::ANALOG_OUTPUT) {
+            if let Some((_, analog)) = self.mod_output(target) {
+                result = analog;
+            } else if b.has_flag(target_state, state_flags::ANALOG_OUTPUT) {
                 result = self.analog_output(target_state, target, facing.opposite());
             } else if result < 15 && self.is_redstone_conductor(target_state, target) {
                 let further = rel(target, facing);
                 let further_state = self.state(further);
-                let block = b
-                    .has_flag(further_state, state_flags::ANALOG_OUTPUT)
-                    .then(|| self.analog_output(further_state, further, facing.opposite()));
+                let block = self.mod_output(further).map(|o| o.1).or_else(|| {
+                    b.has_flag(further_state, state_flags::ANALOG_OUTPUT)
+                        .then(|| self.analog_output(further_state, further, facing.opposite()))
+                });
                 // ComparatorBlock.getInputSignal: an item frame behind the
                 // conductor counts too, the larger signal winning.
                 let frame = self.level.item_frame_analog_output(further, facing);

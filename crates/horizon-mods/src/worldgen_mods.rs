@@ -9,6 +9,19 @@ use crate::SurfaceRuleDefinition;
 use crate::game_events::LevelLoadEvent;
 use std::collections::{BTreeMap, BTreeSet};
 
+/// A vein of ore a mod adds to new chunks (`worldgen.add-ore`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct OreDefinition {
+    /// A biome id, or `*`.
+    pub biome: String,
+    pub block: String,
+    pub replaces: Vec<String>,
+    pub min_y: i32,
+    pub max_y: i32,
+    pub size: u32,
+    pub per_chunk: u32,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct FeatureAdd {
     pub biome: String,
@@ -46,6 +59,8 @@ impl BiomeModifier {
 
 #[derive(Clone, Debug, Default)]
 pub struct WorldgenModifierManager {
+    /// `worldgen.add-ore`: mod id and its ore.
+    ores: Vec<(String, OreDefinition)>,
     modifiers: Vec<BiomeModifier>,
     surface_rules: Vec<SurfaceRuleDefinition>,
     feature_sets: BTreeMap<String, BTreeSet<String>>,
@@ -80,7 +95,17 @@ impl WorldgenModifierManager {
     }
 
     /// Drops every rule of the mod `id` (it was reloaded or is gone).
+    /// Adds a mod's ore, up to 64 per mod.
+    pub fn add_ore(&mut self, id: &str, ore: OreDefinition) {
+        if self.ores.iter().filter(|(m, _)| m == id).count() < 64 {
+            self.ores.push((id.to_owned(), ore));
+        }
+    }
+    pub fn ores(&self) -> impl Iterator<Item = &OreDefinition> {
+        self.ores.iter().map(|(_, o)| o)
+    }
     pub fn remove_mod(&mut self, id: &str) {
+        self.ores.retain(|(m, _)| m != id);
         self.surface_rules.retain(|r| r.id.namespace() != id);
     }
 

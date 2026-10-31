@@ -1,0 +1,19 @@
+{
+  "variants": {
+    "charges=0": {
+      "model": "firstlegacy:block/station_lava_bay_0"
+    },
+    "charges=1": {
+      "model": "firstlegacy:block/station_lava_bay_1"
+    },
+    "charges=2": {
+      "model": "firstlegacy:block/station_lava_bay_2"
+    },
+    "charges=3": {
+      "model": "firstlegacy:block/station_lava_bay_3"
+    },
+    "charges=4": {
+      "model": "firstlegacy:block/station_lava_bay_4"
+    }
+  }
+}

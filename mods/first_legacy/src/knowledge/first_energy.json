@@ -1,0 +1,28 @@
+{
+  "name": "Первый генератор",
+  "requires": ["firstlegacy:first_infuser"],
+  "unlocks": [
+    "firstlegacy:first_generator",
+    "mekanismgenerators:heat_generator",
+    "mekanismgenerators:solar_generator",
+    "mekanismgenerators:wind_generator",
+    "mekanism:basic_energy_cube"
+  ],
+  "parts": [
+    {
+      "text": "Медная катушка в железном кожухе: она ловит жар и отдаёт его в провод.",
+      "hint": "Сердце — медная катушка в железном кожухе.",
+      "candidates": ["minecraft:copper_ingot", "minecraft:iron_ingot", "minecraft:copper_block"]
+    },
+    {
+      "text": "Внизу — топка, как у печи, только с поддувалом.",
+      "hint": "Внизу что-то вроде печи с поддувалом.",
+      "candidates": ["minecraft:furnace", "minecraft:blast_furnace", "minecraft:campfire"]
+    },
+    {
+      "text": "Редстоуновая дорожка ведёт от катушки к клеммам; без неё ток не выйдет.",
+      "hint": "От катушки к клеммам идёт красная дорожка.",
+      "candidates": ["minecraft:redstone", "minecraft:redstone_block"]
+    }
+  ]
+}

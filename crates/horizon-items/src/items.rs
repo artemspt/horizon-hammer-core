@@ -1671,6 +1671,9 @@ pub fn bucket_contents(
     item: &str,
 ) -> Option<(horizon_world::level::BucketContent, &str, Option<&str>)> {
     use horizon_world::{fluid::FluidKind, level::BucketContent as C};
+    if let Some(family) = horizon_world::fluid::mod_fluid_of_bucket(item) {
+        return Some((C::ModFluid(family), "minecraft:item.bucket.empty", None));
+    }
     Some(match item {
         "minecraft:water_bucket" => (
             C::Fluid(FluidKind::Water),

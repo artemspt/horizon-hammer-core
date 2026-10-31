@@ -1,0 +1,11 @@
+{
+  "item.firstlegacy.note": "Записка Первого",
+  "block.firstlegacy.research_station": "Ядро станции исследований",
+  "block.firstlegacy.station_casing": "Корпус станции",
+  "block.firstlegacy.station_input_gate": "Шлюз ввода",
+  "block.firstlegacy.station_output_gate": "Шлюз вывода",
+  "block.firstlegacy.station_lava_bay": "Отсек лавы",
+  "block.firstlegacy.thermal_converter": "Термопреобразователь",
+  "block.firstlegacy.first_generator": "Первый генератор",
+  "tooltip.firstlegacy.dev_recipe_hidden": "В обычной версии этот рецепт скрыт до изучения."
+}

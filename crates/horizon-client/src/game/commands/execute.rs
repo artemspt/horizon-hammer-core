@@ -592,7 +592,8 @@ impl Game<'_> {
                 if !matches!(
                     dim.as_str(),
                     "minecraft:overworld" | "minecraft:the_nether" | "minecraft:the_end"
-                ) {
+                ) && horizon_client::mod_dimensions::index_of(dim).is_none()
+                {
                     return Err(err("argument.dimension.invalid", &[dim]));
                 }
                 let dimension = Dim::from_id(dim);

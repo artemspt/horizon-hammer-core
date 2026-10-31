@@ -35,6 +35,11 @@ pub struct Menu {
     pub drag: Option<(u8, Vec<usize>)>,
     /// The data slots the client was last sent (ContainerSetData), a furnace's progress.
     pub sent_data: Vec<i16>,
+    /// The bars of a server mod's furnace window, not of a block entity.
+    pub mod_data: Vec<i16>,
+    /// A server mod's slot rules, by slot: take only, and the items it takes
+    /// (none listed: any).
+    pub mod_rules: std::collections::BTreeMap<usize, (bool, Vec<String>)>,
 }
 
 /// The y of the key a chest minecart's or chest boat's items are kept under
@@ -182,6 +187,13 @@ impl View<'_> {
         if self.shulker
             && self.container.as_ref().is_some_and(|c| i < c.len())
             && !crate::menu::fits_inside_container_items(stack)
+        {
+            return false;
+        }
+        if self.container.is_some()
+            && let Some(menu) = &self.guest.menu
+            && let Some((take_only, items)) = menu.mod_rules.get(&i)
+            && (*take_only || !(items.is_empty() || items.iter().any(|t| **t == *stack.item)))
         {
             return false;
         }

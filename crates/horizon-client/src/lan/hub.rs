@@ -287,7 +287,10 @@ fn entity_type(
     if let Some(id) = types.get(kind) {
         return Some(*id);
     }
-    let id = sync.builtin.get("minecraft:entity_type")?.id(kind)?;
+    let types_of = sync.builtin.get("minecraft:entity_type")?;
+    let id = types_of
+        .id(kind)
+        .or_else(|| types_of.id(&crate::mobs::mod_mob_base(kind)?))?;
     types.insert(kind.to_owned(), id);
     Some(id)
 }
@@ -347,12 +350,11 @@ impl Hub {
         let chat_type = sync
             .id("minecraft:chat_type", "minecraft:chat")
             .unwrap_or(0);
-        let dimension_type = sync
-            .id("minecraft:dimension_type", &config.dimension)
-            .unwrap_or(0);
+        let base = crate::mod_dimensions::base_of(&config.dimension).to_owned();
+        let dimension_type = sync.id("minecraft:dimension_type", &base).unwrap_or(0);
         let clock_ids = (0..sync.dynamic.len("minecraft:world_clock") as i32).collect();
         let mut encoder = encoder;
-        let d = horizon_protocol::registry::DimensionType::vanilla(&config.dimension);
+        let d = horizon_protocol::registry::DimensionType::vanilla(&base);
         encoder.set_dimension(d.min_y, d.height, d.has_skylight);
         Self {
             lan,
@@ -678,9 +680,11 @@ impl Hub {
 
     /// The levels of a server, in MinecraftServer.levelKeys order.
     fn level_keys() -> Vec<String> {
-        ["overworld", "the_end", "the_nether"]
-            .map(|l| format!("minecraft:{l}"))
-            .to_vec()
+        let vanilla = ["overworld", "the_end", "the_nether"].map(|l| format!("minecraft:{l}"));
+        let mods = crate::mod_dimensions::all()
+            .into_iter()
+            .map(|d| d.id.to_owned());
+        vanilla.into_iter().chain(mods).collect()
     }
 
     /// PlayerList.placeNewPlayer for a guest whose saved state is loaded.
@@ -794,9 +798,10 @@ impl Hub {
 
     /// ClientboundUpdateMobEffectPacket for one of the guest's effects.
     fn send_effect(&mut self, i: usize, e: &EffectInstance, blend: bool) -> Option<SentEffect> {
-        let effect = self
-            .sync
-            .id("minecraft:mob_effect", &format!("minecraft:{}", e.id))?;
+        let effect = self.sync.id(
+            "minecraft:mob_effect",
+            &horizon_client_core::potions::full_id(e.id),
+        )?;
         let flags = PlayerEffects::flags(e);
         let g = &self.guests[i];
         g.send(&C::UpdateMobEffect(play::UpdateMobEffect {
@@ -878,10 +883,10 @@ impl Hub {
             .map(|s| s.id)
             .collect();
         for id in removed {
-            let Some(effect) = self
-                .sync
-                .id("minecraft:mob_effect", &format!("minecraft:{id}"))
-            else {
+            let Some(effect) = self.sync.id(
+                "minecraft:mob_effect",
+                &horizon_client_core::potions::full_id(id),
+            ) else {
                 continue;
             };
             let g = &self.guests[i];
@@ -2632,9 +2637,14 @@ impl Hub {
         self.config.dimension = dimension.to_owned();
         self.dimension_type = self
             .sync
-            .id("minecraft:dimension_type", dimension)
+            .id(
+                "minecraft:dimension_type",
+                crate::mod_dimensions::base_of(dimension),
+            )
             .unwrap_or(0);
-        let d = horizon_protocol::registry::DimensionType::vanilla(dimension);
+        let d = horizon_protocol::registry::DimensionType::vanilla(crate::mod_dimensions::base_of(
+            dimension,
+        ));
         self.encoder
             .set_dimension(d.min_y, d.height, d.has_skylight);
     }

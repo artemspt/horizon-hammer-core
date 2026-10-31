@@ -817,7 +817,7 @@ pub fn paint(batch: &mut crate::hud::HudBatch, atlas: &crate::hud::HudAtlas, dra
             } => {
                 // Effect sprites belong to the mob_effect atlas directory;
                 // the other blitSprite ids refer to GUI sprites.
-                let name = if sprite.starts_with("mob_effect/") {
+                let name = if sprite.contains("mob_effect/") {
                     sprite.to_string()
                 } else {
                     format!("gui/sprites/{sprite}")

@@ -591,6 +591,12 @@ impl Game<'_> {
             }
             "chat" => {
                 let text = line.trim_start().strip_prefix("chat").unwrap_or("").trim();
+                // As the chat box: the window's own mods hear a command first.
+                if let Some(command) = text.strip_prefix('/')
+                    && self.mod_command(command)
+                {
+                    return ok();
+                }
                 if self.remote.is_some() {
                     self.send_chat(text);
                     return ok();

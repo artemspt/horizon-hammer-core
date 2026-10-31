@@ -1,0 +1,6 @@
+{
+  "base": "overworld",
+  "generator": {
+    "type": "code"
+  }
+}

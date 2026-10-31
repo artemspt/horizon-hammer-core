@@ -1,0 +1,7 @@
+{
+  "template": "minecraft:bread",
+  "components": {
+    "minecraft:item_model": "minecraft:golden_carrot",
+    "minecraft:food": {"nutrition": 12, "saturation": 1.2}
+  }
+}

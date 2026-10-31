@@ -303,10 +303,41 @@ pub(super) fn make_streaming(
                 res.biomes(),
             )
         });
+    let own_dimension = match dim {
+        Dim::Mod(i) => horizon_client::mod_dimensions::get(i),
+        _ => None,
+    };
+    use horizon_mods::content::DimensionGenerator as Own;
+    let own_flat = own_dimension.and_then(|d| match &d.generator {
+        Own::Flat { layers, biome } => Some(horizon_client::flatgen::FlatTerrain::from_layers(
+            layers,
+            biome.as_deref(),
+            pack.assets.registry,
+            res.biomes(),
+        )),
+        _ => None,
+    });
+    let flat = flat.or(own_flat);
     let mut streaming = if let Some(inner) = flat {
         Streaming::new(
             Arc::new(Persistent {
                 inner: Arc::new(inner),
+                save: save.clone(),
+                registry: pack.assets.clone(),
+                biomes: res.biomes().clone(),
+            }),
+            pack.context.clone(),
+            res.threads(),
+        )
+    } else if let Some(d) = own_dimension.filter(|d| d.generator == Own::Code) {
+        let inner = Arc::new(horizon_client::mod_dimensions::CodeTerrain {
+            dimension: d.id,
+            registry: pack.assets.registry,
+            biomes: res.biomes().clone(),
+        });
+        Streaming::new(
+            Arc::new(Persistent {
+                inner,
                 save: save.clone(),
                 registry: pack.assets.clone(),
                 biomes: res.biomes().clone(),
@@ -330,7 +361,17 @@ pub(super) fn make_streaming(
         // WorldOptions.generateStructures, from the world's settings.
         let structures =
             horizon_client::save::WorldGen::read(world_root).is_none_or(|w| w.structures);
-        let inner = Arc::new(VanillaTerrain::for_world(&options.resources.join("worldgen"), pack.assets.registry, res.biomes(), seed, dim.id(), structures).map_err(|e| {
+        // A mod's noise dimension: another dimension's terrain, on a seed of its own.
+        let (noise, seed) = match own_dimension.map(|d| (&d.generator, d.id)) {
+            Some((Own::Noise { dimension }, id)) => {
+                let salt = id
+                    .bytes()
+                    .fold(0i64, |h, b| h.wrapping_mul(31).wrapping_add(i64::from(b)));
+                (dimension.as_str(), seed ^ salt)
+            }
+            _ => (dim.id(), seed),
+        };
+        let inner = Arc::new(VanillaTerrain::for_world(&options.resources.join("worldgen"), pack.assets.registry, res.biomes(), seed, noise, structures).map_err(|e| {
                 format!("{e}\nPrepare the worldgen bundle with the launcher, or: horizon-prepare --prepare")
             })?);
         if dim == Dim::Overworld && structures {
@@ -354,8 +395,8 @@ pub(super) fn make_streaming(
     streaming.smooth_lighting = settings.smooth_lighting;
     streaming.cutout_leaves = settings.cutout_leaves;
     streaming.biome_zoom = BiomeZoom::new(obfuscate_seed(seed));
-    streaming.sky_light = dim != Dim::Nether;
-    streaming.nether_shading = dim == Dim::Nether;
+    streaming.sky_light = dim.base() != Dim::Nether;
+    streaming.nether_shading = dim.base() == Dim::Nether;
     // A server draws nothing: neither the integrated server nor the
     // dedicated one meshes sections.
     streaming.mesh = options.execution_role.is_client();

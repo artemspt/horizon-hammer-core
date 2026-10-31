@@ -203,7 +203,9 @@ pub mod server {
     });
 
     pub use exports::horizon::mods::block_events::Guest as __BlockGuest;
+    pub use exports::horizon::mods::entity_events::Guest as __EntityGuest;
     pub use exports::horizon::mods::game_events::Guest as __EventsGuest;
+    pub use exports::horizon::mods::logic_events::{ChunkFill, Guest as __LogicGuest};
     pub use exports::horizon::mods::server_events::{
         Argument, ArgumentKind, ArgumentValue, BlockPos, Guest as __Guest, Registration,
         ServerCommand,
@@ -215,6 +217,52 @@ pub mod server {
     pub use horizon::mods::storages::{self, FluidStack, StorageShape};
     pub use horizon::mods::world::{self, BlockChange};
     pub use horizon::mods::worldgen::{self};
+
+    /// The blocks joined to `start` through its six sides for which `member`
+    /// says yes, `start` first, up to `limit`: a cable network, a pipe run, a
+    /// multiblock. Each block looked at is one host call: keep `limit` honest,
+    /// and rebuild from `neighbor_changed` rather than each tick.
+    pub fn connected(
+        start: BlockPos,
+        limit: usize,
+        mut member: impl FnMut(BlockPos) -> bool,
+    ) -> Vec<BlockPos> {
+        let key = |p: BlockPos| (p.x, p.y, p.z);
+        let mut seen = std::collections::BTreeSet::from([key(start)]);
+        let mut found = vec![start];
+        let mut next = 0;
+        while next < found.len() && found.len() < limit {
+            let p = found[next];
+            next += 1;
+            for (dx, dy, dz) in [
+                (1, 0, 0),
+                (-1, 0, 0),
+                (0, 1, 0),
+                (0, -1, 0),
+                (0, 0, 1),
+                (0, 0, -1),
+            ] {
+                let q = BlockPos {
+                    x: p.x + dx,
+                    y: p.y + dy,
+                    z: p.z + dz,
+                };
+                if found.len() < limit && seen.insert(key(q)) && member(q) {
+                    found.push(q);
+                }
+            }
+        }
+        found
+    }
+
+    /// Moves up to `amount` FE from the storage at `from` into the one at
+    /// `to`: what actually moved. Nothing is lost when `to` is full.
+    pub fn move_energy(dimension: &str, from: BlockPos, to: BlockPos, amount: u64) -> u64 {
+        let have = storages::extract_energy(dimension, from.x, from.y, from.z, amount, true);
+        let moved = storages::insert_energy(dimension, to.x, to.y, to.z, have, false);
+        storages::extract_energy(dimension, from.x, from.y, from.z, moved, false);
+        moved
+    }
 
     impl ItemStack {
         /// A plain stack of `count` `item`s, with no bytes of the mod's.
@@ -319,6 +367,50 @@ pub mod server {
         fn player_hurt(&mut self, _player: &Player, _amount: f32) {}
         /// A player picked up `stack`.
         fn item_picked_up(&mut self, _player: &Player, _stack: &ItemStack) {}
+        /// A right click on a mob, as it happens: true takes it from vanilla.
+        fn use_entity(&mut self, _player: &Player, _entity: &Entity, _item: &str) -> bool {
+            false
+        }
+        /// A `projectile` mob type hit a block or `target`: true keeps it flying.
+        fn projectile_hit(
+            &mut self,
+            _dimension: &str,
+            _projectile: &Entity,
+            _target: Option<&str>,
+            _at: (f64, f64, f64),
+        ) -> bool {
+            false
+        }
+        /// A chunk of a dimension declared with `"generator": {"type": "code"}`.
+        fn generate_chunk(&mut self, _dimension: &str, _x: i32, _z: i32) -> Option<ChunkFill> {
+            None
+        }
+        /// Whether a mob may start `goal`, one of its type's `goals`.
+        fn goal_can_use(&mut self, _goal: &str, _mob: &Entity) -> bool {
+            false
+        }
+        /// A running goal's tick: false ends it.
+        fn goal_tick(&mut self, _goal: &str, _mob: &Entity) -> bool {
+            false
+        }
+        /// A goal ended or was replaced.
+        fn goal_stop(&mut self, _goal: &str, _mob: &Entity) {}
+        /// Each tick of a mob whose type says `"ticks": true`.
+        fn entity_tick(&mut self, _dimension: &str, _entity: &Entity) {}
+        /// Each tick of a mob or player under this mod's effect.
+        fn effect_tick(&mut self, _effect: &str, _target: &str, _amplifier: u8) {}
+        /// An attack on a mob, as it happens: true stops it.
+        fn entity_dying(
+            &mut self,
+            _dimension: &str,
+            _entity: &Entity,
+            _killer: Option<&str>,
+        ) -> bool {
+            false
+        }
+        fn attack_entity(&mut self, _player: &Player, _entity: &Entity, _item: &str) -> bool {
+            false
+        }
         /// An explosion of `power` is about to go off: true stops it.
         fn explosion(&mut self, _dimension: &str, _x: f64, _y: f64, _z: f64, _power: f32) -> bool {
             false
@@ -480,6 +572,19 @@ pub mod server {
     }
 }
 
+/// One mod with both halves (`side = "both"`): `$client` a [`Mod`], `$server`
+/// a [`ServerMod`](server::ServerMod). `cargo horizon-mod build` builds the
+/// crate once for each and packs them together.
+#[macro_export]
+macro_rules! export_both {
+    ($client:ty, $server:ty) => {
+        #[cfg(horizon_side = "client")]
+        $crate::export_mod!($client);
+        #[cfg(horizon_side = "server")]
+        $crate::export_server_mod!($server);
+    };
+}
+
 /// Exports a [`ServerMod`](server::ServerMod) as the component's
 /// `server-events` interface, as [`export_mod!`] does for a client mod.
 #[macro_export]
@@ -595,6 +700,68 @@ macro_rules! export_server_mod {
             impl $crate::server::__ServerNetGuest for Export {
                 fn received(player: Player, channel: String, data: Vec<u8>) {
                     with(|m| m.net_received(&player, &channel, &data))
+                }
+            }
+            impl $crate::server::__EntityGuest for Export {
+                fn use_entity(player: Player, entity: Entity, item: String) -> bool {
+                    let mut out = false;
+                    with(|m| out = m.use_entity(&player, &entity, &item));
+                    out
+                }
+                fn projectile_hit(
+                    dimension: String,
+                    projectile: Entity,
+                    target: Option<String>,
+                    x: f64,
+                    y: f64,
+                    z: f64,
+                ) -> bool {
+                    let mut out = false;
+                    with(|m| {
+                        out =
+                            m.projectile_hit(&dimension, &projectile, target.as_deref(), (x, y, z))
+                    });
+                    out
+                }
+                fn entity_dying(dimension: String, entity: Entity, killer: Option<String>) -> bool {
+                    let mut out = false;
+                    with(|m| out = m.entity_dying(&dimension, &entity, killer.as_deref()));
+                    out
+                }
+                fn attack_entity(player: Player, entity: Entity, item: String) -> bool {
+                    let mut out = false;
+                    with(|m| out = m.attack_entity(&player, &entity, &item));
+                    out
+                }
+            }
+            impl $crate::server::__LogicGuest for Export {
+                fn generate_chunk(
+                    dimension: String,
+                    x: i32,
+                    z: i32,
+                ) -> Option<$crate::server::ChunkFill> {
+                    let mut out = None;
+                    with(|m| out = m.generate_chunk(&dimension, x, z));
+                    out
+                }
+                fn goal_can_use(goal: String, mob: Entity) -> bool {
+                    let mut out = false;
+                    with(|m| out = m.goal_can_use(&goal, &mob));
+                    out
+                }
+                fn goal_tick(goal: String, mob: Entity) -> bool {
+                    let mut out = false;
+                    with(|m| out = m.goal_tick(&goal, &mob));
+                    out
+                }
+                fn goal_stop(goal: String, mob: Entity) {
+                    with(|m| m.goal_stop(&goal, &mob))
+                }
+                fn entity_tick(dimension: String, entity: Entity) {
+                    with(|m| m.entity_tick(&dimension, &entity))
+                }
+                fn effect_tick(effect: String, target: String, amplifier: u8) {
+                    with(|m| m.effect_tick(&effect, &target, amplifier))
                 }
             }
             impl $crate::server::__EventsGuest for Export {

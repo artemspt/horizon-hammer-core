@@ -1,0 +1,26 @@
+{
+  "name": "Логистика Первого",
+  "requires": ["firstlegacy:first_processing"],
+  "unlocks": [
+    "mekanism:logistical_sorter",
+    "mekanism:formulaic_assemblicator",
+    "mekanism:personal_chest"
+  ],
+  "parts": [
+    {
+      "text": "Сортировщик читает метки на предметах и разводит их по сторонам.",
+      "hint": "Машина, которая читает метки и разводит предметы.",
+      "candidates": ["minecraft:hopper", "minecraft:comparator", "mekanism:basic_control_circuit"]
+    },
+    {
+      "text": "Сборочный автомат берёт схему и кладёт детали по местам.",
+      "hint": "Автомат, который собирает по схеме.",
+      "candidates": ["minecraft:crafter", "minecraft:crafting_table", "mekanism:basic_control_circuit"]
+    },
+    {
+      "text": "Личный сундук привязан к хозяину, а не к месту.",
+      "hint": "Сундук, который помнит хозяина.",
+      "candidates": ["minecraft:ender_chest", "minecraft:chest", "minecraft:ender_pearl"]
+    }
+  ]
+}

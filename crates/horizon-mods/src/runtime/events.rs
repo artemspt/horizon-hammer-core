@@ -17,6 +17,72 @@ fn guest_entity(e: &EntityInfo) -> Entity {
 }
 
 impl Mods {
+    /// Asks the mod whose id is `owner`'s namespace (`logic-events`).
+    fn ask_owner<R>(
+        &mut self,
+        owner: &str,
+        fuel: u64,
+        ask: impl FnOnce(
+            &super::logic_bindings::exports::horizon::mods::logic_events::Guest,
+            &mut wasmtime::Store<super::State>,
+        ) -> wasmtime::Result<R>,
+    ) -> Option<R> {
+        let ns = owner.split(':').next()?;
+        let i = self
+            .entries
+            .iter()
+            .position(|e| e.manifest.as_ref().is_some_and(|m| m.id == ns))?;
+        self.call(i, fuel, |run| {
+            let super::Running {
+                logic_events,
+                store,
+                ..
+            } = run;
+            match logic_events {
+                Some(h) => ask(h.horizon_mods_logic_events(), store).map(Some),
+                None => Ok(None),
+            }
+        })
+        .flatten()
+    }
+    /// A chunk of a dimension whose generator is the mod's code.
+    pub fn generate_chunk(&mut self, dimension: &str, x: i32, z: i32) -> Option<super::ChunkFill> {
+        self.ask_owner(dimension, super::FUEL_INIT, |g, s| {
+            g.call_generate_chunk(s, dimension, x, z)
+        })
+        .flatten()
+    }
+    pub fn goal_can_use(&mut self, goal: &str, mob: &EntityInfo) -> bool {
+        let e = guest_entity(mob);
+        self.ask_owner(goal, super::FUEL_EVENT, |g, s| {
+            g.call_goal_can_use(s, goal, &e)
+        })
+        .unwrap_or(false)
+    }
+    pub fn goal_tick(&mut self, goal: &str, mob: &EntityInfo) -> bool {
+        let e = guest_entity(mob);
+        self.ask_owner(goal, super::FUEL_EVENT, |g, s| {
+            g.call_goal_tick(s, goal, &e)
+        })
+        .unwrap_or(false)
+    }
+    pub fn goal_stop(&mut self, goal: &str, mob: &EntityInfo) {
+        let e = guest_entity(mob);
+        self.ask_owner(goal, super::FUEL_EVENT, |g, s| {
+            g.call_goal_stop(s, goal, &e)
+        });
+    }
+    pub fn entity_tick(&mut self, dimension: &str, entity: &EntityInfo) {
+        let e = guest_entity(entity);
+        self.ask_owner(&entity.kind, super::FUEL_EVENT, |g, s| {
+            g.call_entity_tick(s, dimension, &e)
+        });
+    }
+    pub fn effect_tick(&mut self, effect: &str, target: &str, amplifier: u8) {
+        self.ask_owner(effect, super::FUEL_EVENT, |g, s| {
+            g.call_effect_tick(s, effect, target, amplifier)
+        });
+    }
     /// The running mods that hear `event`, highest `priority` first.
     fn hearing(&self, event: &str) -> Vec<usize> {
         let mut order: Vec<(i32, usize)> = self
@@ -37,6 +103,14 @@ impl Mods {
     }
     /// Whether a running mod hears `event`: the game finds none otherwise.
     pub fn wants_event(&self, event: &str) -> bool {
+        if event == "entity-dying" {
+            return self.entries.iter().any(|e| {
+                e.run.as_ref().is_some_and(|r| r.entity_events.is_some())
+                    && e.manifest
+                        .as_ref()
+                        .is_some_and(|m| m.events.iter().any(|n| n == event))
+            });
+        }
         !self.hearing(event).is_empty()
     }
 
@@ -72,6 +146,67 @@ impl Mods {
         false
     }
 
+    /// A mob's health reached 0: true when a mod keeps it alive.
+    pub fn entity_dying(
+        &mut self,
+        dimension: &str,
+        entity: &EntityInfo,
+        killer: Option<&str>,
+    ) -> bool {
+        let e = guest_entity(entity);
+        for i in 0..self.entries.len() {
+            let listed = self.entries[i]
+                .manifest
+                .as_ref()
+                .is_some_and(|m| m.events.iter().any(|n| n == "entity-dying"));
+            if listed
+                && self
+                    .call(i, FUEL_EVENT, |run| {
+                        let Running {
+                            entity_events,
+                            store,
+                            ..
+                        } = run;
+                        match entity_events {
+                            Some(h) => h
+                                .horizon_mods_entity_events()
+                                .call_entity_dying(store, dimension, &e, killer),
+                            None => Ok(false),
+                        }
+                    })
+                    .unwrap_or(false)
+            {
+                return true;
+            }
+        }
+        false
+    }
+    /// A projectile of a mod's type hit something: true keeps it flying.
+    pub fn projectile_hit(
+        &mut self,
+        dimension: &str,
+        projectile: &EntityInfo,
+        target: Option<&str>,
+        [x, y, z]: [f64; 3],
+    ) -> bool {
+        let e = guest_entity(projectile);
+        (0..self.entries.len()).any(|i| {
+            self.call(i, FUEL_EVENT, |run| {
+                let Running {
+                    entity_events,
+                    store,
+                    ..
+                } = run;
+                match entity_events {
+                    Some(h) => h
+                        .horizon_mods_entity_events()
+                        .call_projectile_hit(store, dimension, &e, target, x, y, z),
+                    None => Ok(false),
+                }
+            })
+            .unwrap_or(false)
+        })
+    }
     /// A mob appeared: true when a mod removes it.
     pub fn entity_spawned(&mut self, dimension: &str, entity: &EntityInfo) -> bool {
         let e = guest_entity(entity);
@@ -116,5 +251,52 @@ impl Mods {
         self.cancelled("explosion", |g, s, _| {
             g.call_explosion(s, dimension, at.0, at.1, at.2, power)
         })
+    }
+}
+
+impl Mods {
+    /// Asks every mod with `entity-events` until one takes the click.
+    fn entity_click(
+        &mut self,
+        entity: &EntityInfo,
+        ask: impl Fn(
+            &super::entity_bindings::exports::horizon::mods::entity_events::Guest,
+            &mut wasmtime::Store<State>,
+            &Entity,
+        ) -> wasmtime::Result<bool>,
+    ) -> bool {
+        let e = guest_entity(entity);
+        for i in 0..self.entries.len() {
+            let taken = self
+                .call(i, FUEL_EVENT, |run| {
+                    let Running {
+                        entity_events,
+                        store,
+                        ..
+                    } = run;
+                    match entity_events {
+                        Some(h) => ask(h.horizon_mods_entity_events(), store, &e),
+                        None => Ok(false),
+                    }
+                })
+                .unwrap_or(false);
+            if taken {
+                return true;
+            }
+        }
+        false
+    }
+    /// `player` right-clicks a mob: true when a mod takes it.
+    pub fn use_entity(&mut self, player: &ServerPlayer, entity: &EntityInfo, item: &str) -> bool {
+        self.entity_click(entity, |g, s, e| g.call_use_entity(s, player, e, item))
+    }
+    /// `player` attacks a mob: true when a mod takes it.
+    pub fn attack_entity(
+        &mut self,
+        player: &ServerPlayer,
+        entity: &EntityInfo,
+        item: &str,
+    ) -> bool {
+        self.entity_click(entity, |g, s, e| g.call_attack_entity(s, player, e, item))
     }
 }

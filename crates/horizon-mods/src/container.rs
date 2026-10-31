@@ -106,12 +106,6 @@ impl ModContainer {
         format!("{} ({}) v{}", self.name, self.id, self.version)
     }
 
-    /// Check if mod has a specific capability
-    pub fn has_capability(&self) -> bool {
-        // This is a placeholder for future API
-        true
-    }
-
     /// Check if this mod can run on the given side
     pub fn runs_on_side(&self, is_server: bool) -> bool {
         match self.side {

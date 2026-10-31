@@ -1028,7 +1028,9 @@ impl Game<'_> {
         let Some(r) = self.remote.as_mut() else {
             return;
         };
-        let dimension = r.registries.dimension(spawn.dimension_type);
+        let mut dimension = r.registries.dimension(spawn.dimension_type);
+        // A mod's level has a vanilla type: its own name tells levels apart.
+        dimension.name = spawn.dimension.clone();
         let same = r.dimension.name == dimension.name && keep_world;
         r.chunk_format = Arc::new(r.chunk_format.with_dimension(&dimension));
         r.dimension = dimension;
@@ -2522,7 +2524,11 @@ impl Game<'_> {
                     let r = self.remote.as_ref();
                     let names =
                         r.and_then(|r| r.registries.registries.get("minecraft:world_clock"));
-                    let wanted = r.map(|r| r.dimension.name.clone()).unwrap_or_default();
+                    let wanted = r
+                        .map(|r| {
+                            horizon_client::mod_dimensions::base_of(&r.dimension.name).to_owned()
+                        })
+                        .unwrap_or_default();
                     p.clocks
                         .iter()
                         .find(|c| {
@@ -2605,6 +2611,16 @@ impl Game<'_> {
             C::SetHeldSlot(p) => {
                 if (0..9).contains(&p.slot) {
                     self.selected = p.slot as usize;
+                }
+            }
+            C::CustomPayload(p) if p.channel == horizon_client::lan::entity::MOD_MOB_CHANNEL => {
+                if let Some((id, kind)) = p.data.split_first_chunk::<4>() {
+                    let id = i32::from_be_bytes(*id) as u32;
+                    let kind = String::from_utf8_lossy(kind);
+                    let t = self.res.mob_types().get(kind.as_ref()).cloned();
+                    if let (Some(t), Some(m)) = (t, self.mobs.iter_mut().find(|m| m.id == id)) {
+                        m.kind = t;
+                    }
                 }
             }
             C::CustomPayload(p) if Self::mod_net_channel(&p.channel) => {

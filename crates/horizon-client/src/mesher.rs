@@ -328,6 +328,8 @@ pub struct MeshTables {
     water_overlay: u16,
     lava_still: u16,
     lava_flow: u16,
+    /// A mod's fluid: still and flow sprites, by family - 1.
+    mod_fluids: Vec<(u16, u16)>,
 }
 fn redstone_color(power: u8) -> u32 {
     // RedstoneWireBlock.COLORS
@@ -475,6 +477,10 @@ impl MeshTables {
             water_overlay: layer("minecraft:block/water_overlay")?,
             lava_still: layer("minecraft:block/lava_still")?,
             lava_flow: layer("minecraft:block/lava_flow")?,
+            mod_fluids: horizon_world::fluid::mod_fluids()
+                .iter()
+                .map(|f| Ok((layer(&f.still)?, layer(&f.flow)?)))
+                .collect::<crate::Result<_>>()?,
         })
     }
     pub fn facts(&self, state: BlockStateId) -> Option<MeshFacts> {

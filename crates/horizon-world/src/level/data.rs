@@ -852,6 +852,12 @@ fn build_with_gameplay<G: GameplayStateSource>(
             fluid_kind,
             int(3) as u8,
             row.get(4).and_then(Value::as_bool).unwrap_or(false),
+        )
+        .in_family(
+            registry
+                .state(BlockStateId(id as u32))
+                .and_then(|s| FluidState::from_block(s).ok())
+                .map_or(0, |f| f.family()),
         );
         facts.push(StateFacts {
             flags,

@@ -10,6 +10,8 @@ use std::{
 pub const MANIFEST: &str = "horizon-mod.toml";
 /// The component's file name in a `.hmod` or a mod folder.
 pub const WASM: &str = "mod.wasm";
+/// A `side = "both"` mod's client half; `mod.wasm` is its server half.
+pub const CLIENT_WASM: &str = "client.wasm";
 /// The API (WIT package `horizon:mods`) versions this build runs: a mod
 /// built for any 0.1.x SDK.
 pub const API: &str = "0.1";
@@ -65,13 +67,44 @@ pub struct Manifest {
     /// the rest); equal ones go in load order.
     #[serde(default)]
     pub priority: i32,
+    /// `storage.config`'s defaults: the `[config]` table.
+    #[serde(default)]
+    pub config: std::collections::BTreeMap<String, String>,
     /// Mod dependencies (optional, not validated in runtime currently).
     #[serde(default)]
     pub dependencies: Vec<String>,
 }
 
+/// The settings of a mod beside `path`: `config/<id>.toml` over its manifest's
+/// `[config]`, the file made on first run. An unreadable file leaves the defaults.
+pub fn load_config(path: &Path, m: &Manifest) -> std::collections::BTreeMap<String, String> {
+    let mut values = m.config.clone();
+    if values.is_empty() {
+        return values;
+    }
+    let dir = path.parent().unwrap_or(Path::new(".")).join("config");
+    let file = dir.join(format!("{}.toml", m.id));
+    match std::fs::read_to_string(&file) {
+        Ok(text) => match toml::from_str::<std::collections::BTreeMap<String, String>>(&text) {
+            Ok(read) => values.extend(read),
+            Err(e) => log::warn!("Horizon: {}: {e}", file.display()),
+        },
+        Err(_) => {
+            let text = toml::to_string_pretty(&values).unwrap_or_default();
+            if std::fs::create_dir_all(&dir)
+                .and_then(|()| std::fs::write(&file, text))
+                .is_err()
+            {
+                log::warn!("Horizon: could not write {}", file.display());
+            }
+        }
+    }
+    values
+}
+
 /// The events of `game-events`, as a manifest's `events` names them.
-pub const EVENTS: [&str; 6] = [
+pub const EVENTS: [&str; 7] = [
+    "entity-dying",
     "entity-spawned",
     "entity-hurt",
     "entity-died",
@@ -88,7 +121,8 @@ pub enum Side {
     Client,
     /// Runs where the world is simulated (rules, blocks): `api = "0.3"`.
     Server,
-    /// Both, and the server tells clients which version it expects.
+    /// One mod with two halves: `mod.wasm` where the world is simulated,
+    /// `client.wasm` in the player's game. `api = "0.3"`.
     Both,
 }
 
@@ -279,6 +313,12 @@ impl fmt::Display for Capability {
 }
 
 impl Manifest {
+    /// One mod with a server half and a client half: `side = "both"` on the
+    /// server api. `both` on an older api is one client-side component.
+    pub fn two_halves(&self) -> bool {
+        self.side == Side::Both && self.api == SERVER_API
+    }
+
     pub fn parse(text: &str) -> Result<Self, String> {
         let m: Manifest = toml::from_str(text).map_err(|e| format!("{MANIFEST}: {e}"))?;
         let id_ok = (1..=64).contains(&m.id.len())
@@ -313,13 +353,20 @@ impl Manifest {
             ));
         }
         let server = m.side == Side::Server;
-        if server != (m.api == SERVER_API) {
+        // `both` on an older api is a mod with no server half, as it always was.
+        let both = m.side == Side::Both && m.api == SERVER_API;
+        if server != (m.api == SERVER_API) && !both {
             return Err(format!(
-                "{MANIFEST}: a server mod is side = \"server\" with api = \"{SERVER_API}\", and only it"
+                "{MANIFEST}: a server mod is side = \"server\" or \"both\" with api = \"{SERVER_API}\", and only it"
             ));
         }
         if let Some(c) = m.capabilities.iter().find(|c| {
-            c.on_server() != server && !matches!(c, Capability::Storage | Capability::Net)
+            !both
+                && c.on_server() != server
+                && !matches!(
+                    c,
+                    Capability::Storage | Capability::Net | Capability::Registries
+                )
         }) {
             let side = if server { "client" } else { "server" };
             return Err(format!("{MANIFEST}: capability {c} is for {side} mods"));
@@ -386,19 +433,26 @@ pub struct Package {
     pub manifest: Manifest,
     /// None for a content-only mod (capability `registries`, no code).
     pub wasm: Option<Vec<u8>>,
+    /// The client half of a `side = "both"` mod.
+    pub client_wasm: Option<Vec<u8>>,
 }
 impl Package {
     /// A `.hmod` (a zip holding `horizon-mod.toml`, `mod.wasm` and, for
     /// content, `assets/` and `data/`) or a folder holding the same.
     pub fn read(path: &Path) -> Result<Self, String> {
-        let (toml, wasm) = if path.is_dir() {
+        let (toml, wasm, client_wasm) = if path.is_dir() {
             let toml = std::fs::read_to_string(path.join(MANIFEST));
             let wasm = path.join(WASM);
             let wasm = match wasm.exists() {
                 true => Some(std::fs::read(wasm).map_err(|e| format!("{WASM}: {e}"))?),
                 false => None,
             };
-            (toml.map_err(|e| format!("{MANIFEST}: {e}"))?, wasm)
+            let client = path.join(CLIENT_WASM);
+            let client = match client.exists() {
+                true => Some(std::fs::read(client).map_err(|e| format!("{CLIENT_WASM}: {e}"))?),
+                false => None,
+            };
+            (toml.map_err(|e| format!("{MANIFEST}: {e}"))?, wasm, client)
         } else {
             let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
             let mut zip = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
@@ -416,7 +470,8 @@ impl Package {
             };
             let toml = entry(MANIFEST)?.ok_or_else(|| format!("{MANIFEST}: missing"))?;
             let toml = String::from_utf8(toml).map_err(|_| format!("{MANIFEST}: not UTF-8"))?;
-            (toml, entry(WASM)?)
+            let client = entry(CLIENT_WASM)?;
+            (toml, entry(WASM)?, client)
         };
         if wasm.as_ref().is_some_and(|w| w.len() as u64 > MAX_WASM) {
             return Err(format!("{WASM} is over {} MiB", MAX_WASM >> 20));
@@ -427,9 +482,27 @@ impl Package {
                 "{WASM}: missing (only a content mod, with capability registries, may have no code)"
             ));
         }
-        Ok(Package { manifest, wasm })
+        if manifest.two_halves() && (wasm.is_none() || client_wasm.is_none()) {
+            return Err(format!(
+                "side = \"both\" with api = \"{SERVER_API}\" needs {WASM} and {CLIENT_WASM}: build it with cargo horizon-mod"
+            ));
+        }
+        Ok(Package {
+            manifest,
+            wasm,
+            client_wasm,
+        })
     }
     /// The `.hmod` bytes for `manifest_text` and a component.
+    /// The `.hmod` bytes of a `side = "both"` mod.
+    pub fn write_both(
+        manifest_text: &str,
+        server: &[u8],
+        client: &[u8],
+        files: &[(&str, &[u8])],
+    ) -> Result<Vec<u8>, String> {
+        Self::write_all(manifest_text, Some(server), Some(client), files)
+    }
     pub fn write(manifest_text: &str, wasm: &[u8]) -> Result<Vec<u8>, String> {
         Self::write_files(manifest_text, Some(wasm), &[])
     }
@@ -438,6 +511,14 @@ impl Package {
     pub fn write_files(
         manifest_text: &str,
         wasm: Option<&[u8]>,
+        files: &[(&str, &[u8])],
+    ) -> Result<Vec<u8>, String> {
+        Self::write_all(manifest_text, wasm, None, files)
+    }
+    fn write_all(
+        manifest_text: &str,
+        wasm: Option<&[u8]>,
+        client: Option<&[u8]>,
         files: &[(&str, &[u8])],
     ) -> Result<Vec<u8>, String> {
         use std::io::Write;
@@ -452,6 +533,9 @@ impl Package {
         put(MANIFEST, manifest_text.as_bytes())?;
         if let Some(wasm) = wasm {
             put(WASM, wasm)?;
+        }
+        if let Some(client) = client {
+            put(CLIENT_WASM, client)?;
         }
         for (name, bytes) in files {
             crate::content::check_path(name)?;
@@ -576,7 +660,7 @@ capabilities = ["game-read", "hud"]
         let m = server("0.3", "server", "\"players\", \"storage\"").unwrap();
         let imports = ["horizon:mods/players@0.1.0", "horizon:mods/storage@0.1.0"];
         assert_eq!(m.check_imports(imports), Ok(()));
-        for (api, side) in [("0.3", "client"), ("0.3", "both"), ("0.1", "server")] {
+        for (api, side) in [("0.3", "client"), ("0.1", "server")] {
             let e = server(api, side, "").unwrap_err();
             assert!(e.contains("a server mod is side"), "{e}");
         }

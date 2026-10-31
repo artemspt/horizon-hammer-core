@@ -1,0 +1,10 @@
+{
+  "like": "water",
+  "still": "minecraft:block/water_still",
+  "flow": "minecraft:block/water_flow",
+  "color": 6356848,
+  "light": 9,
+  "tick_rate": 3,
+  "drop_off": 2,
+  "infinite": false
+}

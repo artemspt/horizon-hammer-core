@@ -35,7 +35,8 @@ mod net;
 mod server_api;
 pub use net::{NET_BYTES, NET_PREFIX};
 pub use server_api::{
-    EntityInfo, HostStack, INVENTORY_SLOTS, ScheduledTick, ServerAction, Storage, Tank,
+    EntityInfo, HostStack, INVENTORY_SLOTS, MobChange, ScheduledTick, ServerAction, SlotRule,
+    StackLook, Storage, Tank,
 };
 
 mod bindings {
@@ -80,6 +81,31 @@ mod events_bindings {
     });
 }
 use events_bindings::EventsHost;
+/// `entity-events`, as `block-events` is.
+mod entity_bindings {
+    wasmtime::component::bindgen!({
+        path: "../horizon-mod-sdk/wit",
+        world: "entity-events-host",
+        with: {
+            "horizon:mods/players": super::server_bindings::horizon::mods::players,
+            "horizon:mods/entities": super::server_bindings::horizon::mods::entities,
+        },
+    });
+}
+use entity_bindings::EntityEventsHost;
+/// `logic-events`, as `entity-events` is.
+mod logic_bindings {
+    wasmtime::component::bindgen!({
+        path: "../horizon-mod-sdk/wit",
+        world: "logic-events-host",
+        with: {
+            "horizon:mods/players": super::server_bindings::horizon::mods::players,
+            "horizon:mods/entities": super::server_bindings::horizon::mods::entities,
+        },
+    });
+}
+use logic_bindings::LogicEventsHost;
+pub use logic_bindings::exports::horizon::mods::logic_events::ChunkFill;
 /// Capability `net`'s exports, each a world of its own as `ui-events` is.
 mod client_net_bindings {
     wasmtime::component::bindgen!({
@@ -142,8 +168,8 @@ pub use render_bindings::horizon::mods::input::{Event as InputEvent, HeldItem, I
 /// What capability `render` asks the game to draw (WIT `interface render`).
 pub use render_bindings::horizon::mods::render::{
     Corner as RenderCorner, FarTerrain as ModFarTerrain, FillShape, FrameRate, ItemShape,
-    Minimap as ModMinimap, Point as RenderPoint, QuadShape, Rect as RenderRect, Shape, SpriteShape,
-    TextShape, Zoom as ModZoom,
+    MenuLayout, Minimap as ModMinimap, Point as RenderPoint, QuadShape, Rect as RenderRect, Shape,
+    SpriteShape, TextShape, Zoom as ModZoom,
 };
 use render_bindings::{RenderHost, horizon::mods::render};
 /// Capability `recipes`'s imports (docs/mods.md): the game's recipes and items.
@@ -220,6 +246,14 @@ pub struct Snapshot {
     /// Each player's id, held hotbar slot and 41 inventory slots
     /// (`players.inventory`), for server mods.
     pub inventories: Vec<(String, u32, Vec<Option<HostStack>>)>,
+    /// The ids of the players holding sneak.
+    pub sneaking: Vec<String>,
+    /// Where players look: id, yaw, pitch.
+    pub looks: Vec<(String, f32, f32)>,
+    /// This tick's `players.poll-events`: player, kind, detail.
+    pub player_events: Vec<(String, String, String)>,
+    /// The running mods' ids, for `world.mod-loaded`.
+    pub running: Vec<String>,
     /// The first block along the player's view within [`RAYCAST_MAX`] and
     /// its distance from the eye, for `game.raycast`; the game works it out
     /// only while a mod calls it ([`Mods::wants_raycast`]).
@@ -252,11 +286,11 @@ pub enum Runs {
     Both,
 }
 impl Runs {
-    fn starts(self, side: Side) -> bool {
+    fn starts(self, m: &Manifest) -> bool {
         match self {
             Runs::Both => true,
-            Runs::Client => side != Side::Server,
-            Runs::Server => side == Side::Server,
+            Runs::Client => m.side != Side::Server,
+            Runs::Server => m.side == Side::Server || m.two_halves(),
         }
     }
 }
@@ -336,6 +370,26 @@ pub trait WorldView: std::any::Any + Send {
     /// game works it out for [`Mods::machine_positions`] before lending.
     fn redstone(&self, _dimension: &str, _x: i32, _y: i32, _z: i32) -> Option<u8> {
         None
+    }
+    /// Whether an item is in an item tag.
+    fn item_has_tag(&self, _item: &str, _tag: &str) -> bool {
+        false
+    }
+    /// Whether a block is in a block tag.
+    fn block_has_tag(&self, _block: &str, _tag: &str) -> bool {
+        false
+    }
+    /// Whether an entity type is in an entity type tag.
+    fn entity_has_tag(&self, _kind: &str, _tag: &str) -> bool {
+        false
+    }
+    /// A stack with this look; the game alone knows its encoding.
+    fn style_stack(
+        &self,
+        _stack: &HostStack,
+        _look: &server_api::StackLook,
+    ) -> Result<HostStack, String> {
+        Err("no game to style a stack with".into())
     }
     /// An item's stack size; none for an item the game does not know.
     fn max_stack(&self, _item: &str) -> Option<u32> {
@@ -425,6 +479,10 @@ struct Running {
     blocks: Option<BlockHost>,
     /// A server mod's `game-events` export; none for one built before it.
     events: Option<EventsHost>,
+    /// A server mod's `entity-events` export; none for one built before it.
+    entity_events: Option<EntityEventsHost>,
+    /// A server mod's `logic-events` export; none for one built before it.
+    logic_events: Option<LogicEventsHost>,
     /// Capability `net`'s exports, on each side.
     net_client: Option<client_net_bindings::ClientNetHost>,
     net_server: Option<server_net_bindings::ServerNetHost>,
@@ -466,6 +524,8 @@ impl Hooks {
 struct UiState {
     /// The screen `ui.open-screen` last pushed, until `ui.close-screen`.
     screen: Option<UiScreen>,
+    /// `ui.open-canvas`: what `screen` draws instead of widgets.
+    canvas: Option<(Vec<Shape>, Vec<render::CanvasArea>)>,
     /// The widgets `ui.set-settings` last pushed (the mod's page in
     /// Options > Mods).
     settings: Vec<UiWidget>,
@@ -518,6 +578,10 @@ impl BrowserState {
 }
 
 struct State {
+    /// `storage.resource`: where the mod's package is.
+    package: (PathBuf, Manifest),
+    /// `storage.config`: the settings as read when the mod started.
+    config: std::collections::BTreeMap<String, String>,
     name: String,
     id: String,
     snapshot: Arc<Snapshot>,
@@ -526,6 +590,10 @@ struct State {
     ui: UiState,
     /// Capability `render`'s HUD shapes, drawn until replaced.
     shapes: Vec<Shape>,
+    /// `render.set-models`.
+    models: Vec<render::PlacedModel>,
+    /// `render.set-menu-layouts`.
+    menu_layouts: Vec<render::MenuLayout>,
     /// Capability `render`'s corner panel.
     corner: Option<CornerPanel>,
     /// Capability `render`'s zoom, when the mod zooms.
@@ -564,6 +632,25 @@ pub struct BlockData {
     /// `world.schedule-tick`s waiting.
     #[serde(default)]
     pub ticks: Vec<ScheduledTick>,
+    /// `world.set-redstone-output`: `"dimension x y z"` → what the block gives.
+    #[serde(default)]
+    pub outputs: std::collections::BTreeMap<String, server_api::RedstoneOutput>,
+    /// `world.set-locked-results`: mod id → items. Not saved: a removed mod's
+    /// locks go with it, a running one's are set again.
+    #[serde(skip)]
+    pub locked: std::collections::BTreeMap<String, Vec<String>>,
+    /// `players.set-data`: player → mod id → key → bytes in hex.
+    #[serde(default)]
+    pub player_data: std::collections::BTreeMap<
+        String,
+        std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>>,
+    >,
+    /// `world.mod-send`: target mod id → (sender, channel, data). Not saved.
+    #[serde(skip)]
+    pub inbox: std::collections::BTreeMap<String, Vec<(String, String, Vec<u8>)>>,
+    /// `world.set-saved`: mod id → key → bytes in hex.
+    #[serde(default)]
+    pub saved: std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>>,
     /// The server tick of the last [`Mods::server_tick`], which `ticks` count from.
     #[serde(default)]
     pub now: u64,
@@ -597,6 +684,8 @@ fn from_hex(hex: &str) -> Vec<u8> {
 /// the state with none: no engine, and every hook a no-op.
 #[derive(Default)]
 pub struct Mods {
+    /// This game runs a `side = "both"` mod's client half, not its server's.
+    client_half: bool,
     engine: Option<(Engine, Linker<State>)>,
     entries: Vec<Entry>,
     snapshot: Arc<Snapshot>,
@@ -1187,7 +1276,10 @@ impl Mods {
         enabled: impl Fn(&str) -> bool,
         reserved: impl Fn(&str) -> bool,
     ) -> Mods {
-        let mut mods = Mods::default();
+        let mut mods = Mods {
+            client_half: matches!(runs, Runs::Client),
+            ..Mods::default()
+        };
 
         // Dependency-aware ordering (best effort): only reorder when manifests
         // declare dependencies, so existing content-only and failure tests keep
@@ -1265,7 +1357,7 @@ impl Mods {
                         })
                         .collect();
                     entry.container = Some(container);
-                    if on && !runs.starts(package.manifest.side) {
+                    if on && !runs.starts(&package.manifest) {
                         entry.status = Status::Elsewhere;
                         if let Some(c) = entry.container.as_mut() {
                             c.set_state(ModState::Disabled);
@@ -1444,7 +1536,14 @@ impl Mods {
         reserved: &dyn Fn(&str) -> bool,
     ) -> Result<Option<Running>, String> {
         let m = &package.manifest;
-        let Some(wasm) = &package.wasm else {
+        // In-frame, where one game is both, a two-halved mod runs its server half.
+        let client_half = m.two_halves() && self.client_half;
+        let code = if client_half {
+            &package.client_wasm
+        } else {
+            &package.wasm
+        };
+        let Some(wasm) = code else {
             return Ok(None);
         };
         // Two running mods with the same id would share one `data_dir`
@@ -1456,7 +1555,7 @@ impl Mods {
         {
             return Err(format!("another running mod already uses id {}", m.id));
         }
-        let server = m.side == Side::Server;
+        let server = m.side == Side::Server || (m.two_halves() && !client_half);
         let taken: Vec<String> = self
             .entries
             .iter()
@@ -1506,12 +1605,16 @@ impl Mods {
             panel: None,
             ui: UiState::default(),
             shapes: Vec::new(),
+            models: Vec::new(),
+            menu_layouts: Vec::new(),
             corner: None,
             zoom: None,
             minimap: None,
             far_terrain: None,
             input: InputState::default(),
             browser: BrowserState::default(),
+            config: crate::manifest::load_config(path, m),
+            package: (path.to_path_buf(), m.clone()),
             data_dir,
             storage_budget: STORAGE_WRITE_BUDGET,
             limits: StoreLimitsBuilder::new()
@@ -1576,7 +1679,11 @@ impl Mods {
         }
         self.generation += 1;
         self.out.append(&mut store.data_mut().out);
+        let entity_events = EntityEventsHost::new(&mut store, &instance).ok();
+        let logic_events = LogicEventsHost::new(&mut store, &instance).ok();
         Ok(Some(Running {
+            entity_events,
+            logic_events,
             events,
             net_client,
             net_server,
@@ -1603,7 +1710,13 @@ impl Mods {
         &self.entries
     }
     /// What mods read until the next snapshot.
-    pub fn set_snapshot(&mut self, snapshot: Snapshot) {
+    pub fn set_snapshot(&mut self, mut snapshot: Snapshot) {
+        snapshot.running = self
+            .entries
+            .iter()
+            .filter(|e| e.run.is_some())
+            .filter_map(|e| e.manifest.as_ref().map(|m| m.id.clone()))
+            .collect();
         self.snapshot = Arc::new(snapshot);
     }
 
@@ -2160,6 +2273,33 @@ impl Mods {
     }
     /// The running mods' HUD shapes (capability `render`), each mod's in
     /// its own order, mods in load order.
+    /// The layout a mod gave the windows titled `title`.
+    pub fn menu_layout(&self, title: &str) -> Option<&render::MenuLayout> {
+        self.entries
+            .iter()
+            .filter_map(|e| e.run.as_ref())
+            .flat_map(|r| &r.store.data().menu_layouts)
+            .find(|l| l.title == title)
+    }
+    /// What every mod has placed with `render.set-models`.
+    pub fn world_models(&self) -> impl Iterator<Item = &render::PlacedModel> {
+        self.entries
+            .iter()
+            .filter_map(|e| e.run.as_ref())
+            .flat_map(|r| &r.store.data().models)
+    }
+    /// The canvas mod `i`'s screen is, with its clickable areas.
+    pub fn canvas(&self, i: usize) -> Option<&(Vec<Shape>, Vec<render::CanvasArea>)> {
+        self.entries
+            .get(i)?
+            .run
+            .as_ref()?
+            .store
+            .data()
+            .ui
+            .canvas
+            .as_ref()
+    }
     pub fn hud_shapes(&self) -> impl Iterator<Item = &Shape> {
         self.entries
             .iter()
@@ -2312,6 +2452,9 @@ impl Mods {
         // The rules the last version of this mod set are gone with it; its
         // `init` sets the ones it keeps, and they reach the game at `drain`.
         self.worldgen.remove_mod(&id);
+        if let Ok(mut all) = self.block_data.lock() {
+            all.locked.remove(&id);
+        }
         match started {
             Ok(run) => {
                 log::info!("Horizon: mod {id} reloaded");
@@ -2600,6 +2743,79 @@ impl State {
         Some(block_id(&state).to_owned())
     }
 }
+/// Cells a `find-blocks` or `count-blocks` box may have.
+const SCAN_CELLS: usize = 65536;
+/// A box's cells; Err past `max`.
+fn box_cells(
+    a: (i32, i32, i32),
+    b: (i32, i32, i32),
+    max: usize,
+) -> Result<impl Iterator<Item = (i32, i32, i32)>, String> {
+    let (x1, x2) = (a.0.min(b.0), a.0.max(b.0));
+    let (y1, y2) = (a.1.min(b.1), a.1.max(b.1));
+    let (z1, z2) = (a.2.min(b.2), a.2.max(b.2));
+    let side = |lo: i32, hi: i32| (i64::from(hi) - i64::from(lo) + 1) as u128;
+    if side(x1, x2) * side(y1, y2) * side(z1, z2) > max as u128 {
+        return Err(format!("a box of at most {max} blocks"));
+    }
+    Ok((x1..=x2).flat_map(move |x| (y1..=y2).flat_map(move |y| (z1..=z2).map(move |z| (x, y, z)))))
+}
+fn is_air_block(id: &str) -> bool {
+    matches!(
+        id,
+        "minecraft:air" | "minecraft:cave_air" | "minecraft:void_air"
+    )
+}
+/// Whether a state is `wanted`: an id alone takes any properties.
+fn state_is(state: &str, wanted: &str) -> bool {
+    if wanted.contains('[') {
+        state == wanted
+    } else {
+        block_id(state) == wanted
+    }
+}
+/// `axis` of `minecraft:oak_log[axis=y]`.
+fn state_property<'a>(state: &'a str, name: &str) -> Option<&'a str> {
+    let (_, props) = state.split_once('[')?;
+    props.trim_end_matches(']').split(',').find_map(|p| {
+        p.split_once('=')
+            .filter(|(k, _)| *k == name)
+            .map(|(_, v)| v)
+    })
+}
+/// The state with one property changed; Err for one it doesn't have.
+fn with_property(state: &str, name: &str, value: &str) -> Result<String, String> {
+    if state_property(state, name).is_none() {
+        return Err(format!("{state} has no property {name}"));
+    }
+    let (id, props) = state.split_once('[').unwrap_or((state, ""));
+    let props: Vec<String> = props
+        .trim_end_matches(']')
+        .split(',')
+        .map(|p| match p.split_once('=') {
+            Some((k, _)) if k == name => format!("{k}={value}"),
+            _ => p.to_owned(),
+        })
+        .collect();
+    Ok(format!("{id}[{}]", props.join(",")))
+}
+/// A text component for a command line: a quoted string.
+fn quoted(text: &str) -> String {
+    serde_json::to_string(&clip_to(text.replace(['\n', '\r'], " "), 256)).unwrap_or_default()
+}
+/// `minecraft:block.anvil.use`: nothing that could end a command's argument.
+fn check_game_id(kind: &str, id: &str) -> Result<(), String> {
+    let ok = !id.is_empty()
+        && id.len() <= 256
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "_:./-".contains(c));
+    if ok {
+        Ok(())
+    } else {
+        Err(format!("{kind} {id:?}: not an id"))
+    }
+}
 impl mod_world::Host for State {
     fn get_data(&mut self, dimension: String, x: i32, y: i32, z: i32) -> Option<Vec<u8>> {
         let now = self.block_at(&dimension, x, y, z)?;
@@ -2677,6 +2893,104 @@ impl mod_world::Host for State {
     fn redstone_power(&mut self, dimension: String, x: i32, y: i32, z: i32) -> Option<u8> {
         State::redstone_power(self, dimension, x, y, z)
     }
+    fn mod_loaded(&mut self, id: String) -> bool {
+        self.snapshot.running.contains(&id)
+    }
+    fn mod_send(&mut self, target: String, channel: String, data: Vec<u8>) -> Result<(), String> {
+        if !self.snapshot.running.contains(&target) {
+            return Err(format!("mod {target} is not running"));
+        }
+        if data.len() > 1 << 16 {
+            return Err(format!("{} bytes: at most 64 KiB", data.len()));
+        }
+        let mut all = self
+            .block_data
+            .lock()
+            .map_err(|_| "block data unavailable".to_string())?;
+        let waiting = all.inbox.entry(target).or_default();
+        if waiting.len() >= 1024 {
+            return Err("1024 messages are waiting already".to_string());
+        }
+        waiting.push((self.id.clone(), channel, data));
+        Ok(())
+    }
+    fn mod_receive(&mut self) -> Vec<(String, String, Vec<u8>)> {
+        self.block_data
+            .lock()
+            .ok()
+            .and_then(|mut all| all.inbox.remove(&self.id))
+            .unwrap_or_default()
+    }
+    fn block_has_tag(&mut self, block: String, tag: String) -> bool {
+        self.world
+            .lock()
+            .is_ok_and(|v| v.as_ref().is_some_and(|v| v.block_has_tag(&block, &tag)))
+    }
+    fn entity_has_tag(&mut self, kind: String, tag: String) -> bool {
+        self.world
+            .lock()
+            .is_ok_and(|v| v.as_ref().is_some_and(|v| v.entity_has_tag(&kind, &tag)))
+    }
+    fn item_has_tag(&mut self, item: String, tag: String) -> bool {
+        let Ok(view) = self.world.lock() else {
+            return false;
+        };
+        view.as_ref().is_some_and(|v| v.item_has_tag(&item, &tag))
+    }
+    fn get_saved(&mut self, key: String) -> Option<Vec<u8>> {
+        let all = self.block_data.lock().ok()?;
+        all.saved.get(&self.id)?.get(&key).map(|hex| from_hex(hex))
+    }
+    fn set_saved(&mut self, key: String, data: Vec<u8>) -> Result<(), String> {
+        if data.len() > 1 << 20 {
+            return Err(format!("{} bytes: at most 1 MiB", data.len()));
+        }
+        let mut all = self
+            .block_data
+            .lock()
+            .map_err(|_| "block data unavailable".to_string())?;
+        let mine = all.saved.entry(self.id.clone()).or_default();
+        if data.is_empty() {
+            mine.remove(&key);
+        } else {
+            if !mine.contains_key(&key) && mine.len() >= 64 {
+                return Err("at most 64 keys per mod".to_string());
+            }
+            mine.insert(key, to_hex(&data));
+        }
+        Ok(())
+    }
+    fn set_locked_results(&mut self, items: Vec<String>) -> Result<(), String> {
+        if items.len() > 4096 {
+            return Err(format!("{} items: at most 4096", items.len()));
+        }
+        let mut all = self
+            .block_data
+            .lock()
+            .map_err(|_| "block data unavailable".to_string())?;
+        all.locked.insert(self.id.clone(), items);
+        Ok(())
+    }
+    fn set_redstone_output(
+        &mut self,
+        dimension: String,
+        x: i32,
+        y: i32,
+        z: i32,
+        signal: u8,
+    ) -> Result<(), String> {
+        self.set_output(&dimension, (x, y, z), |o| o.signal = signal, signal)
+    }
+    fn set_comparator_output(
+        &mut self,
+        dimension: String,
+        x: i32,
+        y: i32,
+        z: i32,
+        signal: u8,
+    ) -> Result<(), String> {
+        self.set_output(&dimension, (x, y, z), |o| o.comparator = signal, signal)
+    }
     fn get_block(&mut self, dimension: String, x: i32, y: i32, z: i32) -> Option<String> {
         let view = self.world.lock().ok()?;
         view.as_ref()?.block(&dimension, x, y, z)
@@ -2709,6 +3023,263 @@ impl mod_world::Host for State {
         }
         Ok(())
     }
+    fn get_blocks(
+        &mut self,
+        dimension: String,
+        positions: Vec<(i32, i32, i32)>,
+    ) -> Result<Vec<Option<String>>, String> {
+        if positions.len() > BLOCKS_PER_CALL {
+            return Err(format!("at most {BLOCKS_PER_CALL} positions per call"));
+        }
+        let view = self.world.lock().map_err(|_| "no world".to_string())?;
+        let Some(view) = view.as_ref() else {
+            return Ok(vec![None; positions.len()]);
+        };
+        Ok(positions
+            .iter()
+            .map(|&(x, y, z)| view.block(&dimension, x, y, z))
+            .collect())
+    }
+    fn is_loaded(&mut self, dimension: String, x: i32, z: i32) -> bool {
+        self.block_at(&dimension, x, 64, z).is_some()
+    }
+    fn is_air(&mut self, dimension: String, x: i32, y: i32, z: i32) -> bool {
+        self.block_at(&dimension, x, y, z)
+            .is_some_and(|b| is_air_block(&b))
+    }
+    fn block_id(&mut self, dimension: String, x: i32, y: i32, z: i32) -> Option<String> {
+        self.block_at(&dimension, x, y, z)
+    }
+    fn block_property(
+        &mut self,
+        dimension: String,
+        x: i32,
+        y: i32,
+        z: i32,
+        name: String,
+    ) -> Option<String> {
+        let state = mod_world::Host::get_block(self, dimension, x, y, z)?;
+        state_property(&state, &name).map(str::to_owned)
+    }
+    fn set_block(
+        &mut self,
+        dimension: String,
+        x: i32,
+        y: i32,
+        z: i32,
+        state: String,
+    ) -> Result<(), String> {
+        mod_world::Host::set_blocks(
+            self,
+            dimension,
+            vec![mod_world::BlockChange { x, y, z, state }],
+        )
+    }
+    fn set_block_property(
+        &mut self,
+        dimension: String,
+        x: i32,
+        y: i32,
+        z: i32,
+        name: String,
+        value: String,
+    ) -> Result<(), String> {
+        let state = mod_world::Host::get_block(self, dimension.clone(), x, y, z)
+            .ok_or_else(|| format!("no chunk loaded at {x} {y} {z} in {dimension}"))?;
+        let state = with_property(&state, &name, &value)?;
+        mod_world::Host::set_block(self, dimension, x, y, z, state)
+    }
+    fn break_block(
+        &mut self,
+        dimension: String,
+        x: i32,
+        y: i32,
+        z: i32,
+        drop: bool,
+    ) -> Result<(), String> {
+        if drop {
+            self.check_dim(&dimension)?;
+            self.console(format!(
+                "execute in {dimension} run setblock {x} {y} {z} minecraft:air destroy"
+            ))
+        } else {
+            mod_world::Host::set_block(self, dimension, x, y, z, "minecraft:air".into())
+        }
+    }
+    fn fill(
+        &mut self,
+        dimension: String,
+        x1: i32,
+        y1: i32,
+        z1: i32,
+        x2: i32,
+        y2: i32,
+        z2: i32,
+        state: String,
+    ) -> Result<(), String> {
+        let cells = box_cells((x1, y1, z1), (x2, y2, z2), BLOCKS_PER_CALL)?;
+        let blocks = cells
+            .map(|(x, y, z)| mod_world::BlockChange {
+                x,
+                y,
+                z,
+                state: state.clone(),
+            })
+            .collect();
+        mod_world::Host::set_blocks(self, dimension, blocks)
+    }
+    fn find_blocks(
+        &mut self,
+        dimension: String,
+        x1: i32,
+        y1: i32,
+        z1: i32,
+        x2: i32,
+        y2: i32,
+        z2: i32,
+        block: String,
+        limit: u32,
+    ) -> Result<Vec<(i32, i32, i32)>, String> {
+        let cells = box_cells((x1, y1, z1), (x2, y2, z2), SCAN_CELLS)?;
+        let view = self.world.lock().map_err(|_| "no world".to_string())?;
+        let Some(view) = view.as_ref() else {
+            return Ok(Vec::new());
+        };
+        Ok(cells
+            .filter(|&(x, y, z)| {
+                view.block(&dimension, x, y, z)
+                    .is_some_and(|s| state_is(&s, &block))
+            })
+            .take(limit.min(BLOCKS_PER_CALL as u32) as usize)
+            .collect())
+    }
+    fn count_blocks(
+        &mut self,
+        dimension: String,
+        x1: i32,
+        y1: i32,
+        z1: i32,
+        x2: i32,
+        y2: i32,
+        z2: i32,
+        block: String,
+    ) -> Result<u32, String> {
+        let cells = box_cells((x1, y1, z1), (x2, y2, z2), SCAN_CELLS)?;
+        let view = self.world.lock().map_err(|_| "no world".to_string())?;
+        let Some(view) = view.as_ref() else {
+            return Ok(0);
+        };
+        Ok(cells
+            .filter(|&(x, y, z)| {
+                view.block(&dimension, x, y, z)
+                    .is_some_and(|s| state_is(&s, &block))
+            })
+            .count() as u32)
+    }
+    fn height_at(&mut self, dimension: String, x: i32, z: i32) -> Option<i32> {
+        let view = self.world.lock().ok()?;
+        let view = view.as_ref()?;
+        (-64..320).rev().find(|&y| {
+            view.block(&dimension, x, y, z)
+                .is_some_and(|s| !is_air_block(block_id(&s)))
+        })
+    }
+    fn game_time(&mut self) -> Option<u64> {
+        self.snapshot.clock.as_ref().map(|c| c.game_time)
+    }
+    fn day_time(&mut self) -> Option<u64> {
+        self.snapshot.clock.as_ref().map(|c| c.day_time)
+    }
+    fn set_time(&mut self, ticks: u32) -> Result<(), String> {
+        self.console(format!("time set {ticks}"))
+    }
+    fn set_weather(&mut self, weather: String, seconds: u32) -> Result<(), String> {
+        if !matches!(weather.as_str(), "clear" | "rain" | "thunder") || seconds == 0 {
+            return Err("clear, rain or thunder, for at least a second".into());
+        }
+        self.console(format!("weather {weather} {seconds}s"))
+    }
+    fn set_gamerule(&mut self, rule: String, value: String) -> Result<(), String> {
+        let word = |s: &str| {
+            !s.is_empty()
+                && s.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || "_:.-".contains(c))
+        };
+        if !word(&rule) || !word(&value) {
+            return Err("a rule's name and one value".into());
+        }
+        self.console(format!("gamerule {rule} {value}"))
+    }
+    fn set_difficulty(&mut self, difficulty: String) -> Result<(), String> {
+        if !matches!(difficulty.as_str(), "peaceful" | "easy" | "normal" | "hard") {
+            return Err("peaceful, easy, normal or hard".into());
+        }
+        self.console(format!("difficulty {difficulty}"))
+    }
+    fn set_world_spawn(&mut self, x: i32, y: i32, z: i32) -> Result<(), String> {
+        self.console(format!("setworldspawn {x} {y} {z}"))
+    }
+    fn lightning(&mut self, dimension: String, x: f64, y: f64, z: f64) -> Result<(), String> {
+        self.check_dim(&dimension)?;
+        if ![x, y, z].iter().all(|v| v.is_finite()) {
+            return Err("a finite position".into());
+        }
+        self.console(format!(
+            "execute in {dimension} run summon minecraft:lightning_bolt {x} {y} {z}"
+        ))
+    }
+    fn explode(
+        &mut self,
+        dimension: String,
+        x: f64,
+        y: f64,
+        z: f64,
+        power: f32,
+    ) -> Result<(), String> {
+        self.check_dim(&dimension)?;
+        if ![x, y, z].iter().all(|v| v.is_finite()) || !(0.0..=16.0).contains(&power) {
+            return Err("a finite position, and a power of 0 to 16".into());
+        }
+        self.act(ServerAction::Explode {
+            dimension,
+            pos: (x, y, z),
+            power,
+        })
+    }
+    fn has_data(&mut self, dimension: String, x: i32, y: i32, z: i32) -> bool {
+        mod_world::Host::get_data(self, dimension, x, y, z).is_some()
+    }
+    fn saved_keys(&mut self) -> Vec<String> {
+        let Ok(all) = self.block_data.lock() else {
+            return Vec::new();
+        };
+        all.saved
+            .get(&self.id)
+            .map(|m| m.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+    fn running_mods(&mut self) -> Vec<String> {
+        self.snapshot.running.clone()
+    }
+    fn is_valid_state(&mut self, state: String) -> bool {
+        let Ok(view) = self.world.lock() else {
+            return false;
+        };
+        view.as_ref().is_some_and(|v| v.check_state(&state).is_ok())
+    }
+    fn item_exists(&mut self, item: String) -> bool {
+        mod_world::Host::max_stack_size(self, item).is_some()
+    }
+    fn max_stack_size(&mut self, item: String) -> Option<u32> {
+        let view = self.world.lock().ok()?;
+        view.as_ref()?.max_stack(&item)
+    }
+    fn random_u32(&mut self) -> u32 {
+        use std::hash::{BuildHasher, Hasher};
+        std::collections::hash_map::RandomState::new()
+            .build_hasher()
+            .finish() as u32
+    }
 }
 impl worldgen::Host for State {
     fn set_surface_rule(&mut self, biome: String, surface: String) -> Result<(), String> {
@@ -2722,6 +3293,27 @@ impl worldgen::Host for State {
             id: self.id.clone(),
             biome,
             surface,
+        }));
+        Ok(())
+    }
+    fn add_ore(&mut self, ore: worldgen::Ore) -> Result<(), String> {
+        if !(1..=64).contains(&ore.size) || !(1..=64).contains(&ore.per_chunk) {
+            return Err("size and per-chunk: 1 to 64".into());
+        }
+        if ore.min_y > ore.max_y || ore.block.is_empty() || ore.replaces.is_empty() {
+            return Err("an ore needs a block, what it replaces and min-y <= max-y".into());
+        }
+        self.out.push(Output::Server(ServerAction::Ore {
+            id: self.id.clone(),
+            ore: crate::OreDefinition {
+                biome: ore.biome,
+                block: ore.block,
+                replaces: ore.replaces,
+                min_y: ore.min_y,
+                max_y: ore.max_y,
+                size: ore.size,
+                per_chunk: ore.per_chunk,
+            },
         }));
         Ok(())
     }
@@ -2748,6 +3340,74 @@ impl players::Host for State {
     fn inventory(&mut self, player: String) -> Vec<Option<players::ItemStack>> {
         self.player_inventory(player)
     }
+    fn get_data(&mut self, player: String, key: String) -> Option<Vec<u8>> {
+        let all = self.block_data.lock().ok()?;
+        let hex = all.player_data.get(&player)?.get(&self.id)?.get(&key)?;
+        Some(from_hex(hex))
+    }
+    fn set_data(&mut self, player: String, key: String, data: Vec<u8>) -> Result<(), String> {
+        if data.len() > 1 << 16 {
+            return Err(format!("{} bytes: at most 65536", data.len()));
+        }
+        let mut all = self
+            .block_data
+            .lock()
+            .map_err(|_| "block data unavailable".to_string())?;
+        let mine = all
+            .player_data
+            .entry(player)
+            .or_default()
+            .entry(self.id.clone())
+            .or_default();
+        if data.is_empty() {
+            mine.remove(&key);
+        } else {
+            if !mine.contains_key(&key) && mine.len() >= 64 {
+                return Err("at most 64 keys per mod and player".to_string());
+            }
+            mine.insert(key, to_hex(&data));
+        }
+        Ok(())
+    }
+    fn style_stack(
+        &mut self,
+        stack: players::ItemStack,
+        look: players::ItemLook,
+    ) -> Result<players::ItemStack, String> {
+        let host = server_api::from_guest(stack, &self.id)?;
+        let look = server_api::StackLook {
+            name: look.name,
+            lore: look.lore,
+            model: look.model,
+            glint: look.glint,
+        };
+        let view = self.world.lock().map_err(|_| "no world".to_string())?;
+        let view = view.as_ref().ok_or("no world lent")?;
+        Ok(server_api::to_guest(
+            &view.style_stack(&host, &look)?,
+            &self.id,
+        ))
+    }
+    fn set_undying(&mut self, player: String, on: bool) -> Result<(), String> {
+        self.act(ServerAction::Undying { player, on })
+    }
+    fn poll_events(&mut self) -> Vec<players::PlayerEvent> {
+        let events = self.snapshot.player_events.iter();
+        events
+            .map(|(player, kind, detail)| players::PlayerEvent {
+                player: player.clone(),
+                kind: kind.clone(),
+                detail: detail.clone(),
+            })
+            .collect()
+    }
+    fn look(&mut self, player: String) -> Option<(f32, f32)> {
+        let found = self.snapshot.looks.iter().find(|l| l.0 == player)?;
+        Some((found.1, found.2))
+    }
+    fn sneaking(&mut self, player: String) -> bool {
+        self.snapshot.sneaking.contains(&player)
+    }
     fn selected_slot(&mut self, player: String) -> Option<u32> {
         self.player_selected(player)
     }
@@ -2764,6 +3424,188 @@ impl players::Host for State {
     }
     fn take(&mut self, player: String, item: String, count: u32) -> u32 {
         self.player_take(player, item, count)
+    }
+    fn by_name(&mut self, name: String) -> Option<ServerPlayer> {
+        self.snapshot
+            .players
+            .iter()
+            .find(|p| p.name == name)
+            .cloned()
+    }
+    fn by_id(&mut self, id: String) -> Option<ServerPlayer> {
+        self.snapshot.players.iter().find(|p| p.id == id).cloned()
+    }
+    fn is_online(&mut self, id: String) -> bool {
+        self.snapshot.players.iter().any(|p| p.id == id)
+    }
+    fn count(&mut self) -> u32 {
+        self.snapshot.players.len() as u32
+    }
+    fn near(
+        &mut self,
+        dimension: String,
+        x: f64,
+        y: f64,
+        z: f64,
+        radius: f64,
+    ) -> Vec<ServerPlayer> {
+        let d2 = |p: &ServerPlayer| (p.x - x).powi(2) + (p.y - y).powi(2) + (p.z - z).powi(2);
+        let mut near: Vec<ServerPlayer> = self
+            .snapshot
+            .players
+            .iter()
+            .filter(|p| p.dimension == dimension && d2(p) <= radius * radius)
+            .cloned()
+            .collect();
+        near.sort_by(|a, b| d2(a).total_cmp(&d2(b)));
+        near
+    }
+    fn held_item(&mut self, player: String) -> Option<players::ItemStack> {
+        let slot = self.player_selected(player.clone())?;
+        self.player_inventory(player).get(slot as usize)?.clone()
+    }
+    fn offhand_item(&mut self, player: String) -> Option<players::ItemStack> {
+        self.player_inventory(player).get(40)?.clone()
+    }
+    fn armor(&mut self, player: String) -> Vec<Option<players::ItemStack>> {
+        self.player_inventory(player)
+            .get(36..40)
+            .map(<[_]>::to_vec)
+            .unwrap_or_default()
+    }
+    fn count_item(&mut self, player: String, item: String) -> u32 {
+        let slots = self.player_inventory(player);
+        slots
+            .iter()
+            .flatten()
+            .filter(|s| s.item == item)
+            .map(|s| s.count)
+            .sum()
+    }
+    fn has_item(&mut self, player: String, item: String, count: u32) -> bool {
+        players::Host::count_item(self, player, item) >= count
+    }
+    fn free_slots(&mut self, player: String) -> u32 {
+        let slots = self.player_inventory(player);
+        slots.iter().take(36).filter(|s| s.is_none()).count() as u32
+    }
+    fn find_item(&mut self, player: String, item: String) -> Option<u32> {
+        let slots = self.player_inventory(player);
+        slots
+            .iter()
+            .position(|s| s.as_ref().is_some_and(|s| s.item == item))
+            .map(|i| i as u32)
+    }
+    fn set_game_mode(&mut self, player: String, mode: players::GameMode) -> Result<(), String> {
+        let player = self.online_player(&player)?;
+        let mode = match mode {
+            players::GameMode::Survival => "survival",
+            players::GameMode::Creative => "creative",
+            players::GameMode::Adventure => "adventure",
+            players::GameMode::Spectator => "spectator",
+        };
+        self.console(format!("gamemode {mode} {}", player.name))
+    }
+    fn clear_inventory(&mut self, player: String) -> Result<(), String> {
+        let player = self.online_player(&player)?;
+        self.console(format!("clear {}", player.name))
+    }
+    fn show_title(
+        &mut self,
+        player: String,
+        title: String,
+        subtitle: Option<String>,
+    ) -> Result<(), String> {
+        let player = self.online_player(&player)?;
+        if let Some(subtitle) = subtitle {
+            self.console(format!(
+                "title {} subtitle {}",
+                player.name,
+                quoted(&subtitle)
+            ))?;
+        }
+        self.console(format!("title {} title {}", player.name, quoted(&title)))
+    }
+    fn action_bar(&mut self, player: String, text: String) -> Result<(), String> {
+        let player = self.online_player(&player)?;
+        self.console(format!("title {} actionbar {}", player.name, quoted(&text)))
+    }
+    fn set_title_times(
+        &mut self,
+        player: String,
+        fade_in: u32,
+        stay: u32,
+        fade_out: u32,
+    ) -> Result<(), String> {
+        let player = self.online_player(&player)?;
+        self.console(format!(
+            "title {} times {fade_in} {stay} {fade_out}",
+            player.name
+        ))
+    }
+    fn add_experience(&mut self, player: String, points: i32) -> Result<(), String> {
+        let player = self.online_player(&player)?;
+        self.console(format!("experience add {} {points} points", player.name))
+    }
+    fn add_levels(&mut self, player: String, levels: i32) -> Result<(), String> {
+        let player = self.online_player(&player)?;
+        self.console(format!("experience add {} {levels} levels", player.name))
+    }
+    fn set_spawn(
+        &mut self,
+        player: String,
+        dimension: String,
+        x: i32,
+        y: i32,
+        z: i32,
+    ) -> Result<(), String> {
+        let player = self.online_player(&player)?;
+        self.check_dim(&dimension)?;
+        self.console(format!(
+            "execute in {dimension} run spawnpoint {} {x} {y} {z}",
+            player.name
+        ))
+    }
+    fn kick(&mut self, player: String, reason: String) -> Result<(), String> {
+        let player = self.online_player(&player)?;
+        self.console(format!("kick {} {}", player.name, clip_to(reason, 256)))
+    }
+    fn play_sound(
+        &mut self,
+        player: String,
+        sound: String,
+        volume: f32,
+        pitch: f32,
+    ) -> Result<(), String> {
+        let player = self.online_player(&player)?;
+        check_game_id("sound", &sound)?;
+        if !volume.is_finite() || !pitch.is_finite() {
+            return Err("a finite volume and pitch".into());
+        }
+        let (name, x, y, z) = (player.name, player.x, player.y, player.z);
+        self.console(format!(
+            "playsound {sound} master {name} {x} {y} {z} {volume} {pitch}"
+        ))
+    }
+    fn stop_sounds(&mut self, player: String) -> Result<(), String> {
+        let player = self.online_player(&player)?;
+        self.console(format!("stopsound {}", player.name))
+    }
+    fn grant_advancement(&mut self, player: String, advancement: String) -> Result<(), String> {
+        let player = self.online_player(&player)?;
+        check_game_id("advancement", &advancement)?;
+        self.console(format!(
+            "advancement grant {} only {advancement}",
+            player.name
+        ))
+    }
+    fn revoke_advancement(&mut self, player: String, advancement: String) -> Result<(), String> {
+        let player = self.online_player(&player)?;
+        check_game_id("advancement", &advancement)?;
+        self.console(format!(
+            "advancement revoke {} only {advancement}",
+            player.name
+        ))
     }
 }
 /// A key a mod registered (capability `input`).
@@ -2928,6 +3770,31 @@ fn clip_shapes(shapes: Vec<Shape>) -> Vec<Shape> {
 }
 
 impl render::Host for State {
+    fn open_canvas(
+        &mut self,
+        title: String,
+        shapes: Vec<Shape>,
+        mut areas: Vec<render::CanvasArea>,
+    ) {
+        areas.truncate(1024);
+        self.ui.screen = Some(UiScreen {
+            title: clip(title),
+            widgets: Vec::new(),
+        });
+        self.ui.canvas = Some((clip_shapes(shapes), areas));
+        self.ui.open = true;
+    }
+    fn set_menu_layouts(&mut self, mut layouts: Vec<render::MenuLayout>) {
+        layouts.truncate(64);
+        for layout in &mut layouts {
+            layout.shapes = clip_shapes(std::mem::take(&mut layout.shapes));
+        }
+        self.menu_layouts = layouts;
+    }
+    fn set_models(&mut self, mut models: Vec<render::PlacedModel>) {
+        models.truncate(1024);
+        self.models = models;
+    }
     fn set_hud(&mut self, shapes: Vec<Shape>) {
         self.shapes = clip_shapes(shapes);
     }
@@ -3057,6 +3924,7 @@ impl ui::Host for State {
         screen.title = clip(screen.title);
         screen.widgets = clip_widgets(screen.widgets);
         self.ui.screen = Some(screen);
+        self.ui.canvas = None;
         self.ui.open = true;
     }
     fn close_screen(&mut self) {
@@ -3133,6 +4001,15 @@ impl storage::Host for State {
         self.storage_budget -= len;
         Ok(())
     }
+    fn config(&mut self, key: String) -> Option<String> {
+        self.config.get(&key).cloned()
+    }
+    fn read_resource(&mut self, path: String) -> Option<Vec<u8>> {
+        crate::content::check_path(&path).ok()?;
+        let (package, manifest) = &self.package;
+        let content = crate::Content::read(package, manifest).ok()?;
+        content.reader().ok()?.read(&path).ok()
+    }
     fn delete(&mut self, key: String) {
         if storage_key_ok(&key) {
             let _ = std::fs::remove_file(self.data_dir.join(&key));
@@ -3148,4 +4025,30 @@ fn storage_key_ok(key: &str) -> bool {
             .bytes()
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"_.-".contains(&b));
     chars_ok && key != "." && key != ".."
+}
+
+#[cfg(test)]
+mod level_18_tests {
+    use super::*;
+
+    #[test]
+    fn state_strings_and_boxes() {
+        let log = "minecraft:oak_log[axis=y,waterlogged=false]";
+        assert_eq!(state_property(log, "axis"), Some("y"));
+        assert_eq!(state_property("minecraft:stone", "axis"), None);
+        assert_eq!(
+            with_property(log, "axis", "x").unwrap(),
+            "minecraft:oak_log[axis=x,waterlogged=false]"
+        );
+        assert!(with_property("minecraft:stone", "axis", "x").is_err());
+        assert!(state_is(log, "minecraft:oak_log") && state_is(log, log));
+        assert!(!state_is(
+            log,
+            "minecraft:oak_log[axis=x,waterlogged=false]"
+        ));
+        assert_eq!(box_cells((1, 0, 0), (0, 1, 1), 8).unwrap().count(), 8);
+        assert!(box_cells((0, 0, 0), (i32::MAX, i32::MAX, i32::MAX), 8).is_err());
+        assert_eq!(quoted("a\"b\nc"), "\"a\\\"b c\"");
+        assert!(check_game_id("sound", "a b").is_err());
+    }
 }

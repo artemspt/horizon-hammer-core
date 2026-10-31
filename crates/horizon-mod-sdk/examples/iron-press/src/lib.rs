@@ -59,6 +59,13 @@ impl IronPress {
             let nuggets = ItemStack::new(NUGGET, 9).with_data(n.to_le_bytes().to_vec());
             storages::insert_item(dim, x, y, z, &nuggets, false);
         }
+        // Charged: a redstone signal, and a comparator reads how full.
+        if let Some((stored, capacity)) = storages::energy(dim, x, y, z) {
+            let on = if stored > 0 { 15 } else { 0 };
+            let _ = world::set_redstone_output(dim, x, y, z, on);
+            let level = (stored * 15 / capacity.max(1)).max(u64::from(stored > 0)) as u8;
+            let _ = world::set_comparator_output(dim, x, y, z, level);
+        }
         // Nuggets into the container below.
         if let Some(out) = storages::extract_item(dim, x, y, z, Some(NUGGET), 64, true) {
             let moved = storages::insert_item(dim, x, y - 1, z, &out, false);
@@ -98,6 +105,12 @@ impl ServerMod for IronPress {
                 players::tell(&player.id, &format!("No press here: {e}"));
                 return true;
             }
+            // The last slot only gives: nothing goes in by hand.
+            let output = storages::SlotRule {
+                take_only: true,
+                items: Vec::new(),
+            };
+            let _ = storages::set_slot_rule(dim, x, y, z, 8, Some(&output));
             let _ = world::set_data(dim, x, y, z, &0u32.to_le_bytes());
             let _ = world::schedule_tick(dim, x, y, z, 20);
         }

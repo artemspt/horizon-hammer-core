@@ -214,6 +214,10 @@ impl RenderAssets {
         ] {
             sprites.insert(root, &format!("minecraft:block/{name}"))?;
         }
+        for fluid in horizon_world::fluid::mod_fluids() {
+            sprites.insert(root, &fluid.still)?;
+            sprites.insert(root, &fluid.flow)?;
+        }
         for stage in 0..10 {
             sprites.insert(root, &format!("minecraft:block/destroy_stage_{stage}"))?;
         }

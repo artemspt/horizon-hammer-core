@@ -55,6 +55,10 @@ fn mods_dir() -> &'static Path {
                 "-p",
                 "worldgen",
                 "-p",
+                "first-legacy",
+                "-p",
+                "core-tour",
+                "-p",
                 "horizon-mods-test-guest",
                 "-p",
                 "horizon-mods-test-ui-guest",
@@ -82,6 +86,11 @@ fn mods_dir() -> &'static Path {
             ("block_guard", example("block-guard")),
             ("iron_press", example("iron-press")),
             ("worldgen", example("worldgen")),
+            ("core_tour", example("core-tour")),
+            (
+                "first_legacy",
+                std::fs::read_to_string(root.join("mods/first_legacy/horizon-mod.toml")).unwrap(),
+            ),
             ("horizon_mods_test_guest", GUEST_MANIFEST.to_string()),
             ("horizon_mods_test_ui_guest", UI_MANIFEST.to_string()),
         ];
@@ -214,7 +223,7 @@ fn undeclared_capabilities_are_refused() {
 /// from the functions they import.
 #[test]
 fn a_mod_for_a_newer_horizon_is_refused() {
-    use horizon_mods::api_level::{LEVEL, imports, needed};
+    use horizon_mods::api_level::{imports, needed};
     use wit_parser::{ManglingAndAbi, Resolve};
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let wit = std::fs::read_to_string(root.join("crates/horizon-mod-sdk/wit/horizon.wit"))
@@ -268,10 +277,12 @@ experimental = ["ui", "render", "input", "recipes"]
     assert_eq!(level("horizon_mods_test_ui_guest.hmod"), 8);
     // Block Guard keeps data on blocks (`world.set-data`, level 9).
     assert_eq!(level("block_guard.hmod"), 9);
-    // The Iron Press uses storages, timers, entities and net: level 11.
-    assert_eq!(level("iron_press.hmod"), 11);
-    // Worldgen sets a surface rule (`worldgen.set-surface-rule`): the newest.
-    assert_eq!(level("worldgen.hmod"), LEVEL);
+    // The Iron Press rules its output slot (`storages.set-slot-rule`).
+    assert_eq!(level("iron_press.hmod"), 17);
+    assert_eq!(level("first_legacy.hmod"), 13);
+    // Worldgen adds an ore and reads its config: level 14.
+    assert_eq!(level("worldgen.hmod"), 14);
+    assert_eq!(level("core_tour.hmod"), 17);
 }
 
 #[test]
@@ -280,7 +291,16 @@ fn worldgen_rule_reaches_the_game() {
     assert_eq!(mods.entries()[0].status, Status::Running);
     // `init` sets the rule; this is how the game hears of it and puts it in
     // its `WorldgenModifierManager` (the terrain worker reads a snapshot).
-    let rule = mods.drain().into_iter().find_map(|output| match output {
+    let drained = mods.drain();
+    assert!(
+        drained.iter().any(|o| matches!(
+            o,
+            Output::Server(ServerAction::Ore { ore, .. })
+                if ore.block == "minecraft:emerald_ore" && ore.size == 6
+        )),
+        "the example adds an ore"
+    );
+    let rule = drained.into_iter().find_map(|output| match output {
         Output::Server(ServerAction::Worldgen { id, biome, surface }) => Some((id, biome, surface)),
         _ => None,
     });
@@ -657,6 +677,293 @@ fn stack(item: &str, count: u32) -> HostStack {
 // API level 10: a machine with a storage and a window, timers, redstone,
 // vanilla containers, stacks that keep what the mod can't see, inventories,
 // placing, item use, neighbours and entities
+#[test]
+fn first_legacy_opens_knowledge_with_a_note() {
+    let steve = ServerPlayer {
+        id: "00000000-0000-0000-0000-000000000001".into(),
+        name: "Steve".into(),
+        x: 0.5,
+        y: 64.0,
+        z: 0.5,
+        dimension: "minecraft:overworld".into(),
+        game_mode: GameMode::Survival,
+        health: 20.0,
+    };
+    let core = (0, 64, 0);
+    let mut blocks = vec![(core, "firstlegacy:research_station[lit=false]".to_string())];
+    for x in -1..=1 {
+        for y in 63..=65 {
+            for z in -1..=1 {
+                if (x, y, z) != core {
+                    blocks.push(((x, y, z), "firstlegacy:station_casing".to_string()));
+                }
+            }
+        }
+    }
+    let put = |blocks: &mut Vec<((i32, i32, i32), String)>, at, name: &str| {
+        blocks.iter_mut().find(|(p, _)| *p == at).unwrap().1 = name.to_string();
+    };
+    put(&mut blocks, (1, 64, 0), "firstlegacy:station_input_gate");
+    put(&mut blocks, (-1, 64, 0), "firstlegacy:station_output_gate");
+    put(
+        &mut blocks,
+        (0, 65, 0),
+        "firstlegacy:station_lava_bay[charges=0]",
+    );
+    put(&mut blocks, (1, 65, 0), "firstlegacy:thermal_converter");
+    let mut mods = Mods::load(&[mods_dir().join("first_legacy.hmod")], |_| true, |_| false);
+    assert_eq!(mods.entries()[0].status, Status::Running);
+    let snapshot = |slots: Vec<Option<HostStack>>| Snapshot {
+        players: vec![steve.clone()],
+        inventories: vec![(steve.id.clone(), 0, slots)],
+        ..Snapshot::default()
+    };
+    mods.set_snapshot(snapshot(Vec::new()));
+    mods.lend_world(Box::new(Machines {
+        blocks,
+        containers: Vec::new(),
+        redstone: 0,
+        mobs: Vec::new(),
+    }));
+    mods.server_tick(100);
+    assert!(
+        mods.locked_results()
+            .contains("firstlegacy:first_generator")
+    );
+    assert!(
+        mods.locked_results()
+            .contains("mekanism:metallurgic_infuser")
+    );
+    // Lava into the bay, then a whole note through the input gate.
+    let at = |(x, y, z): (i32, i32, i32)| BlockPos { x, y, z };
+    assert!(mods.use_block(
+        &steve,
+        at((0, 65, 0)),
+        "firstlegacy:station_lava_bay[charges=0]",
+        "minecraft:lava_bucket"
+    ));
+    let note = HostStack {
+        data: [(
+            "firstlegacy".to_string(),
+            br#"{"knowledge":"firstlegacy:first_infuser","parts":[0,1,2,3,4,5,6,7,8,9]}"#.to_vec(),
+        )]
+        .into_iter()
+        .collect(),
+        ..stack("firstlegacy:note", 1)
+    };
+    mods.set_snapshot(snapshot(vec![Some(note)]));
+    assert!(mods.use_block(
+        &steve,
+        at((1, 64, 0)),
+        "firstlegacy:station_input_gate",
+        "firstlegacy:note"
+    ));
+    // The job runs on its timer, 20 ticks a step, 200 in all.
+    for t in 101..=330 {
+        mods.server_tick(t);
+    }
+    assert!(
+        !mods
+            .locked_results()
+            .contains("mekanism:metallurgic_infuser")
+    );
+    assert!(
+        mods.locked_results()
+            .contains("firstlegacy:first_generator")
+    );
+    let _ = mods.take_world();
+}
+
+/// A world with no chunk loaded anywhere.
+struct Unloaded;
+impl horizon_mods::WorldView for Unloaded {
+    fn block(&self, _: &str, _: i32, _: i32, _: i32) -> Option<String> {
+        None
+    }
+    fn biome(&self, _: &str, _: i32, _: i32, _: i32) -> Option<String> {
+        None
+    }
+    fn has_dimension(&self, _: &str) -> bool {
+        true
+    }
+    fn check_state(&self, _: &str) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+#[test]
+fn core_tour_uses_what_neoforge_mods_lean_on() {
+    // A folder, so the mod has its data file beside its code.
+    let dir = mods_dir().join("core_tour_folder");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../horizon-mod-sdk/examples/core-tour");
+    std::fs::create_dir_all(dir.join("data/core_tour")).unwrap();
+    std::fs::copy(root.join("horizon-mod.toml"), dir.join("horizon-mod.toml")).unwrap();
+    std::fs::copy(
+        root.join("data/core_tour/greeting.txt"),
+        dir.join("data/core_tour/greeting.txt"),
+    )
+    .unwrap();
+    let package = horizon_mods::Package::read(&mods_dir().join("core_tour.hmod")).unwrap();
+    std::fs::write(dir.join("mod.wasm"), package.wasm.unwrap()).unwrap();
+    let mut mods = Mods::load(&[dir], |_| true, |_| false);
+    assert_eq!(mods.entries()[0].status, Status::Running);
+    let steve = "00000000-0000-0000-0000-000000000001".to_string();
+    let snapshot = || Snapshot {
+        player_events: vec![(steve.clone(), "died".to_string(), String::new())],
+        ..Snapshot::default()
+    };
+    let report = |mods: &Mods| {
+        let json: serde_json::Value = serde_json::from_str(&mods.block_data_json()).unwrap();
+        let hex = json["saved"]["core_tour"]["report"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let bytes: Vec<u8> = (0..hex.len() / 2)
+            .map(|i| u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).unwrap())
+            .collect();
+        String::from_utf8(bytes).unwrap()
+    };
+    mods.set_snapshot(snapshot());
+    mods.server_tick(1);
+    let first = report(&mods);
+    assert!(first.contains("deaths 1"), "{first}");
+    assert!(first.contains("hello from my data"), "{first}");
+    assert!(first.contains("self true"), "{first}");
+    assert!(first.contains("other false"), "{first}");
+    mods.server_tick(2);
+    let second = report(&mods);
+    assert!(second.contains("deaths 2"), "kept on the player: {second}");
+    assert!(second.contains("got ping from core_tour: 2"), "{second}");
+    assert!(
+        mods.drain().iter().any(|o| matches!(
+            o,
+            Output::Server(ServerAction::DropItem { stack, .. }) if stack.item == "minecraft:bone"
+        )),
+        "the bone is dropped"
+    );
+    // Clicks on a mob, asked as they happen.
+    let player = ServerPlayer {
+        id: steve.clone(),
+        name: "Steve".into(),
+        x: 0.0,
+        y: 64.0,
+        z: 0.0,
+        dimension: "minecraft:overworld".into(),
+        game_mode: GameMode::Survival,
+        health: 20.0,
+    };
+    let mob = EntityInfo {
+        id: "00000000-0000-0000-0000-00000000000a".into(),
+        kind: "minecraft:zombie".into(),
+        pos: (1.0, 64.0, 1.0),
+        health: 20.0,
+    };
+    assert!(mods.use_entity(&player, &mob, "minecraft:stick"));
+    assert!(!mods.use_entity(&player, &mob, "minecraft:air"));
+    assert!(mods.attack_entity(&player, &mob, "minecraft:feather"));
+    assert!(!mods.attack_entity(&player, &mob, "minecraft:stone_sword"));
+    assert!(
+        mods.drain().iter().any(|o| matches!(
+            o,
+            Output::Server(ServerAction::Mob {
+                change: horizon_mods::MobChange::Ai(false),
+                ..
+            })
+        )),
+        "the stick stops its AI"
+    );
+    assert!(
+        mods.block_data_json()
+            .contains("00000000-0000-0000-0000-00000000000a")
+    );
+    // What a player carries is saved with the world.
+    let saved = mods.block_data_json();
+    assert!(saved.contains("player_data"), "{saved}");
+}
+
+#[test]
+fn a_timer_waits_for_its_chunk() {
+    let steve = ServerPlayer {
+        id: "00000000-0000-0000-0000-000000000001".into(),
+        name: "Steve".into(),
+        x: 0.5,
+        y: 64.0,
+        z: 0.5,
+        dimension: "minecraft:overworld".into(),
+        game_mode: GameMode::Survival,
+        health: 20.0,
+    };
+    let world = || Machines {
+        blocks: vec![((1, 64, 2), "minecraft:iron_block".into())],
+        containers: Vec::new(),
+        redstone: 15,
+        mobs: Vec::new(),
+    };
+    let mut mods = Mods::load(&[mods_dir().join("iron_press.hmod")], |_| true, |_| false);
+    mods.set_snapshot(Snapshot {
+        players: vec![steve.clone()],
+        ..Snapshot::default()
+    });
+    mods.lend_world(Box::new(world()));
+    let at = BlockPos { x: 1, y: 64, z: 2 };
+    assert!(mods.use_block(&steve, at, "minecraft:iron_block", "minecraft:air"));
+    let _ = mods.take_world();
+    // The chunk goes away while the press's timer is due.
+    mods.lend_world(Box::new(Unloaded));
+    for t in 1..=30 {
+        mods.server_tick(t);
+    }
+    let _ = mods.take_world();
+    assert!(mods.redstone_outputs("minecraft:overworld").is_empty());
+    // It comes back: the timer must still be there.
+    mods.lend_world(Box::new(world()));
+    for t in 31..=150 {
+        mods.server_tick(t);
+    }
+    assert_eq!(mods.redstone_outputs("minecraft:overworld").len(), 1);
+    let _ = mods.take_world();
+}
+
+#[test]
+fn redstone_output_lives_on_its_block() {
+    let steve = ServerPlayer {
+        id: "00000000-0000-0000-0000-000000000001".into(),
+        name: "Steve".into(),
+        x: 0.5,
+        y: 64.0,
+        z: 0.5,
+        dimension: "minecraft:overworld".into(),
+        game_mode: GameMode::Survival,
+        health: 20.0,
+    };
+    let dim = "minecraft:overworld";
+    let mut mods = Mods::load(&[mods_dir().join("iron_press.hmod")], |_| true, |_| false);
+    assert_eq!(mods.entries()[0].status, Status::Running);
+    assert!(mods.redstone_outputs(dim).is_empty());
+    mods.set_snapshot(Snapshot {
+        players: vec![steve.clone()],
+        ..Snapshot::default()
+    });
+    mods.lend_world(Box::new(Machines {
+        blocks: vec![((1, 64, 2), "minecraft:iron_block".into())],
+        containers: Vec::new(),
+        redstone: 15,
+        mobs: Vec::new(),
+    }));
+    let at = BlockPos { x: 1, y: 64, z: 2 };
+    assert!(mods.use_block(&steve, at, "minecraft:iron_block", "minecraft:air"));
+    for t in 1..=25 {
+        mods.server_tick(t);
+    }
+    let outputs = mods.redstone_outputs(dim);
+    assert_eq!(outputs.len(), 1, "{outputs:?}");
+    assert_eq!(outputs[0].0, (1, 64, 2));
+    assert_eq!(outputs[0].1, "minecraft:iron_block");
+    assert_eq!(outputs[0].2, 15, "charged: the press signals");
+    assert!(outputs[0].3 > 0, "a comparator reads its charge");
+    let _ = mods.take_world();
+}
+
 #[test]
 fn iron_press_runs_a_machine() {
     let steve = ServerPlayer {

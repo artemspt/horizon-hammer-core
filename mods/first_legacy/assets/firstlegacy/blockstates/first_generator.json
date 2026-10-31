@@ -1,0 +1,5 @@
+{
+  "variants": {
+    "": { "model": "firstlegacy:block/first_generator" }
+  }
+}

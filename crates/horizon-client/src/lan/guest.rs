@@ -698,6 +698,37 @@ fn network_stack(
             ));
         }
     }
+    // What a mod's `players.style-stack` set.
+    if let Some(d) = s.data() {
+        use horizon_world::nbt::Tag;
+        if let Some(Tag::List(lines)) = d.other("minecraft:lore") {
+            let lore = lines
+                .iter()
+                .filter_map(|l| match l {
+                    Tag::String(text) => {
+                        Some(horizon_protocol::text::literal(&text.to_string_lossy()))
+                    }
+                    _ => None,
+                })
+                .collect();
+            stack.added.push((
+                horizon_protocol::item::component::LORE,
+                horizon_protocol::item::Component::Lore(lore),
+            ));
+        }
+        if let Some(Tag::String(model)) = d.other("minecraft:item_model") {
+            stack.added.push((
+                horizon_protocol::item::component::ITEM_MODEL,
+                horizon_protocol::item::Component::Ident(model.to_string_lossy()),
+            ));
+        }
+        if let Some(Tag::Byte(glint)) = d.other("minecraft:enchantment_glint_override") {
+            stack.added.push((
+                horizon_protocol::item::component::ENCHANTMENT_GLINT_OVERRIDE,
+                horizon_protocol::item::Component::Bool(*glint != 0),
+            ));
+        }
+    }
     if let Some(name) = s.custom_name() {
         stack.added.push((
             horizon_protocol::item::component::CUSTOM_NAME,

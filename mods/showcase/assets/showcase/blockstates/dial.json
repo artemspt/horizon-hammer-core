@@ -1,0 +1,16 @@
+{
+  "variants": {
+    "level=0": {
+      "model": "minecraft:block/iron_block"
+    },
+    "level=1": {
+      "model": "minecraft:block/gold_block"
+    },
+    "level=2": {
+      "model": "minecraft:block/redstone_block"
+    },
+    "level=3": {
+      "model": "minecraft:block/diamond_block"
+    }
+  }
+}

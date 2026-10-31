@@ -1,0 +1,13 @@
+{
+  "template": "minecraft:iron_sword",
+  "rarity": "rare",
+  "components": {
+    "minecraft:item_model": "minecraft:iron_sword",
+    "minecraft:max_damage": 7,
+    "minecraft:food": {"nutrition": 8, "saturation": 1.0},
+    "minecraft:consumable": {},
+    "minecraft:attribute_modifiers": [
+      {"type": "minecraft:attack_damage", "amount": 11.0, "id": "minecraft:base_attack_damage", "operation": "add_value", "slot": "mainhand"}
+    ]
+  }
+}

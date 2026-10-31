@@ -14,6 +14,10 @@ use horizon_client::{
     mod_list,
 };
 use std::{path::PathBuf, time::Duration};
+/// Tag → its members.
+#[cfg(feature = "mods")]
+pub(super) type TagMap =
+    std::sync::Arc<std::collections::HashMap<String, std::collections::HashSet<String>>>;
 #[cfg(feature = "mods")]
 use {
     super::Screen,
@@ -37,6 +41,7 @@ use {
 };
 
 #[derive(Default)]
+#[cfg_attr(not(feature = "mods"), allow(dead_code))]
 pub(super) struct ModsState {
     #[cfg(feature = "mods")]
     pub(super) mods: Mods,
@@ -80,6 +85,27 @@ pub(super) struct ModsState {
     pub(super) menus: Vec<super::mod_machines::ModMenu>,
     #[cfg(feature = "mods")]
     pub(super) next_menu: i32,
+    /// The game's item tags, for `world.item-has-tag`.
+    pub(super) item_tags: Option<
+        std::sync::Arc<std::collections::HashMap<String, std::collections::HashSet<String>>>,
+    >,
+    /// What waits for its level to be in place: (dimension, action).
+    #[cfg(feature = "mods")]
+    pub(super) waiting: Vec<(String, horizon_mods::ServerAction)>,
+    /// `world.redstone-power` of the levels not in place, as of their last turn.
+    pub(super) parked_redstone: std::collections::HashMap<(String, i32, i32, i32), u8>,
+    /// The mobs of the levels not in place, as of their last turn.
+    #[cfg(feature = "mods")]
+    pub(super) parked_mobs: Vec<(&'static str, Vec<horizon_mods::EntityInfo>)>,
+    /// The game's block and entity type tags, read once.
+    #[cfg(feature = "mods")]
+    pub(super) block_tags: Option<TagMap>,
+    #[cfg(feature = "mods")]
+    pub(super) entity_tags: Option<TagMap>,
+    /// Recipes players crafted this tick, for `players.poll-events`.
+    pub(super) crafted: Vec<(String, String, String)>,
+    /// `world.set-locked-results` as last published.
+    pub(super) locked: std::collections::BTreeSet<String>,
     /// Every item's stack size, for server mods' calls, made once.
     #[cfg(feature = "mods")]
     pub(super) max_stacks: Option<std::sync::Arc<std::collections::HashMap<String, u32>>>,
@@ -87,6 +113,10 @@ pub(super) struct ModsState {
     /// end, the players' too, and what happened since, to tell.
     #[cfg(feature = "mods")]
     pub(super) mob_health: std::collections::HashMap<String, std::collections::HashMap<u32, f32>>,
+    /// Mobs that had a player as their target, for the `targeted` player event.
+    pub(super) mob_targets: std::collections::HashSet<u32>,
+    /// `players.set-undying`.
+    pub(super) undying: std::collections::HashSet<String>,
     #[cfg(feature = "mods")]
     pub(super) player_health: std::collections::HashMap<String, f32>,
     #[cfg(feature = "mods")]
@@ -485,7 +515,8 @@ impl Game<'_> {
             food: p.health.food.food.max(0) as u32,
             dimension: self.dim.id().to_owned(),
         });
-        let clock = player.is_some().then(|| Clock {
+        // A server thread has no player of its own, but its world keeps time.
+        let clock = (player.is_some() || self.mods.server).then(|| Clock {
             game_time: self.world.game_time.max(0) as u64,
             day_time: self.world.day_time.max(0) as u64,
         });
@@ -511,6 +542,10 @@ impl Game<'_> {
         }
         let (recipes, known_recipes) = self.mod_recipes();
         Snapshot {
+            sneaking: Vec::new(),
+            looks: Vec::new(),
+            player_events: Vec::new(),
+            running: Vec::new(),
             player,
             clock,
             gui_size: self.gui_size(),
@@ -1123,6 +1158,25 @@ impl Game<'_> {
             batch.width,
             u32::MAX,
         );
+        if let Some((shapes, _)) = self.mods.mods.canvas(ms.owner) {
+            self.draw_shapes(batch, shapes, (0.0, 0.0));
+            let atlas = &self.gui.atlas;
+            let (w, h) = (batch.width, batch.height);
+            let x = (w / 2.0).floor() - 100.0;
+            let hover = ui::hovered(self.cursor, x, h - 27.0, 200.0, 20.0);
+            ui::button(
+                batch,
+                atlas,
+                x,
+                h - 27.0,
+                200.0,
+                20.0,
+                &Text::literal("Done"),
+                true,
+                hover,
+            );
+            return;
+        }
         let cx = (batch.width / 2.0).floor();
         let x = cx - MOD_UI_COLUMN / 2.0;
         // A settings page starts with the mod's keys, as Key Binds rows.
@@ -1293,6 +1347,18 @@ impl Game<'_> {
             return;
         };
         let owner = ms.owner;
+        if let Some((_, areas)) = self.mods.mods.canvas(owner) {
+            let hit = areas
+                .iter()
+                .find(|a| ui::hovered(cursor, a.rect.x, a.rect.y, a.rect.w, a.rect.h))
+                .map(|a| a.id);
+            if let Some(id) = hit {
+                self.audio.play_button_click();
+                self.mods.mods.ui_select(owner, id, 0);
+                self.show_mod_output();
+            }
+            return;
+        }
         let x = (w / 2.0).floor() - MOD_UI_COLUMN / 2.0;
         // A key row waits for the key to bind.
         let keys = Self::mod_page_keys(&self.mods.mods, ms);

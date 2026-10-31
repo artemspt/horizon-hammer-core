@@ -1,5 +1,7 @@
 # Horizon Hammer Core - Modding Core Development Log
 
+> **Extending the mod API?** Read `crates/horizon-mods/AGENTS.md` first; the list is `docs/mod-api-plan.md`.
+
 > **FORK NOTICE:** В этом форке мы работаем **ТОЛЬКО** над модовым ядром.  
 > Зона работы: `crates/horizon-mods/`, `crates/horizon-mod-sdk/`, `crates/cargo-horizon-mod/`, `mods/test_core/`.  
 > Всё остальное (рендер, мир, геймплей, сеть, лаунчер и т.п.) трогать не нужно, если это не требуется исключительно для интеграции модового ядра.
@@ -22,6 +24,126 @@ The project has a working WASM mod system in `crates/horizon-mods/` with:
 - Basic hooks (tick, frame, chat, command)
 
 ## Changelog
+
+### 2026-10-31 - 75 smaller functions (API level 18)
+
+#### Added
+- **WIT `players`** (25): `by-name`, `by-id`, `is-online`, `count`, `near`, `held-item`, `offhand-item`, `armor`, `count-item`,
+  `has-item`, `free-slots`, `find-item`, `set-game-mode`, `clear-inventory`, `show-title`, `action-bar`, `set-title-times`,
+  `add-experience`, `add-levels`, `set-spawn`, `kick`, `play-sound`, `stop-sounds`, `grant-advancement`, `revoke-advancement`
+- **WIT `world`** (28): `get-blocks`, `is-loaded`, `is-air`, `block-id`, `block-property`, `set-block`, `set-block-property`,
+  `break-block`, `fill`, `find-blocks`, `count-blocks`, `height-at`, `game-time`, `day-time`, `set-time`, `set-weather`,
+  `set-gamerule`, `set-difficulty`, `set-world-spawn`, `lightning`, `explode`, `has-data`, `saved-keys`, `running-mods`,
+  `is-valid-state`, `item-exists`, `max-stack-size`, `random-u32`
+- **WIT `entities`** (10): `get`, `exists`, `of-kind`, `nearest`, `count-near`, `clear-effects`, `remove-effect`, `heal`, `set-health`, `swing`
+- **WIT `storages`** (12): `has-storage`, `is-empty`, `is-full`, `free-slots`, `count-item`, `clear`, `positions`, `free-energy`,
+  `fluid-amount`, `transfer-item`, `transfer-energy`, `transfer-fluid`
+- **`/showcase api set|check|act|boom|clear|kick`** calls them all and says which answered wrong
+
+#### Fixed
+- A server thread's mods had no clock: `Snapshot.clock` needed a player of the window's own
+
+### 2026-10-31 - Block properties, world fluids, effects, dimensions, goals, entities by code
+
+#### Added
+- **`states` in `horizon/block/*.json`** (`mod_content.rs`: copies of each template state, `Rename.combos`)
+- **`horizon/fluid/*.json`** - `FluidState.family` keeps `kind`'s behaviour and flows apart; `fluid::mod_fluids`,
+  `BucketContent::ModFluid`, mesher sprites and tint
+- **`horizon/effect/*.json`** - `potions::mod_effect`; players and mobs; `minecraft:mob_effect` ids after vanilla's
+- **`horizon/dimension/*.json`** - `Dim::Mod`, `mod_dimensions.rs`: flat, noise, `CodeTerrain` (workers ask the game's thread)
+- **WIT `logic-events`** - `generate-chunk`, `goal-can-use`, `goal-tick`, `goal-stop`, `entity-tick`, `effect-tick`, asked of the
+  mod owning the name; `entity/*.json` `goals`, `ticks`, `projectile.through_blocks`; `/showcase dial|plasma|shock|boomerang|go`
+
+### 2026-10-31 - First runs in the game; item components, mob control, slot rules (API level 17)
+
+#### Added
+- **Item `components`** in `data/<id>/horizon/item/*.json`: vanilla components over the template's
+- **WIT `entities.move-to`, `set-target`, `set-equipment`**, **`storages.set-slot-rule`**, **`players.set-undying`**,
+  **`entity-events.entity-dying`**; `use-entity`/`attack-entity` also for players and objects; `poll-events` kinds
+  `tossed`, `used-item`, `broke-item`, `targeted`, `block-gone`
+- Spawn and hurt events in every level; wires turn towards a block with a mod's redstone output
+
+- **`players.set-undying`**, not seen in the game yet
+- **Mods `mods/showcase` and `mods/showcase_hud`**: the core in one walk-through, `/showcase demo` builds a stand
+
+#### Fixed (found by running `horizon-ctl` against the game)
+- Output of block, item and entity hooks was lost when the hub was out of `self.lan` (`tell` never arrived)
+- `NoAI` was only saved: the mob tick ignored it, so `set-ai` did nothing
+- Mobs had no UUID until asked, and mods couldn't see fresh ones (`mod_name_mobs`)
+- `horizon/entity/` was refused by the packer and not copied to the content root; `/summon` didn't know mod mobs
+- `entities.*` on a player: selectors don't take a player's UUID, and commands act on the player in place
+- Mod projectiles flew with the world lent, so every block read as air; `spawn` dropped their `Motion`
+- `players.look`, `sneaking`, `inventory` were empty in a guest's commands: the hub was out of `self.lan`
+- `storages.set-slot-rule` now refuses at the click (`Menu.mod_rules`), not a moment later
+- Clearing far terrain joined its worker on the main thread (`clear_lod`), a probable freeze
+
+### 2026-10-31 - One mod with two halves, a mob's own look, display mobs, block shapes (API level 17)
+
+#### Added
+- **`side = "both"` on api 0.3** - `Manifest::two_halves`, `client.wasm` beside `mod.wasm`, SDK `export_both!`,
+  `cargo horizon-mod` compiles the crate twice with `--cfg horizon_side`
+- **`data/<id>/horizon/entity/*.json`** `texture`, `model` (`mobs.rs` `bake_mod_model`), `display`; clients hear the
+  real type on `horizon_mods:mob_type` (`lan/entity.rs`, `game/remote.rs`)
+- **WIT `entities.set-rotation`, `players.look`, `render.set-models`, `render.set-menu-layouts`, `render.open-canvas`,
+  `entity-events.projectile-hit`**; block `properties.shape`, `shape_from` (`mod_content.rs`); mob type `sounds`,
+  `projectile`; `data/<id>/horizon/model/*.json`; mods' `entity/` textures in the atlas (`hud.rs`)
+- **Creative tabs** for mods, with pages (`creative.rs` `add_mod_tabs`, `turn_page`); `mods/build-all.sh`
+- **Example** `mods/showcase`: one mod, a guard with its own model, a core turning over the reactor,
+  `/showcase_panel`, a pedestal
+
+### 2026-10-31 - Mob types, clicks on mobs, a stack's look, every level (API level 16)
+
+#### Added
+- **`data/<id>/horizon/entity/*.json`** - a mod's mob type from a vanilla template (`mobs.rs` `load_mod_mobs`,
+  `mod_mob_base`: clients are told the template)
+- **WIT `entity-events`** (`use-entity`, `attack-entity`, asked as they happen; `world entity-events-host`)
+- **WIT `players.style-stack`** and lore, item model and glint in `lan/guest.rs` `network_stack`
+- **WIT `entities.get-data`, `set-data`, `set-ai`, `set-name`, `set-velocity`**, **`world.block-has-tag`,
+  `entity-has-tag`**
+- **`game/mod_machines.rs` `tick_parked_mod_levels`** - levels not in place take a turn when a mod needs them:
+  redstone both ways, mobs for `entities.near`, waiting drops and spawns. `spill_gone_storages` drops what a storage
+  held when its block goes
+
+### 2026-10-31 - What the NeoForge docs have and we didn't (API level 15)
+
+Compared with docs.neoforged.net: attachments, reload listeners, `ModList`/IMC, tags, player events, attributes.
+
+#### Added
+- **WIT `players.get-data`, `set-data`, `poll-events`**, **`world.mod-loaded`, `mod-send`, `mod-receive`,
+  `item-has-tag`**, **`storage.read-resource`**, **`entities.drop-item`, `set-attribute`**
+- **Example** `core-tour`; **test** `core_tour_uses_what_neoforge_mods_lean_on`
+
+### 2026-10-31 - Windows by name, sneaking, ores, settings (API level 14), and fixes
+
+#### Added
+- **WIT `storages.open-menu-as`, `players.sneaking`, `worldgen.add-ore`, `storage.config`**; manifest `[config]`
+  (`manifest::load_config`), `vanillagen.rs` `place_mod_ores`
+- **SDK** - `server::connected`, `server::move_energy`
+- **Example** `worldgen` reads its surface block from its settings and adds an emerald ore
+- **`docs/mod-core-known-issues.md`** - what was found and left for later
+
+#### Fixed
+- A timer whose chunk wasn't loaded when due was lost, and the machine stopped for good: it now waits
+  (`a_timer_waits_for_its_chunk`)
+- `world.set-locked-results` was saved with the world and outlived its mod: recipes stayed closed with the mod removed
+- A redstone output kept signalling after its mod stopped: outputs have an owner
+- Removed the `ModContainer::has_capability` stub, which said yes to everything
+
+### 2026-10-30 - Redstone out, furnace windows, closed recipes, First Legacy (API level 13)
+
+#### Added
+- **WIT `world.set-redstone-output`, `set-comparator-output`** - a mod's block gives a weak signal and a comparator
+  reading: `BlockData.outputs` (saved, gone with the block), `Ticks.mod_outputs` read by `redstone.rs`,
+  `game/mod_machines.rs` `sync_mod_redstone` tells neighbours what changed. Level ticked last only
+- **WIT `storages.set-menu-data`** - a storage of 3 slots opens as a furnace window with its flame and arrow
+  (`Menu.mod_data`, `lan/containers.rs` `sync_container_data`)
+- **WIT `world.get-saved`, `set-saved`** - a mod's bytes saved with the world, not per block (NeoForge's `SavedData`)
+- **WIT `world.set-locked-results`** - items no crafting grid makes (`crafting.rs` `set_locked_results`)
+- **Manifest** - a server mod may list `registries` and carry `assets/` and `data/`
+- **Port `mods/first_legacy`** of First Legacy from `artemspt/halloween-mod`; its limits are at the top of its `lib.rs`
+- **Example** `iron-press` signals when charged, a comparator reads its charge
+- **Tests** - `sandbox.rs` `first_legacy_opens_knowledge_with_a_note`, `redstone_output_lives_on_its_block`
+- **Plan** - `docs/mod-core-plan.md`: what Mekanism/AE2/Twilight Forest analogues and the three ports still need
 
 ### 2026-10-30 - World generation surface rules (`worldgen`, API level 12)
 

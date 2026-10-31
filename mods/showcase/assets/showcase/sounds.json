@@ -1,0 +1,1 @@
+{"guard.idle": {"sounds": [{"name": "minecraft:mob/irongolem/hit1", "pitch": 0.6}]}, "guard.hurt": {"sounds": [{"name": "minecraft:mob/irongolem/hit2"}]}, "guard.death": {"sounds": [{"name": "minecraft:mob/irongolem/death"}]}}

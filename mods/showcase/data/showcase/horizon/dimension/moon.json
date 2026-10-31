@@ -1,0 +1,20 @@
+{
+  "base": "overworld",
+  "generator": {
+    "type": "flat",
+    "layers": [
+      {
+        "block": "minecraft:bedrock",
+        "height": 1
+      },
+      {
+        "block": "minecraft:end_stone",
+        "height": 70
+      },
+      {
+        "block": "minecraft:white_concrete_powder",
+        "height": 2
+      }
+    ]
+  }
+}

@@ -201,7 +201,8 @@ pub(super) fn tesselate(
     let at = |p: [i32; 3]| &info[pad.blocks[pi(p[0], p[1], p[2])] as usize];
     let me = at([x, y, z]);
     let kind = me.fluid.kind();
-    let same = |s: &Info| s.fluid.kind().same_family(kind);
+    let same = |s: &Info| s.fluid.same_fluid(me.fluid);
+    let own = horizon_world::fluid::mod_fluid(me.fluid.family());
     let neighbor = |d: Direction| {
         let [dx, dy, dz] = d.normal();
         at([x + dx, y + dy, z + dz])
@@ -222,13 +223,17 @@ pub(super) fn tesselate(
         return;
     }
     let water = matches!(kind, FluidKind::Water | FluidKind::FlowingWater);
-    let tint = if water {
+    let tint = if let Some(color) = own.and_then(|f| f.color) {
+        color & 0xFF_FFFF
+    } else if water && own.is_none() {
         water_color & 0xFF_FFFF
     } else {
         0xFF_FFFF
     };
     // Lava emits light level 15.
-    let emission = if water { 0 } else { 15 };
+    let emission = own
+        .and_then(|f| f.light)
+        .map_or(if water { 0 } else { 15 }, |l| l as _);
     let color = |by: f32| {
         let rgb = [16, 8, 0].map(|shift| lighting::scale((tint >> shift & 255) as i32, by) as u32);
         crate::mesher::emitting(pack_rgb(rgb), emission)
@@ -293,7 +298,12 @@ pub(super) fn tesselate(
             lighting::coords(pad, at(above), above),
         ))
     };
-    let (still, flow, overlay) = if water {
+    let family = usize::from(me.fluid.family());
+    let (still, flow, overlay) = if let Some(&(still, flow)) =
+        family.checked_sub(1).and_then(|i| tables.mod_fluids.get(i))
+    {
+        (still, flow, None)
+    } else if water {
         (
             tables.water_still,
             tables.water_flow,

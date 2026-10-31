@@ -59,6 +59,47 @@ pub struct FluidState {
     kind: FluidKind,
     amount: u8,
     falling: bool,
+    /// 0 for vanilla's; else 1 + the index in [`mod_fluids`]. A mod's fluid
+    /// has the `kind` it behaves like and flows apart from it.
+    family: u8,
+}
+
+/// A mod's fluid, as the world and the mesher need it.
+#[derive(Clone, Debug, Default)]
+pub struct ModFluid {
+    pub block: String,
+    pub bucket: Option<String>,
+    pub lava_like: bool,
+    pub still: String,
+    pub flow: String,
+    pub color: Option<u32>,
+    pub light: Option<u8>,
+    pub tick_rate: Option<i32>,
+    pub drop_off: Option<i32>,
+    pub infinite: Option<bool>,
+}
+static MOD_FLUIDS: std::sync::RwLock<Vec<&'static ModFluid>> = std::sync::RwLock::new(Vec::new());
+/// Sets the mods' fluids, before the block tables load. At most 255.
+pub fn set_mod_fluids(fluids: Vec<ModFluid>) {
+    *MOD_FLUIDS.write().expect("mod fluids poisoned") = fluids
+        .into_iter()
+        .take(255)
+        .map(|f| &*Box::leak(Box::new(f)))
+        .collect();
+}
+pub fn mod_fluids() -> Vec<&'static ModFluid> {
+    MOD_FLUIDS.read().expect("mod fluids poisoned").clone()
+}
+/// A fluid family's definition; None for vanilla's.
+pub fn mod_fluid(family: u8) -> Option<&'static ModFluid> {
+    let list = MOD_FLUIDS.read().expect("mod fluids poisoned");
+    list.get(usize::from(family).checked_sub(1)?).copied()
+}
+/// The family a bucket item empties.
+pub fn mod_fluid_of_bucket(item: &str) -> Option<u8> {
+    let list = MOD_FLUIDS.read().expect("mod fluids poisoned");
+    let i = list.iter().position(|f| f.bucket.as_deref() == Some(item))?;
+    Some(i as u8 + 1)
 }
 impl FluidState {
     /// Native fluid states require an object; properties decode leniently.
@@ -88,6 +129,7 @@ impl FluidState {
             kind,
             amount: if flowing { 1 } else { 8 },
             falling: true,
+            family: 0,
         };
         if let Some(properties) = value
             .get("properties")
@@ -136,20 +178,36 @@ impl FluidState {
             kind,
             amount,
             falling,
+            family: 0,
         }
     }
     pub const EMPTY: Self = Self {
         kind: FluidKind::Empty,
         amount: 0,
         falling: false,
+        family: 0,
     };
     pub const WATER: Self = Self {
         kind: FluidKind::Water,
         amount: 8,
         falling: false,
+        family: 0,
     };
     pub const fn kind(self) -> FluidKind {
         self.kind
+    }
+    pub const fn family(self) -> u8 {
+        self.family
+    }
+    pub const fn in_family(mut self, family: u8) -> Self {
+        if !matches!(self.kind, FluidKind::Empty) {
+            self.family = family;
+        }
+        self
+    }
+    /// One fluid to flow with: same kind family and the same mod's.
+    pub const fn same_fluid(self, other: Self) -> bool {
+        self.kind.same_family(other.kind) && self.family == other.family
     }
     pub const fn amount(self) -> u8 {
         self.amount
@@ -172,7 +230,7 @@ impl FluidState {
             return Ok(0.0);
         }
         let above = [position[0], position[1].wrapping_add(1), position[2]];
-        Ok(if self.kind.same_family(world.fluid(above)?.kind) {
+        Ok(if self.same_fluid(world.fluid(above)?) {
             1.0
         } else {
             self.own_height()
@@ -195,8 +253,11 @@ impl FluidState {
         f32::from(self.amount) / 9.0
     }
     pub fn from_block(state: &BlockState) -> io::Result<Self> {
-        let water = state.name == "minecraft:water";
-        if water || state.name == "minecraft:lava" {
+        let mods = MOD_FLUIDS.read().expect("mod fluids poisoned");
+        let own = mods.iter().position(|f| f.block == state.name);
+        let family = own.map_or(0, |i| i as u8 + 1);
+        let water = state.name == "minecraft:water" || own.is_some_and(|i| !mods[i].lava_like);
+        if water || state.name == "minecraft:lava" || own.is_some() {
             let level = state
                 .properties
                 .get("level")
@@ -217,6 +278,7 @@ impl FluidState {
                     8 - level
                 },
                 falling: level >= 8,
+                family,
             });
         }
         if matches!(
@@ -279,6 +341,7 @@ pub struct FluidBlockBindings {
     air: BlockStateId,
     water: [BlockStateId; 16],
     lava: [BlockStateId; 16],
+    mods: Vec<[BlockStateId; 16]>,
 }
 impl FluidBlockBindings {
     pub fn new(registry: &BlockRegistry) -> io::Result<Self> {
@@ -302,6 +365,10 @@ impl FluidBlockBindings {
                 .ok_or_else(|| invalid("missing air block"))?,
             water: levels("minecraft:water")?,
             lava: levels("minecraft:lava")?,
+            mods: mod_fluids()
+                .iter()
+                .map(|f| levels(&f.block))
+                .collect::<io::Result<_>>()?,
         })
     }
     pub fn block(&self, state: FluidState) -> BlockStateId {
@@ -313,7 +380,12 @@ impl FluidBlockBindings {
         } else {
             8 - state.amount.min(8) + if state.falling { 8 } else { 0 }
         } as usize;
-        if state.kind.same_family(FluidKind::Water) {
+        if let Some(own) = usize::from(state.family)
+            .checked_sub(1)
+            .and_then(|i| self.mods.get(i))
+        {
+            own[level]
+        } else if state.kind.same_family(FluidKind::Water) {
             self.water[level]
         } else {
             self.lava[level]

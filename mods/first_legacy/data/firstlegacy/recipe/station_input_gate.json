@@ -1,0 +1,15 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "IC",
+    "I ",
+    "I "
+  ],
+  "key": {
+    "I": "minecraft:iron_ingot",
+    "C": "firstlegacy:station_casing"
+  },
+  "result": {
+    "id": "firstlegacy:station_input_gate"
+  }
+}

@@ -1,0 +1,1 @@
+{ "template": "minecraft:stick", "max_stack_size": 1, "components": { "minecraft:item_model": "minecraft:blaze_rod" } }

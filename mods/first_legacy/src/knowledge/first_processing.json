@@ -1,0 +1,35 @@
+{
+  "name": "Рудная линия",
+  "requires": ["firstlegacy:first_infuser"],
+  "unlocks": [
+    "mekanism:enrichment_chamber",
+    "mekanism:crusher",
+    "mekanism:energized_smelter",
+    "mekanism:osmium_compressor",
+    "mekanism:purification_chamber",
+    "mekanism:combiner",
+    "mekanism:enriched_carbon",
+    "mekanism:enriched_redstone",
+    "mekanism:enriched_diamond",
+    "mekanism:enriched_refined_obsidian",
+    "mekanism:enriched_gold",
+    "mekanism:enriched_tin"
+  ],
+  "parts": [
+    {
+      "text": "Дробилка, обогатитель и печь собраны вокруг одного стального корпуса.",
+      "hint": "У всех одна стальная основа.",
+      "candidates": ["mekanism:steel_casing", "mekanism:ingot_steel", "minecraft:iron_block"]
+    },
+    {
+      "text": "Один и тот же поршень двигает ножи и давит руду.",
+      "hint": "Работу делает поршень.",
+      "candidates": ["minecraft:piston", "mekanism:ingot_steel", "minecraft:iron_ingot"]
+    },
+    {
+      "text": "Схема одна: корпус, мотор, рабочая камера; меняется только насадка.",
+      "hint": "Корпус, мотор и камера — а насадка разная.",
+      "candidates": ["mekanism:basic_control_circuit", "minecraft:redstone", "minecraft:iron_ingot"]
+    }
+  ]
+}

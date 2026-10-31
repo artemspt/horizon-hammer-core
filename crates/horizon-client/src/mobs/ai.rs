@@ -929,7 +929,9 @@ fn ai_step(m: &mut Mob, w: &MobWorld, level_random: &mut LegacyRandom, events: &
     // roaring ravager). A mannequin is an Avatar, not a Mob: LivingEntity's
     // serverAiStep has no goals, so it only falls and is pushed.
     let immobile = (m.species() == Species::Ravager && super::ravager::immobile(m))
-        || m.species() == Species::Mannequin;
+        || m.species() == Species::Mannequin
+        // Mob.isNoAi: not `isEffectiveAi`.
+        || m.no_ai;
     if m.species() == Species::Piglin && m.alive() {
         super::piglin::celebrate(m, w);
     }
@@ -940,13 +942,20 @@ fn ai_step(m: &mut Mob, w: &MobWorld, level_random: &mut LegacyRandom, events: &
         m.ai.xxa = 0.0;
         m.ai.zza = 0.0;
     }
+    if let Some((at, speed)) = m.mod_move.take() {
+        m.nav_move_to(w, at, speed);
+    }
     m.handle_jumping(w);
     let input = Vec3::new(
         f64::from(m.ai.xxa),
         f64::from(m.ai.yya),
         f64::from(m.ai.zza),
     );
-    m.travel(w, input, events);
+    // LivingEntity.aiStep: only `isControlledByLocalInstance` travels, so a
+    // mob with no AI hangs where it is.
+    if !m.no_ai {
+        m.travel(w, input, events);
+    }
     push_entities(m, w, events);
     // Spider.tick: climbing while pressed against a wall.
     if m.kind.flags.climber {
@@ -1149,7 +1158,9 @@ fn server_ai_step(
     let mut goals = std::mem::take(&mut m.ai.goals);
     {
         let mut cx = Cx { w, events };
-        if id_based % 2 != 0 && tick_count > 1 {
+        if m.extra.mod_goal.is_some() {
+            // A mod's goal holds the mob; its code drives it.
+        } else if id_based % 2 != 0 && tick_count > 1 {
             targets.tick_running(m, &mut cx, false);
             goals.tick_running(m, &mut cx, false);
         } else {
@@ -1941,6 +1952,17 @@ fn tick_effects(m: &mut Mob) {
         // ticks by the mob's tickCount and never counts down.
         let infinite = *ticks == -1;
         let count = if infinite { m.age as i32 } else { *ticks };
+        if let Some(own) = horizon_client_core::potions::mod_effect(effect)
+            && count % (own.interval.max(1) >> (*amp).clamp(0, 30)).max(1) == 0
+        {
+            let level = (*amp + 1) as f32;
+            if own.damage > 0.0 {
+                m.damage(own.damage * level, Damage::of(DamageKind::Magic));
+            }
+            if own.heal > 0.0 && m.alive() {
+                m.health = (m.health + own.heal * level).min(m.attrs.max_health);
+            }
+        }
         match *effect {
             "minecraft:poison"
                 if count % interval(25) == 0 && !m.kind.flags.undead && m.health > 1.0 =>

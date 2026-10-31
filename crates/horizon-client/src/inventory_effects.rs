@@ -45,7 +45,7 @@ pub fn panels(
         .into_iter()
         .enumerate()
         .map(|(i, (effect, icon))| {
-            let mut name = translate(&format!("effect.minecraft.{}", effect.id))
+            let mut name = translate(&horizon_client_core::potions::effect_key(effect.id))
                 .unwrap_or_else(|| effect.id.to_owned());
             if (1..=9).contains(&effect.amplifier) {
                 let level = effect.amplifier + 1;
@@ -154,7 +154,7 @@ pub fn paint(
         }
         batch.sprite_scaled(
             atlas,
-            &format!("mob_effect/{}", panel.icon.id),
+            &horizon_client_core::potions::effect_sprite(&panel.icon.id),
             (panel.x + 7) as f32,
             (panel.y + 7) as f32,
             18.0,

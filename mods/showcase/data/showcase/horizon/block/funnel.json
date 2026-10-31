@@ -1,0 +1,6 @@
+{
+  "template": "minecraft:iron_block",
+  "properties": {
+    "shape_from": "minecraft:hopper"
+  }
+}

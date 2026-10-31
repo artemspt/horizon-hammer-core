@@ -963,7 +963,7 @@ pub fn mob_from_nbt(tag: &Tag, types: &HashMap<String, Arc<MobType>>, id: u32) -
     m.death_time = number(tag.get("DeathTime")).unwrap_or(0) as i32;
     // Mob.readAdditionalSaveData overrides what the constructor set (copper
     // golems and elder guardians start persistent).
-    m.persistent = flag(tag, "PersistenceRequired");
+    m.persistent = flag(tag, "PersistenceRequired") || m.kind.display;
     m.extra.pick_up_loot = flag(tag, "CanPickUpLoot");
     m.custom_name = custom_name(tag);
     m.custom_name_text = tag.get("CustomName").map(name_text);
@@ -977,7 +977,7 @@ pub fn mob_from_nbt(tag: &Tag, types: &HashMap<String, Arc<MobType>>, id: u32) -
         m.extra.in_love = number(tag.get("InLove")).unwrap_or(0) as i32;
     }
     m.name_visible = flag(tag, "CustomNameVisible");
-    m.no_ai = flag(tag, "NoAI");
+    m.no_ai = flag(tag, "NoAI") || m.kind.display;
     m.no_gravity = flag(tag, "NoGravity");
     m.glowing = flag(tag, "Glowing");
     m.ticks_frozen = number(tag.get("TicksFrozen")).unwrap_or(0) as i32;
@@ -1001,7 +1001,7 @@ pub fn mob_from_nbt(tag: &Tag, types: &HashMap<String, Arc<MobType>>, id: u32) -
         }
     }
     m.silent = flag(tag, "Silent");
-    m.invulnerable_flag = flag(tag, "Invulnerable");
+    m.invulnerable_flag = flag(tag, "Invulnerable") || m.kind.display;
     if m.species() == crate::mobs::Species::Bat {
         // Bat.readAdditionalSaveData: BatFlags bit 0, resting.
         m.extra.flag = number(tag.get("BatFlags")).unwrap_or(0) & 1 != 0;

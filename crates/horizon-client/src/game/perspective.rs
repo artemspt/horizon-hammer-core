@@ -163,6 +163,12 @@ pub(super) fn player_type(root: &Path) -> Option<Arc<MobType>> {
                 .map(|slim| [("player_slim#main".to_owned(), Arc::new(slim))].into())
                 .unwrap_or_default(),
             texture: "entity/player/wide/steve".into(),
+            display: false,
+            projectile: None,
+            through_blocks: false,
+            ticks: false,
+            mod_goals: Vec::new(),
+            part_spin: Vec::new(),
             brain: Brain::Passive,
             anim: Anim::Humanoid { zombie_arms: false },
             sounds: [

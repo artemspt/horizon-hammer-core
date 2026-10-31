@@ -303,6 +303,16 @@ fn play(path: &Path, report: &mut Report) -> Result<(), String> {
                 ServerAction::Net { channel, data, .. } => {
                     format!("sent {} byte(s) on {channel}", data.len())
                 }
+                ServerAction::Mob { id, .. } => format!("changed mob {id}"),
+                ServerAction::SpawnMob { kind, .. } => format!("spawned {kind}"),
+                ServerAction::DropItem { stack, .. } => {
+                    format!("dropped {} {}", stack.count, stack.item)
+                }
+                ServerAction::Explode { power, .. } => format!("explosion of power {power}"),
+                ServerAction::Undying { player, on } => format!("set undying {on} on {player}"),
+                ServerAction::Ore { ore, .. } => {
+                    format!("added ore {} in {}", ore.block, ore.biome)
+                }
                 ServerAction::Worldgen { biome, surface, .. } => {
                     format!("set worldgen surface {biome} to {surface}")
                 }

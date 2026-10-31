@@ -1,0 +1,9 @@
+# First Legacy (Наследие Первого), ported from the NeoForge mod in artemspt/halloween-mod.
+id = "firstlegacy"
+name = "First Legacy"
+version = "0.2.1"
+description = "Machines stay closed until you learn how they work: notes of the First and a research station"
+authors = ["Artem"]
+api = "0.3"
+side = "server"
+capabilities = ["players", "world", "entities", "registries"]

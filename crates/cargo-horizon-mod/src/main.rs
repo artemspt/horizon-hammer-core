@@ -180,10 +180,17 @@ fn build_in(root: &Path, release: bool) -> Result<PathBuf, String> {
     let manifest_text = std::fs::read_to_string(root.join(MANIFEST))
         .map_err(|e| format!("{MANIFEST}: {e} (run this in a mod's folder)"))?;
     let manifest = Manifest::parse(&manifest_text)?;
+    let both = manifest.two_halves();
+    let mut client = None;
     let (wasm, target_dir) = if root.join("Cargo.toml").exists() {
-        let (wasm, target) = compile(root, release)?;
+        let (wasm, target) = compile(root, release, both.then_some("server"))?;
         // The game refuses a component importing capabilities the manifest lacks.
         manifest.check_imports(component_imports(&wasm)?.iter().map(String::as_str))?;
+        if both {
+            let (half, _) = compile(root, release, Some("client"))?;
+            manifest.check_imports(component_imports(&half)?.iter().map(String::as_str))?;
+            client = Some(half);
+        }
         (Some(wasm), target)
     } else if manifest.capabilities.contains(&Capability::Registries) {
         (None, root.join("target"))
@@ -205,14 +212,19 @@ fn build_in(root: &Path, release: bool) -> Result<PathBuf, String> {
     let path = dir.join(format!("{}.hmod", manifest.id));
     // Write then rename, so a running game never reads half a file.
     let partial = path.with_extension("hmod.partial");
-    let bytes = Package::write_files(&manifest_text, wasm.as_deref(), &files)?;
+    let bytes = match (&wasm, &client) {
+        (Some(server), Some(client)) => {
+            Package::write_both(&manifest_text, server, client, &files)?
+        }
+        _ => Package::write_files(&manifest_text, wasm.as_deref(), &files)?,
+    };
     std::fs::write(&partial, bytes).map_err(|e| e.to_string())?;
     std::fs::rename(&partial, &path).map_err(|e| e.to_string())?;
     Ok(path)
 }
 
 /// Builds the crate for WebAssembly: its component, and Cargo's target folder.
-fn compile(root: &Path, release: bool) -> Result<(Vec<u8>, PathBuf), String> {
+fn compile(root: &Path, release: bool, half: Option<&str>) -> Result<(Vec<u8>, PathBuf), String> {
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
     let mut cmd = Command::new(cargo);
     cmd.current_dir(root).args([
@@ -224,6 +236,17 @@ fn compile(root: &Path, release: bool) -> Result<(Vec<u8>, PathBuf), String> {
     ]);
     if release {
         cmd.arg("--release");
+    }
+    // One crate, built once per half: `export_both!` picks by this cfg. Each
+    // keeps its own folder, or the two would rebuild each other every time.
+    if let Some(half) = half {
+        let flags = format!(
+            "--cfg\x1fhorizon_side=\"{half}\"\x1f--check-cfg\x1fcfg(horizon_side,values(\"client\",\"server\"))\x1f-Adead_code"
+        );
+        cmd.env("CARGO_ENCODED_RUSTFLAGS", flags);
+        if half == "client" {
+            cmd.args(["--target-dir", "target/horizon-client-half"]);
+        }
     }
     let out = cmd
         .stderr(Stdio::inherit())

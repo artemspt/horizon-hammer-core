@@ -101,6 +101,7 @@ pub fn apply(guest: &mut Guest, level: &Level) {
     guest.recipe_book = level.recipe_book.clone();
     guest.dimension = match level.dimension.as_str() {
         d @ ("minecraft:the_nether" | "minecraft:the_end") => d.to_owned(),
+        d if crate::mod_dimensions::index_of(d).is_some() => d.to_owned(),
         _ => "minecraft:overworld".to_owned(),
     };
     if level.ender_items.len() == 27 {

@@ -24,6 +24,9 @@ pub struct Ticks {
     /// `ComparatorBlockEntity.output` per comparator position (block-entity
     /// state owned by the level; persist it with the chunk if desired).
     pub comparator_outputs: std::collections::HashMap<BlockPos, i32>,
+    /// What server mods' blocks give: (weak signal, comparator reading).
+    /// Empty unless a mod asks, so a level without them pays one branch.
+    pub mod_outputs: std::collections::HashMap<BlockPos, (i32, i32)>,
     /// `RedstoneTorchBlock.RECENT_TOGGLES` (position, game time).
     pub torch_toggles: Vec<(BlockPos, i64)>,
     /// Moving-piston block entities in ticker order (render and collide
@@ -68,6 +71,7 @@ impl Ticks {
             random_tick_value: random_tick_seed,
             updater: NeighborUpdater::default(),
             comparator_outputs: Default::default(),
+            mod_outputs: Default::default(),
             torch_toggles: Vec::new(),
             moving_pistons: Vec::new(),
             piston_pushes: Vec::new(),

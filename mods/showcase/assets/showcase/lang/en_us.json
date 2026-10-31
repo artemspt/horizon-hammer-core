@@ -1,0 +1,22 @@
+{
+  "block.showcase.reactor": "Reactor",
+  "item.showcase.reactor": "Reactor",
+  "block.showcase.sun_ore": "Sun Ore",
+  "item.showcase.sun_ore": "Sun Ore",
+  "item.showcase.sun_blade": "Sun Blade",
+  "item.showcase.sun_bread": "Sun Bread",
+  "item.showcase.charged_cell": "Charged Cell",
+  "item.showcase.wand": "Showcase Wand",
+  "entity.showcase.guard": "Reactor Guard",
+  "block.showcase.pedestal": "Pedestal",
+  "item.showcase.pedestal": "Pedestal",
+  "entity.showcase.core": "Reactor Core",
+  "entity.showcase.bolt": "Sun Bolt",
+  "block.showcase.funnel": "Funnel",
+  "item.showcase.funnel": "Funnel",
+  "block.showcase.dial": "Dial",
+  "item.showcase.dial": "Dial",
+  "block.showcase.plasma": "Plasma",
+  "item.showcase.plasma_bucket": "Plasma Bucket",
+  "effect.showcase.shock": "Shock"
+}

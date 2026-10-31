@@ -1968,6 +1968,8 @@ enum Dim {
     Overworld,
     Nether,
     End,
+    /// A mod's (`horizon_client::mod_dimensions`).
+    Mod(u8),
 }
 impl Dim {
     fn id(self) -> &'static str {
@@ -1975,35 +1977,46 @@ impl Dim {
             Self::Overworld => "minecraft:overworld",
             Self::Nether => "minecraft:the_nether",
             Self::End => "minecraft:the_end",
+            Self::Mod(i) => {
+                horizon_client::mod_dimensions::get(i).map_or("minecraft:overworld", |d| d.id)
+            }
         }
     }
     fn from_id(id: &str) -> Self {
         match id {
             "minecraft:the_nether" => Self::Nether,
             "minecraft:the_end" => Self::End,
-            _ => Self::Overworld,
+            _ => horizon_client::mod_dimensions::index_of(id).map_or(Self::Overworld, Self::Mod),
+        }
+    }
+    /// The vanilla dimension whose type this one has.
+    fn base(self) -> Self {
+        match self {
+            Self::Mod(i) => horizon_client::mod_dimensions::get(i)
+                .map_or(Self::Overworld, |d| Self::from_id(d.base)),
+            other => other,
         }
     }
     /// `Level.getMinY`: the dimension type's minimum y.
     fn min_y(self) -> i32 {
-        match self {
+        match self.base() {
             Self::Overworld => MIN_Y,
-            Self::Nether | Self::End => 0,
+            _ => 0,
         }
     }
     /// `DimensionType.logicalHeight`.
     fn logical_height(self) -> i32 {
-        match self {
+        match self.base() {
             Self::Overworld => HEIGHT,
             Self::Nether => 128,
-            Self::End => 256,
+            _ => 256,
         }
     }
     /// `Level.getMaxY`: the dimension type's minimum y plus height, less one.
     fn max_y(self) -> i32 {
-        match self {
+        match self.base() {
             Self::Overworld => MIN_Y + HEIGHT - 1,
-            Self::Nether | Self::End => 255,
+            _ => 255,
         }
     }
 }
@@ -2617,6 +2630,7 @@ impl Game<'_> {
         self.swing_hand(Hand::Main, SwingAnimation::DEFAULT);
         // Player.drop: the drop statistics.
         self.stats.add("dropped", &thrown.item, thrown.count as i32);
+        self.mod_item_event("tossed", &thrown.item);
         self.stats.custom("drop", 1);
         self.throw_from_eyes(thrown, eye, true);
     }
@@ -2882,10 +2896,10 @@ impl Game<'_> {
             })
             .collect();
         let guest_boxes = self.lan_block_trigger_boxes();
-        let dimension = match self.dim {
-            Dim::Overworld => LevelDimension::Overworld,
+        let dimension = match self.dim.base() {
             Dim::Nether => LevelDimension::Nether,
             Dim::End => LevelDimension::End,
+            _ => LevelDimension::Overworld,
         };
         let rules = self.level_rules();
         let fire_players: Vec<[f64; 3]> = self
@@ -6211,7 +6225,10 @@ impl Game<'_> {
         if self.screen == Screen::Creative {
             return Self::creative_origin(batch);
         }
-        let (x, y) = batch.centered_origin(176.0, self.screen_height());
+        let (width, height) = self
+            .mod_menu_size()
+            .unwrap_or((176.0, self.screen_height()));
+        let (x, y) = batch.centered_origin(width, height);
         (x + self.recipe_book_shift(batch.width), y)
     }
     /// Slot ids: 0..36 player inventory, 100..109 crafting grid, 200 result.
@@ -6267,6 +6284,9 @@ impl Game<'_> {
     }
     /// InventoryMenu / CraftingMenu slot layouts.
     fn slot_position(&self, i: usize) -> (f32, f32) {
+        if let Some(position) = self.mod_menu_slot(i) {
+            return position;
+        }
         if self.creative_inventory_open()
             && let Some(position) = Creative::inventory_slot_position(i)
         {
@@ -6450,6 +6470,7 @@ impl Game<'_> {
                 .container
                 .and_then(|k| self.world.block_entities.get(&k))
             {
+                Some(_) if self.draw_mod_menu(batch, ox, oy) => {}
                 Some(BlockEntity::Chest(_)) if self.draw_machine_screen(batch, ox, oy) => {}
                 Some(BlockEntity::Chest(_)) => self.draw_chest_screen(batch, ox, oy),
                 Some(BlockEntity::Furnace(f)) => {
@@ -8127,6 +8148,35 @@ impl Game<'_> {
                 self.res
                     .block_entity_render()
                     .render(&scene, visible, &mut out);
+            }
+            #[cfg(feature = "mods")]
+            for m in self.mods.mods.world_models() {
+                if m.dimension != self.dim.id() {
+                    continue;
+                }
+                let time = (self.world.game_time as f32 + alpha as f32) / 20.0;
+                let yaw = (m.yaw + m.spin * time).to_radians();
+                let rotation = glam::Quat::from_rotation_y(-yaw)
+                    * glam::Quat::from_rotation_x(m.pitch.to_radians())
+                    * glam::Quat::from_rotation_z(m.roll.to_radians());
+                self.res.block_entity_render().render_mod_model(
+                    &scene,
+                    &m.model,
+                    glam::DVec3::new(m.x, m.y, m.z),
+                    rotation,
+                    m.scale,
+                    &|name, p| {
+                        for q in m.parts.iter().filter(|q| q.part == name) {
+                            p[0] += q.x;
+                            p[1] += q.y;
+                            p[2] += q.z;
+                            p[3] += q.pitch.to_radians();
+                            p[4] += q.yaw.to_radians();
+                            p[5] += q.roll.to_radians();
+                        }
+                    },
+                    &mut out,
+                );
             }
             self.mark_stage(out.len(), "DESTROY");
             for &(pos, stage) in &cracks {
@@ -9861,6 +9911,7 @@ impl Game<'_> {
                 let broken = stack.item.clone();
                 *cell = None;
                 self.stats.add("broken", &broken, 1);
+                self.mod_item_event("broke-item", &broken);
                 if let Some(eye) = self.eye_position() {
                     self.audio.play(
                         "minecraft:entity.item.break",
@@ -11092,8 +11143,11 @@ impl Game<'_> {
             rgba(16, 16, 16, 160),
         );
         // Unselected tabs behind the panel, then the panel, then the selected tab.
+        let page = self.creative_screen.page;
+        let on_page =
+            |t: &horizon_client::creative::Tab| t.page == page || (t.page == 0 && t.column >= 5);
         for (i, t) in tabs.iter().enumerate() {
-            if i != selected {
+            if i != selected && on_page(t) {
                 let (tx, ty) = Creative::tab_position(t);
                 batch.sprite(&self.gui.atlas, &tab_sprite(t, false), ox + tx, oy + ty);
             }
@@ -11111,8 +11165,37 @@ impl Game<'_> {
             batch.rect_uv(ox, oy, Creative::WIDTH, Creative::HEIGHT, r, u32::MAX);
         }
         let (tx, ty) = Creative::tab_position(&tab);
-        batch.sprite(&self.gui.atlas, &tab_sprite(&tab, true), ox + tx, oy + ty);
-        for t in &tabs {
+        if on_page(&tab) {
+            batch.sprite(&self.gui.atlas, &tab_sprite(&tab, true), ox + tx, oy + ty);
+        }
+        let pages = self.creative_screen.pages();
+        if pages > 1 {
+            let (left, right, y) = Creative::PAGE_ARROWS;
+            for (x, label) in [(left, "<"), (right, ">")] {
+                let hover = horizon_client::ui::hovered(self.cursor, ox + x, oy + y, 20.0, 20.0);
+                horizon_client::ui::button(
+                    batch,
+                    &self.gui.atlas,
+                    ox + x,
+                    oy + y,
+                    20.0,
+                    20.0,
+                    &horizon_client::text::Text::literal(label.to_owned()),
+                    true,
+                    hover,
+                );
+            }
+            horizon_client::ui::centered_text(
+                batch,
+                &self.gui.atlas,
+                &horizon_client::text::Text::literal(format!("{} / {pages}", page + 1)),
+                ox,
+                oy + y + 6.0,
+                Creative::WIDTH,
+                u32::MAX,
+            );
+        }
+        for t in tabs.iter().filter(|t| on_page(t)) {
             let (tx, ty) = Creative::tab_position(t);
             let stack = ItemStack {
                 item: Arc::from(t.icon.as_str()),
@@ -11232,7 +11315,7 @@ impl Game<'_> {
                 oy + Creative::SCROLL_Y + self.creative_screen.scroller_offset(),
             );
         }
-        for t in &tabs {
+        for t in tabs.iter().filter(|t| on_page(t)) {
             let (tx, ty) = Creative::tab_position(t);
             if self.cursor.0 >= ox + tx
                 && self.cursor.0 < ox + tx + 26.0
@@ -11280,8 +11363,23 @@ impl Game<'_> {
         let batch = HudBatch::new(size);
         let (ox, oy) = Self::creative_origin(&batch);
         let (cx, cy) = self.cursor;
+        if self.creative_screen.pages() > 1 {
+            let (left, right, y) = Creative::PAGE_ARROWS;
+            for (x, by) in [(left, -1), (right, 1)] {
+                if horizon_client::ui::hovered((cx, cy), ox + x, oy + y, 20.0, 20.0) {
+                    self.audio.play_button_click();
+                    self.creative_screen.turn_page(by);
+                    self.inv_drag = None;
+                    self.last_inv_click = None;
+                    return;
+                }
+            }
+        }
         let tabs = self.creative_screen.tabs.clone();
         for (i, t) in tabs.iter().enumerate() {
+            if !self.creative_screen.on_page(t) {
+                continue;
+            }
             let (tx, ty) = Creative::tab_position(t);
             if cx >= ox + tx && cx < ox + tx + 26.0 && cy >= oy + ty && cy < oy + ty + 32.0 {
                 select_creative_tab(&mut self.creative_screen, &mut self.inv_clicks, i);
@@ -12345,7 +12443,11 @@ impl Game<'_> {
         }
     }
     fn clear_lod(&mut self) {
-        self.lod = None;
+        // Its worker finishes what it is on before it stops: not on this thread,
+        // or a mod turning far terrain off freezes the window meanwhile.
+        if let Some(lod) = self.lod.take() {
+            std::thread::spawn(move || drop(lod));
+        }
         self.lod_source_attempted = false;
         self.lod_observe.clear();
         self.lod_covered_at = None;

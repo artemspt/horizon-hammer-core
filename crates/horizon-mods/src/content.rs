@@ -73,6 +73,13 @@ pub struct BlockProperties {
     pub map_color: Option<u8>,
     /// A vanilla block whose sounds this block uses.
     pub sounds: Option<String>,
+    /// A vanilla block whose shape this one has (its default state's collision,
+    /// outline, occlusion), whatever its template does: a stone-like block
+    /// shaped as `minecraft:hopper`.
+    pub shape_from: Option<String>,
+    /// Its own shape: boxes `[x0, y0, z0, x1, y1, z1]` in pixels, 0 to 16, for
+    /// collision and outline alike. It doesn't hide its neighbours' faces.
+    pub shape: Option<Vec<[f32; 6]>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -83,6 +90,19 @@ struct BlockFile {
     properties: BlockProperties,
     #[serde(default = "yes")]
     item: bool,
+    /// Block state properties of its own: `{"charge": [0, 1, 2, 3]}`, over the
+    /// template's. The first value of each is the default.
+    #[serde(default)]
+    states: std::collections::BTreeMap<String, Vec<serde_json::Value>>,
+}
+/// A state value as the game writes it: `3`, `true`, `on`.
+fn state_value(v: &serde_json::Value) -> Option<String> {
+    match v {
+        serde_json::Value::String(s) => Some(s.clone()),
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        serde_json::Value::Bool(b) => Some(b.to_string()),
+        _ => None,
+    }
 }
 fn yes() -> bool {
     true
@@ -99,6 +119,161 @@ pub struct Block {
     pub properties: BlockProperties,
     /// Also add a block item with the same id.
     pub item: bool,
+    /// Its own state properties, each with its values, first the default.
+    pub states: std::collections::BTreeMap<String, Vec<String>>,
+}
+impl Block {
+    /// How many copies of each template state its own properties make.
+    pub fn state_combos(&self) -> u32 {
+        self.states.values().map(|v| v.len() as u32).product()
+    }
+    /// Each copy's values; the first property's value changes slowest.
+    pub fn state_values(&self) -> Vec<Vec<(&str, &str)>> {
+        let mut out = vec![Vec::new()];
+        for (name, values) in &self.states {
+            out = out
+                .into_iter()
+                .flat_map(|row: Vec<(&str, &str)>| {
+                    values.iter().map(move |v| {
+                        let mut row = row.clone();
+                        row.push((name.as_str(), v.as_str()));
+                        row
+                    })
+                })
+                .collect();
+        }
+        out
+    }
+}
+
+/// A fluid the mod adds (`data/<id>/horizon/fluid/*.json`): it behaves as its
+/// `like` does, flows apart from it, and looks its own.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct FluidFile {
+    /// `water` or `lava`: swimming, burning, how it meets the other one.
+    #[serde(default = "water_like")]
+    pub like: String,
+    /// Textures as `<ns>:block/<path>`.
+    pub still: String,
+    pub flow: String,
+    /// `0xRRGGBB` multiplied over the textures.
+    #[serde(default)]
+    pub color: Option<u32>,
+    /// Light emitted, 0 to 15.
+    #[serde(default)]
+    pub light: Option<u8>,
+    /// Ticks between flow steps; unset keeps `like`'s.
+    #[serde(default)]
+    pub tick_rate: Option<i32>,
+    /// Lost per block flowed, 1 goes 7 blocks; unset keeps `like`'s.
+    #[serde(default)]
+    pub drop_off: Option<i32>,
+    /// Two sources make a third; unset keeps `like`'s.
+    #[serde(default)]
+    pub infinite: Option<bool>,
+    /// Add `<id>_bucket`.
+    #[serde(default = "yes")]
+    pub bucket: bool,
+}
+fn water_like() -> String {
+    "water".into()
+}
+
+/// A declared fluid: its block's id and the file.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Fluid {
+    pub id: String,
+    pub file: FluidFile,
+}
+
+/// A dimension the mod adds (`data/<id>/horizon/dimension/*.json`).
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct DimensionFile {
+    /// The vanilla type it is over: `overworld`, `the_nether` or `the_end`
+    /// (height, sky, light, fog).
+    #[serde(default = "overworld")]
+    pub base: String,
+    pub generator: DimensionGenerator,
+}
+fn overworld() -> String {
+    "overworld".into()
+}
+/// What makes a mod dimension's chunks.
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "lowercase", deny_unknown_fields)]
+pub enum DimensionGenerator {
+    /// Vanilla's terrain of `dimension`, on a seed of its own.
+    Noise { dimension: String },
+    /// Layers from the bottom up.
+    Flat {
+        layers: Vec<FlatLayer>,
+        #[serde(default)]
+        biome: Option<String>,
+    },
+    /// The mod's `logic-events.generate-chunk`.
+    Code,
+}
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct FlatLayer {
+    pub block: String,
+    pub height: u32,
+}
+/// A declared dimension.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Dimension {
+    pub id: String,
+    pub file: DimensionFile,
+}
+
+/// A status effect the mod adds (`data/<id>/horizon/effect/*.json`).
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct EffectFile {
+    /// `beneficial`, `harmful` or `neutral`.
+    #[serde(rename = "type", default = "neutral")]
+    pub category: String,
+    /// `0xRRGGBB` of its particles.
+    #[serde(default)]
+    pub color: u32,
+    /// Hurt this much every `interval` ticks, per level.
+    #[serde(default)]
+    pub damage: f32,
+    /// Heal this much every `interval` ticks, per level.
+    #[serde(default)]
+    pub heal: f32,
+    #[serde(default = "twenty")]
+    pub interval: i32,
+    /// Attribute modifiers while it lasts, per level.
+    #[serde(default)]
+    pub attributes: Vec<EffectAttribute>,
+}
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct EffectAttribute {
+    pub attribute: String,
+    pub amount: f64,
+    /// `add_value`, `add_multiplied_base` or `add_multiplied_total`.
+    #[serde(default = "add_value")]
+    pub operation: String,
+}
+fn neutral() -> String {
+    "neutral".into()
+}
+fn twenty() -> i32 {
+    20
+}
+fn add_value() -> String {
+    "add_value".into()
+}
+
+/// A declared effect.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Effect {
+    pub id: String,
+    pub file: EffectFile,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
@@ -116,6 +291,8 @@ struct ItemFile {
     template: String,
     max_stack_size: Option<u8>,
     rarity: Option<Rarity>,
+    #[serde(default)]
+    components: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
 /// An item the mod adds: a vanilla template item's components under a new
@@ -127,6 +304,9 @@ pub struct Item {
     pub template: String,
     pub max_stack_size: Option<u8>,
     pub rarity: Option<Rarity>,
+    /// Vanilla components over the template's (`minecraft:food`,
+    /// `minecraft:tool`, `minecraft:max_damage`...); null removes one.
+    pub components: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
 #[derive(Debug)]
@@ -143,6 +323,9 @@ pub struct Content {
     pub files: Vec<String>,
     pub blocks: Vec<Block>,
     pub items: Vec<Item>,
+    pub fluids: Vec<Fluid>,
+    pub effects: Vec<Effect>,
+    pub dimensions: Vec<Dimension>,
     /// The namespaces it owns: the mod id, then the manifest's `namespaces`.
     pub namespaces: Vec<String>,
 }
@@ -229,6 +412,9 @@ impl Content {
             files,
             blocks: Vec::new(),
             items: Vec::new(),
+            fluids: Vec::new(),
+            effects: Vec::new(),
+            dimensions: Vec::new(),
             namespaces: manifest.owned_namespaces().map(str::to_owned).collect(),
         };
         content.check(manifest)?;
@@ -271,6 +457,7 @@ impl Content {
         }
         let mut blocks = Vec::new();
         let mut items = Vec::new();
+        let (mut fluids, mut effects, mut dimensions) = (Vec::new(), Vec::new(), Vec::new());
         for name in &self.files {
             let mut parts = name.splitn(3, '/');
             let (top, namespace, rest) = (
@@ -311,17 +498,84 @@ impl Content {
                 blocks.push((block, name.clone()));
             } else if let Some(item) = parse("item") {
                 items.push((item, name.clone()));
-            } else {
+            } else if let Some(fluid) = parse("fluid") {
+                fluids.push((fluid, name.clone()));
+            } else if let Some(effect) = parse("effect") {
+                effects.push((effect, name.clone()));
+            } else if let Some(dimension) = parse("dimension") {
+                dimensions.push((dimension, name.clone()));
+            } else if parse("entity").is_none() && parse("model").is_none() {
                 return Err(format!(
-                    "{name}: data/{id}/horizon/ holds block/*.json and item/*.json only"
+                    "{name}: data/{id}/horizon/ holds block/, item/, fluid/, effect/, entity/, model/ and dimension/*.json only"
                 ));
             }
+        }
+        for (dimension, name) in dimensions {
+            let file: DimensionFile =
+                serde_json::from_slice(&self.file(&name)?).map_err(|e| format!("{name}: {e}"))?;
+            if !matches!(file.base.as_str(), "overworld" | "the_nether" | "the_end") {
+                return Err(format!("{name}: base is overworld, the_nether or the_end"));
+            }
+            self.dimensions.push(Dimension {
+                id: dimension,
+                file,
+            });
+        }
+        for (effect, name) in effects {
+            let file: EffectFile =
+                serde_json::from_slice(&self.file(&name)?).map_err(|e| format!("{name}: {e}"))?;
+            if !matches!(file.category.as_str(), "beneficial" | "harmful" | "neutral") {
+                return Err(format!("{name}: type is beneficial, harmful or neutral"));
+            }
+            if file.interval < 1 {
+                return Err(format!("{name}: interval is 1 or more"));
+            }
+            self.effects.push(Effect { id: effect, file });
+        }
+        // A fluid is a block copying its `like` and, usually, a bucket.
+        for (fluid, name) in fluids {
+            let file: FluidFile =
+                serde_json::from_slice(&self.file(&name)?).map_err(|e| format!("{name}: {e}"))?;
+            if !matches!(file.like.as_str(), "water" | "lava") {
+                return Err(format!("{name}: like is water or lava"));
+            }
+            if file.light.is_some_and(|v| v > 15) {
+                return Err(format!("{name}: light is 0 to 15"));
+            }
+            self.blocks.push(Block {
+                id: fluid.clone(),
+                template: format!("minecraft:{}", file.like),
+                properties: BlockProperties {
+                    light: file.light,
+                    ..Default::default()
+                },
+                item: false,
+                states: Default::default(),
+            });
+            if file.bucket {
+                self.items.push(Item {
+                    id: format!("{fluid}_bucket"),
+                    template: format!("minecraft:{}_bucket", file.like),
+                    max_stack_size: None,
+                    rarity: None,
+                    components: Default::default(),
+                });
+            }
+            self.fluids.push(Fluid { id: fluid, file });
         }
         let mut ids = BTreeSet::new();
         for (block, name) in blocks {
             let file: BlockFile =
                 serde_json::from_slice(&self.file(&name)?).map_err(|e| format!("{name}: {e}"))?;
             check_block(&file).map_err(|e| format!("{name}: {e}"))?;
+            let mut states = std::collections::BTreeMap::new();
+            for (key, values) in &file.states {
+                let values: Option<Vec<String>> = values.iter().map(state_value).collect();
+                match values {
+                    Some(v) if !v.is_empty() => states.insert(key.clone(), v),
+                    _ => return Err(format!("{name}: state {key}: a list of values")),
+                };
+            }
             if file.item {
                 ids.insert(block.clone());
             }
@@ -330,6 +584,7 @@ impl Content {
                 template: file.template,
                 properties: file.properties,
                 item: file.item,
+                states,
             });
         }
         for (item, name) in items {
@@ -344,6 +599,9 @@ impl Content {
             if file.max_stack_size.is_some_and(|n| !(1..=99).contains(&n)) {
                 return Err(format!("{name}: max_stack_size is 1 to 99"));
             }
+            if let Some(c) = file.components.keys().find(|c| !c.contains(':')) {
+                return Err(format!("{name}: component {c:?} needs its namespace"));
+            }
             if !ids.insert(item.clone()) {
                 return Err(format!("{name}: {item} is also a block's item"));
             }
@@ -352,6 +610,7 @@ impl Content {
                 template: file.template,
                 max_stack_size: file.max_stack_size,
                 rarity: file.rarity,
+                components: file.components,
             });
         }
         Ok(())
@@ -384,6 +643,17 @@ fn check_block(file: &BlockFile) -> Result<(), String> {
     }
     if p.map_color.is_some_and(|c| c > 61) {
         return Err("map_color is a MapColor id, 0 to 61".into());
+    }
+    if let Some(boxes) = &p.shape {
+        let good = |b: &[f32; 6]| {
+            b.iter().all(|v| (0.0..=16.0).contains(v)) && b[0] < b[3] && b[1] < b[4] && b[2] < b[5]
+        };
+        if boxes.is_empty() || boxes.len() > 64 || !boxes.iter().all(good) {
+            return Err("shape is 1 to 64 boxes [x0, y0, z0, x1, y1, z1] within 0 to 16".into());
+        }
+    }
+    if p.shape_from.as_deref().is_some_and(|s| !vanilla_id(s)) {
+        return Err("shape_from names a vanilla block (minecraft:...)".into());
     }
     if p.sounds.as_deref().is_some_and(|s| !vanilla_id(s)) {
         return Err("sounds names a vanilla block (minecraft:...)".into());
@@ -423,6 +693,31 @@ fn walk(root: &Path, dir: &Path, out: &mut Vec<(String, u64)>) -> Result<(), Str
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn own_states_multiply_and_the_first_is_the_default() {
+        let block = Block {
+            id: "a:b".into(),
+            template: "minecraft:stone".into(),
+            properties: Default::default(),
+            item: true,
+            states: [
+                (
+                    "lit".to_owned(),
+                    vec!["false".to_owned(), "true".to_owned()],
+                ),
+                (
+                    "n".to_owned(),
+                    vec!["0".to_owned(), "1".to_owned(), "2".to_owned()],
+                ),
+            ]
+            .into(),
+        };
+        assert_eq!(block.state_combos(), 6);
+        let values = block.state_values();
+        assert_eq!(values[0], [("lit", "false"), ("n", "0")]);
+        assert_eq!(values[5], [("lit", "true"), ("n", "2")]);
+    }
     use crate::manifest::Package;
 
     const MANIFEST_TEXT: &str = r#"
@@ -478,6 +773,7 @@ capabilities = ["registries"]
                     ..BlockProperties::default()
                 },
                 item: true,
+                states: Default::default(),
             }]
         );
         assert_eq!(content.items[0].id, "ruby:ruby");
@@ -548,7 +844,14 @@ capabilities = ["registries"]
             ],
         );
         assert!(e.contains("also a block's item"), "{e}");
-        refused("other-kind", &[("data/ruby/horizon/entity/a.json", b"{}")]);
+        refused("other-kind", &[("data/ruby/horizon/biome/a.json", b"{}")]);
+        refused(
+            "component",
+            &[(
+                "data/ruby/horizon/item/a.json",
+                br#"{"template": "minecraft:stick", "components": {"food": {}}}"#,
+            )],
+        );
         refused(
             "stack",
             &[(

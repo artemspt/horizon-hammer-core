@@ -1,0 +1,11 @@
+{
+  "template": "minecraft:iron_block",
+  "states": {
+    "level": [
+      0,
+      1,
+      2,
+      3
+    ]
+  }
+}

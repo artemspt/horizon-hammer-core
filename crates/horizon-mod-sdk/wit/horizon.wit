@@ -103,6 +103,15 @@ interface storage {
     set: func(key: string, value: list<u8>) -> result<_, string>;
     /// No error if `key` was already absent.
     delete: func(key: string);
+    /// A setting the player can edit: `horizon-mods/config/<mod id>.toml`,
+    /// made on first run from the manifest's `[config]` table, which also
+    /// fills what the file leaves out. Read when the mod starts: `/hmod
+    /// reload` reads it again. None for a key in neither.
+    config: func(key: string) -> option<string>;
+    /// A file of the mod's own package: `data/<mod id>/machines.json`, the
+    /// data a NeoForge mod loads with a reload listener. Only under `assets/`
+    /// or `data/`, in a mod with capability `registries`. None when absent.
+    read-resource: func(path: string) -> option<list<u8>>;
 }
 
 /// Capability `command`: vanilla commands run as the player, with the
@@ -355,6 +364,67 @@ interface render {
         item(item-shape),
         text(text-shape),
     }
+    /// One part of a placed model, moved from where the file puts it.
+    record part-pose {
+        /// As in the model's `parts`.
+        part: string,
+        /// Pixels added to its position.
+        x: f32,
+        y: f32,
+        z: f32,
+        /// Degrees added to its rotation.
+        pitch: f32,
+        yaw: f32,
+        roll: f32,
+    }
+    /// A model of `data/<mod>/horizon/model/<name>.json` standing in the world.
+    record placed-model {
+        /// `<mod>:<name>`; an unknown one draws nothing.
+        model: string,
+        dimension: string,
+        x: f64,
+        y: f64,
+        z: f64,
+        /// Degrees.
+        yaw: f32,
+        pitch: f32,
+        roll: f32,
+        /// Degrees of yaw a second, turned smoothly by the game.
+        spin: f32,
+        /// 1.0 is the model's own size.
+        scale: f32,
+        /// Its parts' poses now; a part's `spin` in the file turns by itself.
+        parts: list<part-pose>,
+    }
+    /// Replaces the models the mod has in the world, up to 1024: drawn every
+    /// frame until replaced, the way a block entity renderer draws a machine's
+    /// moving parts. An empty list removes them.
+    set-models: func(models: list<placed-model>);
+    /// How the windows titled `title` look: real menus (`storages.open-menu`),
+    /// their slots, cursor and shift-clicks all the server's, laid out by the mod.
+    record menu-layout {
+        title: string,
+        /// The window's size in GUI pixels.
+        width: f32,
+        height: f32,
+        /// Where each of the storage's slots goes, in order; one not listed is hidden.
+        slots: list<point>,
+        /// The top left of the player's inventory, the hotbar 58 below it.
+        inventory: point,
+        /// Drawn under the slots, from the window's top left.
+        shapes: list<shape>,
+    }
+    /// Replaces the mod's window layouts.
+    set-menu-layouts: func(layouts: list<menu-layout>);
+    /// A place on a canvas that hears clicks: `ui-events::select(id, 0)`.
+    record canvas-area {
+        id: u32,
+        rect: rect,
+    }
+    /// Opens or updates a screen drawn entirely by the mod (it needs capability
+    /// `ui` too): `shapes` in GUI pixels, up to 1024, in any layout, a machine's
+    /// slots and gauges among them. It leaves as `ui.open-screen`'s does.
+    open-canvas: func(title: string, shapes: list<shape>, areas: list<canvas-area>);
     /// Replaces the mod's HUD shapes: up to 1024, drawn every frame in
     /// order over the HUD (after the hotbar, under chat and screens), hidden
     /// with the HUD (F1). An empty list removes them.
@@ -664,6 +734,46 @@ interface players {
         /// Hit points as vanilla counts them: 20 is full health without effects.
         health: f32,
     }
+    /// How a stack looks, beyond its item.
+    record item-look {
+        /// Its name, as an anvil's: none keeps what it has.
+        name: option<string>,
+        /// Lines under its name.
+        lore: list<string>,
+        /// The item model it shows: `mymod:press_tier_2`.
+        model: option<string>,
+        /// Forces the enchanted shine on or off.
+        glint: option<bool>,
+    }
+    /// The same stack with this look, seen by every client.
+    style-stack: func(stack: item-stack, look: item-look) -> result<item-stack, string>;
+    /// While on, a blow that would kill this player leaves them on 1 health,
+    /// as a totem does with no totem used and no effects. Until the world closes.
+    set-undying: func(player: string, on: bool) -> result<_, string>;
+    /// Whether a player is holding sneak, as of the tick's start.
+    sneaking: func(player: string) -> bool;
+    /// Where the player looks: yaw and pitch in degrees, as F3 shows them.
+    look: func(player: string) -> option<tuple<f32, f32>>;
+    /// The mod's bytes on a player under `key`, as `set-data` left them:
+    /// saved with the world, kept through death and leaving (NeoForge's data
+    /// attachments). Each mod sees only its own.
+    get-data: func(player: string, key: string) -> option<list<u8>>;
+    /// Keeps up to 65536 bytes on a player, up to 64 keys per mod and player.
+    /// Empty `data` removes the key.
+    set-data: func(player: string, key: string, data: list<u8>) -> result<_, string>;
+    /// What happened to players since the last tick, for a mod's `tick`.
+    record player-event {
+        player: string,
+        /// `died`, `respawned`, `changed-dimension` (detail: the new one),
+        /// `crafted` (detail: the recipe), `tossed`, `used-item`, `broke-item`
+        /// (detail: the item) or `targeted` (detail: the mob's id). With no
+        /// player, `block-gone` (detail: `dimension x y z`): a storage's block
+        /// went, however it did. New kinds may appear: ignore others.
+        kind: string,
+        detail: string,
+    }
+    /// This tick's player events. Asking twice in a tick gives them twice.
+    poll-events: func() -> list<player-event>;
     /// An item stack, as server mods hand it around (inventories, block
     /// storages, item events).
     record item-stack {
@@ -703,6 +813,57 @@ interface players {
     /// inventory, as `/clear` does: how many it holds of it now, so how many
     /// go at the tick's end.
     take: func(player: string, item: string, count: u32) -> u32;
+
+    /// The online player with this name.
+    by-name: func(name: string) -> option<player>;
+    /// The online player with this id.
+    by-id: func(id: string) -> option<player>;
+    /// Whether a player with this id is online.
+    is-online: func(id: string) -> bool;
+    /// How many players are online.
+    count: func() -> u32;
+    /// The players in a dimension within `radius` blocks, nearest first.
+    near: func(dimension: string, x: f64, y: f64, z: f64, radius: f64) -> list<player>;
+    /// What the player holds in the main hand, as of the tick's start.
+    held-item: func(player: string) -> option<item-stack>;
+    /// What the player holds in the off hand, as of the tick's start.
+    offhand-item: func(player: string) -> option<item-stack>;
+    /// What the player wears: feet, legs, chest, head. Empty when not online.
+    armor: func(player: string) -> list<option<item-stack>>;
+    /// How many of `item` the whole inventory holds.
+    count-item: func(player: string, item: string) -> u32;
+    /// Whether the inventory holds at least `count` of `item`.
+    has-item: func(player: string, item: string, count: u32) -> bool;
+    /// Empty slots in the hotbar and main inventory.
+    free-slots: func(player: string) -> u32;
+    /// The first slot (`inventory`'s numbering) holding `item`.
+    find-item: func(player: string, item: string) -> option<u32>;
+    /// `/gamemode`.
+    set-game-mode: func(player: string, mode: game-mode) -> result<_, string>;
+    /// `/clear`: empties the whole inventory.
+    clear-inventory: func(player: string) -> result<_, string>;
+    /// `/title`: a big line on the player's screen, and a smaller one under it.
+    show-title: func(player: string, title: string, subtitle: option<string>) -> result<_, string>;
+    /// `/title actionbar`: a line over the hotbar.
+    action-bar: func(player: string, text: string) -> result<_, string>;
+    /// `/title times`: fade in, stay and fade out, in ticks.
+    set-title-times: func(player: string, fade-in: u32, stay: u32, fade-out: u32) -> result<_, string>;
+    /// `/experience add`: experience points; negative takes them away.
+    add-experience: func(player: string, points: s32) -> result<_, string>;
+    /// `/experience add`: whole levels; negative takes them away.
+    add-levels: func(player: string, levels: s32) -> result<_, string>;
+    /// `/spawnpoint`: where the player respawns.
+    set-spawn: func(player: string, dimension: string, x: s32, y: s32, z: s32) -> result<_, string>;
+    /// `/kick`. Single player's owner can't be kicked, as in vanilla.
+    kick: func(player: string, reason: string) -> result<_, string>;
+    /// `/playsound`: a sound only this player hears, where they stand.
+    play-sound: func(player: string, sound: string, volume: f32, pitch: f32) -> result<_, string>;
+    /// `/stopsound`: stops every sound this player hears.
+    stop-sounds: func(player: string) -> result<_, string>;
+    /// `/advancement grant ... only`.
+    grant-advancement: func(player: string, advancement: string) -> result<_, string>;
+    /// `/advancement revoke ... only`.
+    revoke-advancement: func(player: string, advancement: string) -> result<_, string>;
 }
 
 /// Capability `world`, server mods only (manifest `api = "0.3"`,
@@ -754,6 +915,102 @@ interface %world {
     /// start. Known for blocks a server mod keeps data or a storage on; none
     /// elsewhere.
     redstone-power: func(dimension: string, x: s32, y: s32, z: s32) -> option<u8>;
+    /// The block at a position gives this weak redstone signal (0 to 15) on
+    /// every side: wires, lamps and pistons beside it hear it from the next
+    /// tick. Saved with the world, gone with the block; 0 stops it. Works in
+    /// the level the server ticks last.
+    set-redstone-output: func(dimension: string, x: s32, y: s32, z: s32, signal: u8) -> result<_, string>;
+    /// What a comparator reads from the block at a position (0 to 15), as a
+    /// chest's fill level: saved and gone as `set-redstone-output`.
+    set-comparator-output: func(dimension: string, x: s32, y: s32, z: s32, signal: u8) -> result<_, string>;
+    /// The mod's own bytes saved with this world under `key`, as `set-saved`
+    /// left them: what a world has learned or owns, unlike `storage`, which
+    /// is the same in every world. Each mod sees only its own. Worlds lend
+    /// these after `init`: read them from the first tick on.
+    get-saved: func(key: string) -> option<list<u8>>;
+    /// Keeps `data` (up to 1 MiB) under `key` (up to 64 keys per mod) in this
+    /// world's save. Empty `data` removes it.
+    set-saved: func(key: string, data: list<u8>) -> result<_, string>;
+    /// Whether a mod with this id is running: for optional links between
+    /// mods (NeoForge's `ModList.isLoaded`). Known from the first tick on.
+    mod-loaded: func(id: string) -> bool;
+    /// Leaves a message for a running mod, which reads it with `mod-receive`.
+    /// Up to 64 KiB each, and 1024 waiting per mod.
+    mod-send: func(target: string, channel: string, data: list<u8>) -> result<_, string>;
+    /// The messages waiting for this mod, oldest first, as (sender, channel,
+    /// data). They are not saved.
+    mod-receive: func() -> list<tuple<string, string, list<u8>>>;
+    /// Whether an item is in an item tag: `c:ingots`, `minecraft:logs`.
+    item-has-tag: func(item: string, tag: string) -> bool;
+    /// Whether a block is in a block tag: `minecraft:mineable/pickaxe`.
+    block-has-tag: func(block: string, tag: string) -> bool;
+    /// Whether an entity type is in an entity type tag: `minecraft:undead`.
+    entity-has-tag: func(kind: string, tag: string) -> bool;
+    /// Items no crafting grid makes while this list stands (per mod, the
+    /// last call wins; everyone's lists add up), for mods that open recipes by
+    /// progress. Vanilla's and other mods' recipes alike; at most 4096.
+    set-locked-results: func(items: list<string>) -> result<_, string>;
+
+    /// Block states at many positions at once, in order: cheaper than asking
+    /// one by one. None where no chunk is loaded. At most 4096.
+    get-blocks: func(dimension: string, positions: list<tuple<s32, s32, s32>>) -> result<list<option<string>>, string>;
+    /// Whether the chunk holding this column is loaded.
+    is-loaded: func(dimension: string, x: s32, z: s32) -> bool;
+    /// Whether the block is air of any kind; false where no chunk is loaded.
+    is-air: func(dimension: string, x: s32, y: s32, z: s32) -> bool;
+    /// The block's id without its properties: `minecraft:oak_log`.
+    block-id: func(dimension: string, x: s32, y: s32, z: s32) -> option<string>;
+    /// One property of the block's state: `axis` of an oak log gives `y`.
+    block-property: func(dimension: string, x: s32, y: s32, z: s32, name: string) -> option<string>;
+    /// `set-blocks` for one block.
+    set-block: func(dimension: string, x: s32, y: s32, z: s32, state: string) -> result<_, string>;
+    /// Changes one property of the block's state, keeping the others.
+    set-block-property: func(dimension: string, x: s32, y: s32, z: s32, name: string, value: string) -> result<_, string>;
+    /// Removes a block as `/setblock ... destroy` does, with its drops and
+    /// particles when `drop`, or quietly.
+    break-block: func(dimension: string, x: s32, y: s32, z: s32, drop: bool) -> result<_, string>;
+    /// Sets every block of a box, corners included: at most 4096.
+    fill: func(dimension: string, x1: s32, y1: s32, z1: s32, x2: s32, y2: s32, z2: s32, state: string) -> result<_, string>;
+    /// Positions in a box holding `block` (an id, or a full state), up to
+    /// `limit` (at most 4096). A box of up to 65536 blocks.
+    find-blocks: func(dimension: string, x1: s32, y1: s32, z1: s32, x2: s32, y2: s32, z2: s32, block: string, limit: u32) -> result<list<tuple<s32, s32, s32>>, string>;
+    /// How many blocks of a box hold `block`. A box of up to 65536 blocks.
+    count-blocks: func(dimension: string, x1: s32, y1: s32, z1: s32, x2: s32, y2: s32, z2: s32, block: string) -> result<u32, string>;
+    /// The y of the highest block that isn't air in a column.
+    height-at: func(dimension: string, x: s32, z: s32) -> option<s32>;
+    /// Ticks the world has run, as of the tick's start.
+    game-time: func() -> option<u64>;
+    /// The time of day (0 to 24000 is one day, and it goes on counting).
+    day-time: func() -> option<u64>;
+    /// `/time set`.
+    set-time: func(ticks: u32) -> result<_, string>;
+    /// `/weather`: `clear`, `rain` or `thunder` for `seconds` (at least 1).
+    set-weather: func(weather: string, seconds: u32) -> result<_, string>;
+    /// `/gamerule`: `keep_inventory`, `true`.
+    set-gamerule: func(rule: string, value: string) -> result<_, string>;
+    /// `/difficulty`: `peaceful`, `easy`, `normal` or `hard`.
+    set-difficulty: func(difficulty: string) -> result<_, string>;
+    /// `/setworldspawn`.
+    set-world-spawn: func(x: s32, y: s32, z: s32) -> result<_, string>;
+    /// Strikes lightning at a position.
+    lightning: func(dimension: string, x: f64, y: f64, z: f64) -> result<_, string>;
+    /// An explosion of `power` (a creeper's is 3, TNT's 4), at most 16, as
+    /// game rules allow, asked of `game-events.explosion`.
+    explode: func(dimension: string, x: f64, y: f64, z: f64, power: f32) -> result<_, string>;
+    /// Whether the mod keeps data on this block.
+    has-data: func(dimension: string, x: s32, y: s32, z: s32) -> bool;
+    /// The keys this mod has under `set-saved`.
+    saved-keys: func() -> list<string>;
+    /// The ids of the running mods.
+    running-mods: func() -> list<string>;
+    /// Whether a string names a block state: check before storing one.
+    is-valid-state: func(state: string) -> bool;
+    /// Whether the game knows this item.
+    item-exists: func(item: string) -> bool;
+    /// An item's stack size; none for an item the game doesn't know.
+    max-stack-size: func(item: string) -> option<u32>;
+    /// A random number, different on each call (the sandbox has no clock to seed one from).
+    random-u32: func() -> u32;
 }
 
 /// Capability `world`: items, energy and fluids kept on blocks, which every
@@ -826,6 +1083,53 @@ interface storages {
     /// text. It closes when the player leaves or the storage goes. Err for
     /// another shape, or a player not online.
     open-menu: func(player: string, dimension: string, x: s32, y: s32, z: s32, title: string) -> result<_, string>;
+    /// `open-menu` with the window chosen by name: `minecraft:generic_9x1` to
+    /// `generic_9x6`, `generic_3x3`, `shulker_box` (27 slots), `hopper` (5),
+    /// `furnace`, `blast_furnace`, `smoker` (3). Err when the storage's slots
+    /// don't fit it, or for another name.
+    open-menu-as: func(player: string, dimension: string, x: s32, y: s32, z: s32, title: string, kind: string) -> result<_, string>;
+    /// A storage of 3 slots opens as a furnace's window (input, fuel,
+    /// output); these are its bars: flame left, flame total, arrow progress,
+    /// arrow total. Sent to whoever has the window open when they change. Err
+    /// for another mod's storage or not 4 values.
+    set-menu-data: func(dimension: string, x: s32, y: s32, z: s32, data: list<s16>) -> result<_, string>;
+    /// What players may do with a slot of the mod's storage in a window.
+    record slot-rule {
+        /// Nothing goes in by hand: an output.
+        take-only: bool,
+        /// The only items that go in; empty: any.
+        items: list<string>,
+    }
+    /// Sets a slot's rule; none lifts it. What a window's player puts in
+    /// against it goes back to their inventory. Mods' own calls ignore rules.
+    /// Err for another mod's storage or a slot it doesn't have.
+    set-slot-rule: func(dimension: string, x: s32, y: s32, z: s32, slot: u32, rule: option<slot-rule>) -> result<_, string>;
+
+    /// Whether a mod's storage is on this block (vanilla containers: no).
+    has-storage: func(dimension: string, x: s32, y: s32, z: s32) -> bool;
+    /// Whether the storage or vanilla container there holds nothing at all.
+    is-empty: func(dimension: string, x: s32, y: s32, z: s32) -> bool;
+    /// Whether every slot there holds a full stack.
+    is-full: func(dimension: string, x: s32, y: s32, z: s32) -> bool;
+    /// Empty slots there.
+    free-slots: func(dimension: string, x: s32, y: s32, z: s32) -> u32;
+    /// How many of `item` the slots there hold.
+    count-item: func(dimension: string, x: s32, y: s32, z: s32, item: string) -> u32;
+    /// Empties the mod's own storage: items, energy and fluids.
+    clear: func(dimension: string, x: s32, y: s32, z: s32) -> result<_, string>;
+    /// Every position in `dimension` of this mod's storages.
+    positions: func(dimension: string) -> list<tuple<s32, s32, s32>>;
+    /// How much more energy fits there, in FE.
+    free-energy: func(dimension: string, x: s32, y: s32, z: s32) -> u64;
+    /// How many mB of `fluid` the tanks there hold.
+    fluid-amount: func(dimension: string, x: s32, y: s32, z: s32, fluid: string) -> u32;
+    /// Moves up to `count` of `item` (none: any) from one block to another
+    /// as a hopper would, only as much as fits: how many moved.
+    transfer-item: func(dimension: string, %from: tuple<s32, s32, s32>, to: tuple<s32, s32, s32>, item: option<string>, count: u32) -> u32;
+    /// Moves up to `amount` FE, only as much as fits: how much moved.
+    transfer-energy: func(dimension: string, %from: tuple<s32, s32, s32>, to: tuple<s32, s32, s32>, amount: u64) -> u64;
+    /// Moves up to `amount` mB of `fluid` (none: any): how many moved.
+    transfer-fluid: func(dimension: string, %from: tuple<s32, s32, s32>, to: tuple<s32, s32, s32>, fluid: option<string>, amount: u32) -> u32;
 }
 
 /// Capability `entities` (server mods): the mobs of the loaded level, and
@@ -833,6 +1137,8 @@ interface storages {
 /// Changes are made in order at the end of the call's tick, as the server
 /// console would make them.
 interface entities {
+    use players.{item-stack};
+
     record entity {
         /// The UUID, `xxxxxxxx-xxxx-...`; a player's is `players`'s id.
         id: string,
@@ -851,6 +1157,36 @@ interface entities {
     spawn: func(dimension: string, kind: string, x: f64, y: f64, z: f64, nbt: string) -> result<_, string>;
     /// `/damage`: hurts an entity or player by its id.
     hurt: func(id: string, amount: f32) -> result<_, string>;
+    /// The mod's bytes on an entity (or player) by id: saved with the world,
+    /// the data attachments of NeoForge. Each mod sees only its own.
+    get-data: func(id: string, key: string) -> option<list<u8>>;
+    /// Up to 65536 bytes, 64 keys per mod and entity; empty removes the key.
+    set-data: func(id: string, key: string, data: list<u8>) -> result<_, string>;
+    /// Turns a mob's own AI off (`NoAI`) or back on, so a mod can drive it.
+    set-ai: func(id: string, on: bool) -> result<_, string>;
+    /// The name over a mob's head; none removes it.
+    set-name: func(id: string, name: option<string>) -> result<_, string>;
+    /// Sets a mob's motion, in blocks per tick. A mob with its AI off doesn't
+    /// move: `teleport` drives it.
+    set-velocity: func(id: string, x: f64, y: f64, z: f64) -> result<_, string>;
+    /// `/rotate`: which way an entity faces, in degrees: how a display mob
+    /// (`"display": true` in its type) turns its moving parts.
+    set-rotation: func(id: string, yaw: f32, pitch: f32) -> result<_, string>;
+    /// Sends a mob walking to a position at `speed` times its own (1.0 is
+    /// its walk), as a goal would. Its goals may send it elsewhere later.
+    move-to: func(id: string, x: f64, y: f64, z: f64, speed: f64) -> result<_, string>;
+    /// The entity a mob attacks: a mob's or player's id; none: no one.
+    set-target: func(id: string, target: option<string>) -> result<_, string>;
+    /// `/item replace entity`: what a mob or player wears or holds. `slot`:
+    /// `weapon.mainhand`, `weapon.offhand`, `armor.head`, `armor.chest`...
+    /// A stack's `data` isn't carried.
+    set-equipment: func(id: string, slot: string, stack: item-stack) -> result<_, string>;
+    /// Drops a stack on the ground as an item at a block, at the end of the
+    /// tick (of that dimension's next turn, if it isn't in place).
+    drop-item: func(dimension: string, x: s32, y: s32, z: s32, stack: item-stack) -> result<_, string>;
+    /// `/attribute`: sets the base value of an attribute
+    /// (`minecraft:max_health`) of an entity or player.
+    set-attribute: func(id: string, attribute: string, value: f64) -> result<_, string>;
     /// `/kill`.
     kill: func(id: string) -> result<_, string>;
     /// `/tp`: to a position in a dimension.
@@ -864,6 +1200,27 @@ interface entities {
     /// `/playsound`: `sound` (`minecraft:block.anvil.use`) at a position for
     /// every player in range.
     sound: func(dimension: string, sound: string, x: f64, y: f64, z: f64, volume: f32, pitch: f32) -> result<_, string>;
+
+    /// A living mob of a dimension by its id, as of the tick's start.
+    get: func(dimension: string, id: string) -> option<entity>;
+    /// Whether that mob is alive there.
+    exists: func(dimension: string, id: string) -> bool;
+    /// `near`, only mobs of `kind`.
+    of-kind: func(dimension: string, kind: string, x: f64, y: f64, z: f64, radius: f64) -> list<entity>;
+    /// The nearest mob within `radius`, of `kind` if given.
+    nearest: func(dimension: string, x: f64, y: f64, z: f64, radius: f64, kind: option<string>) -> option<entity>;
+    /// How many mobs are within `radius` (up to 128).
+    count-near: func(dimension: string, x: f64, y: f64, z: f64, radius: f64) -> u32;
+    /// `/effect clear`: every effect of an entity or player.
+    clear-effects: func(id: string) -> result<_, string>;
+    /// `/effect clear`: one effect of an entity or player.
+    remove-effect: func(id: string, effect: string) -> result<_, string>;
+    /// Heals a mob, up to its maximum health.
+    heal: func(id: string, amount: f32) -> result<_, string>;
+    /// Sets a mob's health, from above 0 up to its maximum.
+    set-health: func(id: string, health: f32) -> result<_, string>;
+    /// `/swing`: an entity or player swings its main hand.
+    swing: func(id: string) -> result<_, string>;
 }
 
 /// Capability `worldgen`, server mods only (experimental): world generation
@@ -873,6 +1230,23 @@ interface worldgen {
     /// The block the game puts at the top of `biome`'s terrain, e.g.
     /// `minecraft:stone`. The last rule for a biome wins.
     set-surface-rule: func(biome: string, surface: string) -> result<_, string>;
+    /// A vein of ore, in the chunks the game decorates while it is set.
+    record ore {
+        /// `minecraft:plains`, or `*` for every biome.
+        biome: string,
+        /// What the vein is made of.
+        block: string,
+        /// What it may replace (`minecraft:stone`, ...).
+        replaces: list<string>,
+        min-y: s32,
+        max-y: s32,
+        /// Blocks in a vein, 1 to 64.
+        size: u32,
+        /// Veins tried per chunk, 1 to 64.
+        per-chunk: u32,
+    }
+    /// Adds veins of ore to new chunks. A mod may add up to 64.
+    add-ore: func(ore: ore) -> result<_, string>;
 }
 
 /// What the server calls in a server mod (manifest `api = "0.3"`,
@@ -1034,6 +1408,64 @@ world events-host {
     export game-events;
 }
 
+/// Asked as they happen, of every server mod built since this interface: the
+/// first that answers true takes it, and vanilla does nothing with it.
+interface entity-events {
+    use players.{player};
+    use entities.{entity};
+
+    /// A right click on an entity, holding `item` (`minecraft:air`: empty hand).
+    /// A mob, a player (`minecraft:player`, id: the player's) or an object
+    /// (boat, minecart, armor stand, item frame, painting; id: its network id,
+    /// which `entities` calls don't take).
+    use-entity: func(player: player, entity: entity, item: string) -> bool;
+    /// An attack on an entity, holding `item`. As `use-entity`.
+    attack-entity: func(player: player, entity: entity, item: string) -> bool;
+    /// A mob's health reached 0; `killer` is the player who last hurt it. True
+    /// keeps it alive on 1 health. Only for mods listing `entity-dying` in the
+    /// manifest's `events`.
+    entity-dying: func(dimension: string, entity: entity, killer: option<string>) -> bool;
+    /// A mob type with `projectile` hit a block or, with `target`'s id, a
+    /// living thing, at x y z. True keeps it flying; otherwise it is gone.
+    projectile-hit: func(dimension: string, projectile: entity, target: option<string>, x: f64, y: f64, z: f64) -> bool;
+}
+world entity-events-host {
+    export entity-events;
+}
+
+/// Code behind what a mod declares in data; each is asked only of the mod
+/// whose id is the declaration's namespace.
+interface logic-events {
+    use entities.{entity};
+
+    /// What a chunk holds: `blocks` index `palette` (`ns:block[a=b]`), 256 a
+    /// layer, x then z in a layer, layers from `min-y` up. 0 in `palette` may
+    /// be `minecraft:air`.
+    record chunk-fill {
+        palette: list<string>,
+        min-y: s32,
+        blocks: list<u16>,
+        biome: option<string>,
+    }
+    /// A chunk of a dimension declared with `"generator": {"type": "code"}`.
+    generate-chunk: func(dimension: string, x: s32, z: s32) -> option<chunk-fill>;
+    /// Whether a mob may start `goal` (a name in its type's `goals`), asked
+    /// every few ticks for goals above the one it runs. While one runs the
+    /// mob's vanilla goals wait; drive it with `entities`.
+    goal-can-use: func(goal: string, mob: entity) -> bool;
+    /// A running goal's tick: false ends it.
+    goal-tick: func(goal: string, mob: entity) -> bool;
+    /// A goal ended or was replaced by one above it.
+    goal-stop: func(goal: string, mob: entity);
+    /// Each tick of a mob whose type says `"ticks": true`.
+    entity-tick: func(dimension: string, entity: entity);
+    /// Each tick of a mob or player under this mod's effect, level `amplifier`.
+    effect-tick: func(effect: string, target: string, amplifier: u8);
+}
+world logic-events-host {
+    export logic-events;
+}
+
 /// Capability `net` for a client mod: its own messages to the server's
 /// mods, over the connection (single player's own server included). A
 /// channel is `[a-z0-9_./-]`, 1 to 64 characters; mods agree on it (use the
@@ -1099,6 +1531,8 @@ world horizon-server-block-mod {
     include horizon-server-mod;
     export block-events;
     export game-events;
+    export entity-events;
+    export logic-events;
     export server-net-events;
 }
 

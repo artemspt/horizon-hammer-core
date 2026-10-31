@@ -85,8 +85,92 @@ pub const EFFECTS: &[EffectDef] = &[
     fx("breath_of_the_nautilus", 65518, B),
 ];
 pub fn effect(id: &str) -> Option<&'static EffectDef> {
+    if let Some(own) = mod_effect(id) {
+        return Some(&own.def);
+    }
     let id = id.trim_start_matches("minecraft:");
     EFFECTS.iter().find(|e| e.id == id)
+}
+/// An effect a mod declares, as `set_mod_effects` takes it.
+pub struct ModEffectDecl {
+    pub id: String,
+    pub color: u32,
+    pub category: String,
+    pub damage: f32,
+    pub heal: f32,
+    pub interval: i32,
+    pub attributes: Vec<(String, f64, String)>,
+}
+/// A mod's effect. Its `def.id` keeps its namespace, vanilla's have none.
+pub struct ModEffect {
+    pub def: EffectDef,
+    pub damage: f32,
+    pub heal: f32,
+    pub interval: i32,
+    /// (attribute, modifier id, amount per level, operation).
+    pub attributes: Vec<(&'static str, &'static str, f64, &'static str)>,
+}
+static MOD_EFFECTS: std::sync::RwLock<Vec<&'static ModEffect>> =
+    std::sync::RwLock::new(Vec::new());
+pub fn set_mod_effects(effects: Vec<ModEffectDecl>) {
+    let leak = |s: String| -> &'static str { Box::leak(s.into_boxed_str()) };
+    *MOD_EFFECTS.write().expect("mod effects poisoned") = effects
+        .into_iter()
+        .map(|e| {
+            let id = leak(e.id);
+            let attributes = e
+                .attributes
+                .into_iter()
+                .enumerate()
+                .map(|(i, (attribute, amount, op))| {
+                    (leak(attribute), leak(format!("{id}_{i}")), amount, leak(op))
+                })
+                .collect();
+            &*Box::leak(Box::new(ModEffect {
+                def: EffectDef {
+                    id,
+                    color: e.color,
+                    category: match e.category.as_str() {
+                        "beneficial" => Category::Beneficial,
+                        "harmful" => Category::Harmful,
+                        _ => Category::Neutral,
+                    },
+                    instant: false,
+                },
+                damage: e.damage,
+                heal: e.heal,
+                interval: e.interval,
+                attributes,
+            }))
+        })
+        .collect();
+}
+pub fn mod_effect(id: &str) -> Option<&'static ModEffect> {
+    let list = MOD_EFFECTS.read().expect("mod effects poisoned");
+    list.iter().find(|e| e.def.id == id).copied()
+}
+pub fn mod_effect_ids() -> Vec<&'static str> {
+    let list = MOD_EFFECTS.read().expect("mod effects poisoned");
+    list.iter().map(|e| e.def.id).collect()
+}
+/// An effect's translation key.
+pub fn effect_key(id: &str) -> String {
+    format!("effect.{}", full_id(id).replacen(':', ".", 1))
+}
+/// An effect's sprite in the GUI atlas.
+pub fn effect_sprite(id: &str) -> String {
+    match id.split_once(':') {
+        Some((ns, path)) => format!("{ns}:mob_effect/{path}"),
+        None => format!("mob_effect/{id}"),
+    }
+}
+/// An effect id with its namespace.
+pub fn full_id(id: &str) -> String {
+    if id.contains(':') {
+        id.to_owned()
+    } else {
+        format!("minecraft:{id}")
+    }
 }
 /// Namespaced effect ids for mob effect storage.
 pub fn namespaced(id: &'static str) -> &'static str {

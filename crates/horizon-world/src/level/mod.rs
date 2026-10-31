@@ -881,6 +881,8 @@ pub(crate) struct Sim<'a, L: LevelAccess + ?Sized> {
     /// `RedstoneWireBlock.shouldSignal` is false while a wire samples its
     /// neighbours (`getBlockSignal`).
     pub wire_signal_off: std::cell::Cell<bool>,
+    /// The mod fluid being handled (`FluidState::family`), 0 for vanilla's.
+    pub fluid_family: std::cell::Cell<u8>,
 }
 impl Behaviours {
     pub(crate) fn sim<'a, L: LevelAccess + ?Sized>(
@@ -893,6 +895,7 @@ impl Behaviours {
             level,
             ticks,
             wire_signal_off: std::cell::Cell::new(false),
+            fluid_family: std::cell::Cell::new(0),
         }
     }
 }

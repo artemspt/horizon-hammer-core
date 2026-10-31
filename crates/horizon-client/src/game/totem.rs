@@ -16,7 +16,8 @@ impl Game<'_> {
     /// player once a tick, a server's player for each of its turns.
     pub(super) fn update_totem_ready(&mut self) {
         let ready = self.held().is_some_and(|s| &*s.item == TOTEM)
-            || self.offhand.as_ref().is_some_and(|s| &*s.item == TOTEM);
+            || self.offhand.as_ref().is_some_and(|s| &*s.item == TOTEM)
+            || self.mod_undying();
         if let Some(p) = self.player.as_mut() {
             p.health.totem_ready = ready;
         }
@@ -31,6 +32,13 @@ impl Game<'_> {
         }
         p.health.totem_used = false;
         let _ = p.set_health(1.0, false);
+        // A mod's `set-undying`, with no totem to use up.
+        let holds = self.held().is_some_and(|s| &*s.item == TOTEM)
+            || self.offhand.as_ref().is_some_and(|s| &*s.item == TOTEM);
+        if !holds {
+            return None;
+        }
+        let p = self.player.as_mut()?;
         let body = Body {
             at: [p.position.x, p.position.y, p.position.z],
             width: f64::from(p.dimensions.width),

@@ -768,6 +768,46 @@ pub struct BlockEntityRenderer {
     pot_patterns: HashMap<String, String>,
     /// `Block.shouldRenderFace` for End gateway faces (its occlusion pair cache needs a lock).
     visibility: Option<Mutex<FaceVisibility>>,
+    /// `data/<mod>/horizon/model/*.json`: id to model and texture.
+    mod_models: HashMap<String, ModModel>,
+}
+struct ModModel {
+    model: ModelPart,
+    texture: String,
+    /// Parts' `spin`: degrees a second about x, y and z.
+    spin: Vec<(String, [f32; 3])>,
+}
+fn load_mod_models(root: &Path) -> HashMap<String, ModModel> {
+    let mut out = HashMap::new();
+    for namespace in crate::mod_content::namespaces(root) {
+        let dir = root.join(format!("data/{namespace}/horizon/model"));
+        for file in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+            let path = file.path();
+            let (Some(name), Ok(text)) = (
+                path.file_stem().and_then(|n| n.to_str()),
+                std::fs::read(&path),
+            ) else {
+                continue;
+            };
+            let Ok(def) = serde_json::from_slice::<Value>(&text) else {
+                log::warn!("Horizon: model {} is not readable", path.display());
+                continue;
+            };
+            let Some(texture) = def["texture"].as_str() else {
+                continue;
+            };
+            let baked = crate::mobs::bake_mod_model(&def);
+            out.insert(
+                format!("{namespace}:{name}"),
+                ModModel {
+                    model: ModelPart::parse(&baked),
+                    texture: texture.to_owned(),
+                    spin: crate::mobs::part_spins(&def),
+                },
+            );
+        }
+    }
+    out
 }
 const MODELS: [(&str, &str); 27] = [
     ("chest", "minecraft:chest#main"),
@@ -841,7 +881,66 @@ impl BlockEntityRenderer {
                 }
             }
         }
+        renderer.mod_models = load_mod_models(root);
         Ok(renderer)
+    }
+    /// A mod's model at `position`, under `rotation` and `scale`.
+    pub fn render_mod_model(
+        &self,
+        scene: &Scene,
+        id: &str,
+        position: DVec3,
+        rotation: Quat,
+        scale: f32,
+        pose: &dyn Fn(&str, &mut [f32; 9]),
+        out: &mut Vec<Vertex>,
+    ) {
+        let Some(ModModel {
+            model,
+            texture,
+            spin,
+        }) = self.mod_models.get(id)
+        else {
+            return;
+        };
+        let Some(sprite) = scene.sprites.get(texture) else {
+            return;
+        };
+        if position.distance_squared(scene.camera) > VIEW_DISTANCE * VIEW_DISTANCE {
+            return;
+        }
+        let packed = scene.world.light(
+            position.x.floor() as i32,
+            position.y.floor() as i32,
+            position.z.floor() as i32,
+        );
+        // Models are written as mobs': y grows down.
+        let base = Mat4::from_translation((position - scene.camera).as_vec3())
+            * Mat4::from_quat(rotation)
+            * Mat4::from_scale(Vec3::new(scale, -scale, -scale));
+        draw_part(
+            model,
+            "root",
+            base,
+            &|name, p| {
+                let seconds = (scene.game_time as f32 + scene.partial) / 20.0;
+                for (part, turn) in spin {
+                    if part == name {
+                        for i in 0..3 {
+                            p[3 + i] += (turn[i] * seconds).to_radians();
+                        }
+                    }
+                }
+                pose(name, p);
+            },
+            Paint {
+                sprite: *sprite,
+                tint: 0xFF_FFFF,
+                light: vertex_light(packed),
+                lights: diffuse_lights(scene.nether),
+            },
+            out,
+        );
     }
     fn new(models: HashMap<&'static str, ModelPart>, registry: &BlockRegistry) -> Self {
         let closed_chests = [false, true].map(|nether| {
@@ -898,6 +997,7 @@ impl BlockEntityRenderer {
             closed_chests,
             pot_patterns: HashMap::new(),
             visibility: None,
+            mod_models: HashMap::new(),
         }
     }
     fn kind(&self, state: u32) -> &Kind {

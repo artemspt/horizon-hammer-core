@@ -119,6 +119,19 @@ fn periodic(id: &str, tick: i32, amp: i32) -> Option<EffectAction> {
         let interval = base >> amp;
         interval <= 0 || tick % interval == 0
     };
+    if let Some(own) = potions::mod_effect(id) {
+        if !every(own.interval.max(1)) {
+            return None;
+        }
+        let level = (amp + 1) as f32;
+        return if own.damage > 0.0 {
+            Some(EffectAction::Hurt("minecraft:magic", own.damage * level))
+        } else if own.heal > 0.0 {
+            Some(EffectAction::Heal(own.heal * level))
+        } else {
+            None
+        };
+    }
     match id {
         "regeneration" if every(50) => Some(EffectAction::Heal(1.0)),
         "poison" if every(25) => Some(EffectAction::Poison),
@@ -345,6 +358,11 @@ impl PlayerEffects {
     pub fn modifiers(&self) -> Vec<(&'static str, &'static str, f64, &'static str)> {
         let mut out = Vec::new();
         for e in &self.list {
+            if let Some(own) = potions::mod_effect(e.id) {
+                for &(a, id, amount, op) in &own.attributes {
+                    out.push((a, id, amount * f64::from(e.amplifier + 1), op));
+                }
+            }
             if let Some((a, id, amount, op)) = effect_modifier(e.id) {
                 out.push((a, id, amount * f64::from(e.amplifier + 1), op));
             }

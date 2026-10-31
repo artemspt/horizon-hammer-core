@@ -543,6 +543,9 @@ impl Game<'_> {
             .cloned()
             .collect();
         for m in killed {
+            if self.mob_spared(&m) {
+                continue;
+            }
             self.died.insert(m.id);
             self.mob_died(&m);
         }
@@ -734,6 +737,10 @@ impl Game<'_> {
         self.merchant_tick();
         self.villager_pickups();
         for m in dead {
+            if self.mob_spared(&m) {
+                self.died.remove(&m.id);
+                continue;
+            }
             self.mob_died(&m);
         }
         for mut m in corpses {
@@ -781,6 +788,18 @@ impl Game<'_> {
         }
     }
     /// LivingEntity.die / dropAllDeathLoot.
+    /// A mod kept this dying mob alive (`entity-dying`): 1 health, no death.
+    fn mob_spared(&mut self, m: &Mob) -> bool {
+        let killer = self.last_hurt_by_player.get(&m.id).copied();
+        if !self.mod_spares_mob(m, killer) {
+            return false;
+        }
+        if let Some(live) = self.mobs.iter_mut().find(|l| l.id == m.id) {
+            live.health = 1.0;
+            live.death_time = 0;
+        }
+        true
+    }
     fn mob_died(&mut self, m: &Mob) {
         let killer = self.last_hurt_by_player.remove(&m.id);
         self.mod_mob_died(m, killer);
@@ -968,7 +987,7 @@ impl Game<'_> {
                     match event {
                         MobEvent::Sound(s, _, volume, pitch) => {
                             self.audio
-                                .play(&format!("minecraft:{s}"), Some(center), volume, pitch);
+                                .play(&mob_sound_id(s), Some(center), volume, pitch);
                         }
                         MobEvent::Infested { .. } => infested = true,
                         other => {
@@ -1097,7 +1116,7 @@ impl Game<'_> {
                 MobEvent::Sound(name, at, volume, pitch)
                 | MobEvent::LocalSound(name, at, volume, pitch) => {
                     self.audio
-                        .play(&format!("minecraft:{name}"), Some(at), volume, pitch)
+                        .play(&mob_sound_id(name), Some(at), volume, pitch)
                 }
                 MobEvent::LevelEventSound {
                     sound,
@@ -4647,5 +4666,14 @@ impl Game<'_> {
         if let Some(id) = self.spawn_mob("minecraft:zombified_piglin", at, false) {
             self.set_portal_cooldown(id);
         }
+    }
+}
+
+/// A sound of a mob: vanilla's by path, a mod's with its namespace.
+fn mob_sound_id(name: &str) -> String {
+    if name.contains(':') {
+        name.to_owned()
+    } else {
+        format!("minecraft:{name}")
     }
 }

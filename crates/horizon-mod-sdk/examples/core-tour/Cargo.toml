@@ -1,0 +1,16 @@
+[package]
+name = "core-tour"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Example Horizon server mod: data on players, messages between mods, own data files, tags, player events"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+horizon-mod-sdk = { path = "../.." }
+
+[lints]
+workspace = true

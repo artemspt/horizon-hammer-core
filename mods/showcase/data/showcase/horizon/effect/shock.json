@@ -1,0 +1,13 @@
+{
+  "type": "harmful",
+  "color": 6737151,
+  "damage": 0.5,
+  "interval": 40,
+  "attributes": [
+    {
+      "attribute": "minecraft:movement_speed",
+      "amount": -0.1,
+      "operation": "add_multiplied_total"
+    }
+  ]
+}

@@ -405,7 +405,23 @@ impl Game<'_> {
                 break;
             }
         }
+        let mod_mobs: Vec<String> = self
+            .res
+            .mob_types()
+            .keys()
+            .filter(|k| !k.starts_with("minecraft:"))
+            .map(|k| horizon_client::command::args::normalize(k))
+            .collect();
         let reg = &mut self.ui.registries;
+        // A mod's mob types are no part of the prepared files.
+        if let Some(r) = reg.by_registry.get_mut("minecraft:entity_type") {
+            r.ids.extend(mod_mobs.iter().cloned());
+        }
+        for list in [&mut reg.entity_types, &mut reg.summonable] {
+            list.extend(mod_mobs.iter().cloned());
+            list.sort();
+            list.dedup();
+        }
         reg.timelines = self.ui.timelines.keys().cloned().collect();
         reg.time_markers = self
             .ui

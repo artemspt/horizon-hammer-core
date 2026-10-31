@@ -18,6 +18,9 @@ use horizon_mods::Mods;
 pub struct WorldgenSnapshot {
     /// Biome -> preferred surface block when a mod surface rule applies.
     pub surface_blocks: BTreeMap<String, String>,
+    /// `worldgen.add-ore`.
+    #[cfg(feature = "mods")]
+    pub ores: Vec<horizon_mods::OreDefinition>,
 }
 
 #[cfg(feature = "mods")]
@@ -40,6 +43,7 @@ pub fn publish(mods: &Mods) {
                 .insert(rule.biome.clone(), rule.block.clone());
         }
     }
+    snapshot.ores = mods.worldgen().ores().cloned().collect();
     *cell().lock().expect("worldgen snapshot poisoned") = Some(Arc::new(snapshot));
 }
 
