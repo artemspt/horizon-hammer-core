@@ -77,14 +77,14 @@ A server mod (manifest `side = "server"`, `api = "0.3"`, experimental): runs whe
 
 ## World `horizon-server-mod`
 
-- Imports (what the game offers): `log`, `storage`, `players`, `world`, `storages`, `entities`, `worldgen`, `server-net`
+- Imports (what the game offers): `log`, `storage`, `players`, `world`, `storages`, `entities`, `worldgen`, `items`, `dimensions`, `server-net`
 - Exports (what the mod provides): `server-events`
 
 ## World `horizon-server-block-mod`
 
 What the SDK builds a server mod as: `horizon-server-mod` and the block hooks.
 
-- Imports (what the game offers): `log`, `storage`, `players`, `world`, `storages`, `entities`, `worldgen`, `server-net`
+- Imports (what the game offers): `log`, `storage`, `players`, `world`, `storages`, `entities`, `worldgen`, `items`, `dimensions`, `server-net`
 - Exports (what the mod provides): `block-events`, `game-events`, `before-events`, `entity-events`, `logic-events`, `server-net-events`, `server-events`
 
 ## World `horizon-ui-mod`
@@ -1144,6 +1144,109 @@ An argument's value, parsed as its kind says.
 | `command` | `func(player: player, name: string, args: string, values: list<tuple<string, argument-value>>) -> result<option<string>, string>` | `/name args` typed by `player`: ok(some(text)) is their feedback, err(text) their error in red. `values` holds each argument given, by name, in order (an optional one left out isn't there); a line that doesn't parse never reaches the mod: the player gets vanilla's error. |
 | `block-broken` | `func(player: player, pos: block-pos, state: string)` | A player broke the block at `pos` in their dimension: `state` is what was there, as `minecraft:oak_log[axis=y]`. |
 | `block-placed` | `func(player: player, pos: block-pos, state: string)` | A player placed `state` at `pos` in their dimension. |
+
+## `items`
+
+Access: not granted by any capability.
+
+Capability `world` for a server mod: item types and stacks as the game knows them. A stack in is a `players.item-stack`; a stack out is a new one, the one handed in unchanged. Reads during a `before-events` hook inside a mob's tick answer nothing (the world isn't lent there).
+
+### type `item-stack`
+
+`type item-stack = item-stack`
+
+### record `food`
+
+What eating an item gives.
+
+| Field | Type | |
+| --- | --- | --- |
+| `nutrition` | `u32` |  |
+| `saturation` | `f32` |  |
+| `can-always-eat` | `bool` | Eaten with a full hunger bar too (golden apples). |
+
+### record `modifier`
+
+An attribute modifier on a stack, as `/attribute` names them.
+
+| Field | Type | |
+| --- | --- | --- |
+| `attribute` | `string` | `minecraft:attack_damage`. |
+| `id` | `string` | The modifier's own id, `mymod:sharp_edge`. |
+| `amount` | `f64` |  |
+| `operation` | `string` | `add_value`, `add_multiplied_base` or `add_multiplied_total`. |
+| `slot` | `string` | `mainhand`, `offhand`, `hand`, `head`, `chest`, `legs`, `feet`, `armor`, `body` or `any`. |
+
+### record `potion-effect`
+
+An effect a potion gives.
+
+| Field | Type | |
+| --- | --- | --- |
+| `effect` | `string` |  |
+| `duration` | `s32` |  |
+| `amplifier` | `u8` |  |
+
+| Function | Signature | What it does |
+| --- | --- | --- |
+| `all` | `func() -> list<string>` | Every item id the game has, mods' included, in registry order. |
+| `exists-in-tag` | `func(tag: string) -> option<list<string>>` | Every item in `tag` (`minecraft:logs`, with or without `#`); `none` for a tag the game doesn't have. |
+| `name` | `func(item: string) -> option<string>` | An item's name in the server's language (English on a dedicated server); `none` for an unknown item. |
+| `max-damage` | `func(item: string) -> option<u32>` | How many uses it has before it breaks: 0 for one that doesn't wear. |
+| `is-damageable` | `func(item: string) -> bool` | Whether it wears with use (a `max-damage` above 0). |
+| `is-food` | `func(item: string) -> bool` | Whether it can be eaten. |
+| `food-values` | `func(item: string) -> option<food>` | What eating it gives; `none` for an item that isn't food. |
+| `is-block-item` | `func(item: string) -> bool` | Whether it places a block when used on one. |
+| `block-of` | `func(item: string) -> option<string>` | The block it places, `minecraft:oak_planks`. |
+| `fuel-ticks` | `func(item: string) -> u32` | How many ticks it burns in a furnace: 0 for no fuel. |
+| `rarity` | `func(item: string) -> option<string>` | `common`, `uncommon`, `rare` or `epic`, as the item comes. |
+| `components` | `func(stack: item-stack) -> result<string, string>` | The stack's components as SNBT, `{"minecraft:damage":3,...}`: `{}` for a plain stack. Its count is left out; the mod's own bytes are under `minecraft:custom_data`, like the other mods'. |
+| `get-component` | `func(stack: item-stack, name: string) -> option<string>` | One component (`minecraft:lore`) as SNBT; `none` when it isn't set. |
+| `set-component` | `func(stack: item-stack, name: string, value: string) -> result<item-stack, string>` | The stack with component `name` set to `value` (SNBT, as `/give` takes it: `minecraft:damage`, `5`). Err for a value the game can't read. |
+| `remove-component` | `func(stack: item-stack, name: string) -> result<item-stack, string>` | The stack without component `name` (its item's default comes back). |
+| `get-damage` | `func(stack: item-stack) -> u32` | How worn it is: 0 for new. |
+| `set-damage` | `func(stack: item-stack, damage: u32) -> result<item-stack, string>` | The stack worn to `damage`, at most its item's `max-damage`. Err for an item that doesn't wear. |
+| `repair` | `func(stack: item-stack, amount: u32) -> result<item-stack, string>` | The stack `amount` uses less worn, at most new. |
+| `get-custom-name` | `func(stack: item-stack) -> option<string>` | The name an anvil or a mod gave it. |
+| `get-lore` | `func(stack: item-stack) -> list<string>` | Its lore lines, as plain text. |
+| `same-item` | `func(a: item-stack, b: item-stack) -> bool` | Whether both are the same item, whatever their components. |
+| `can-stack` | `func(a: item-stack, b: item-stack) -> bool` | Whether `b` would go onto `a`: the same item and components, and room left under the item's stack size. |
+| `split` | `func(stack: item-stack, count: u32) -> tuple<item-stack, item-stack>` | `count` taken off: the part taken and what's left (count 0 when nothing is). |
+| `grow` | `func(stack: item-stack, by: s32) -> item-stack` | The stack with `by` more (or fewer) items, between 0 and its item's stack size. |
+| `enchantments` | `func(stack: item-stack) -> list<tuple<string, u32>>` | Its enchantments and their levels (a book's stored ones included). |
+| `enchantment-level` | `func(stack: item-stack, enchantment: string) -> u32` | One enchantment's level: 0 when it hasn't it. |
+| `set-enchantment` | `func(stack: item-stack, enchantment: string, level: u32) -> result<item-stack, string>` | The stack with `enchantment` at `level` (1 to 255), whether or not the item takes it, as `/enchant` would not: a book stores it. Err for an enchantment the game doesn't have. |
+| `remove-enchantment` | `func(stack: item-stack, enchantment: string) -> result<item-stack, string>` | The stack without `enchantment` (a book's stored one too). |
+| `has-glint` | `func(stack: item-stack) -> bool` | Whether it shines: enchanted, glinting by nature, or told to. |
+| `attribute-modifiers` | `func(stack: item-stack) -> list<modifier>` | Its attribute modifiers: the stack's own, else its item's. |
+| `add-attribute-modifier` | `func(stack: item-stack, modifier: modifier) -> result<item-stack, string>` | The stack with `modifier` beside the others (one of the same id replaced). Err for an unknown operation or slot. |
+| `tool-speed` | `func(tool: item-stack, block: string) -> f32` | How fast `tool` breaks `block`: 1 for a hand's speed. |
+| `is-correct-tool` | `func(tool: item-stack, block: string) -> bool` | Whether `tool` gets `block`'s drops. |
+| `dyed-color` | `func(stack: item-stack) -> option<u32>` | Its dye colour as RGB (leather armour). |
+| `set-dyed-color` | `func(stack: item-stack, color: option<u32>) -> result<item-stack, string>` | The stack dyed `color` (RGB), or undyed with `none`. |
+| `potion-contents` | `func(stack: item-stack) -> option<tuple<string, list<potion-effect>>>` | A potion's, a tipped arrow's or a lingering potion's potion (`minecraft:swiftness`) and the effects it gives. |
+| `set-potion-contents` | `func(stack: item-stack, potion: option<string>) -> result<item-stack, string>` | The stack as `potion` (`none`: water). Horizon keeps a potion's base only, not effects of its own. Err for a potion the game doesn't have. |
+| `container-contents` | `func(stack: item-stack) -> list<item-stack>` | What a shulker box or a bundle holds. |
+
+## `dimensions`
+
+Access: not granted by any capability.
+
+Capability `world` for a server mod: the dimensions the server has.
+
+### type `player`
+
+`type player = player`
+
+| Function | Signature | What it does |
+| --- | --- | --- |
+| `list` | `func() -> list<string>` | Every dimension, `minecraft:overworld` first, then the mods' own. |
+| `exists` | `func(dimension: string) -> bool` | Whether the server has `dimension`. |
+| `loaded` | `func(dimension: string) -> bool` | Whether it is open now: a player there, or kept for a mod's machines. |
+| `base` | `func(dimension: string) -> option<string>` | The vanilla dimension a mod's is made over (its own for a vanilla one); `none` for an unknown one. |
+| `min-y` | `func(dimension: string) -> option<s32>` | Its lowest block's y. |
+| `max-y` | `func(dimension: string) -> option<s32>` | Its highest block's y. |
+| `players-in` | `func(dimension: string) -> list<player>` | The players in it now. |
 
 ## `block-events`
 

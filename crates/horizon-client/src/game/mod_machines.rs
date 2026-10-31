@@ -154,6 +154,8 @@ pub(super) struct Lent {
     /// Each level's block entities (vanilla containers).
     pub(super) containers: Vec<(&'static str, horizon_client::block_entities::BlockEntities)>,
     pub(super) mobs: Vec<(&'static str, Vec<EntityInfo>)>,
+    /// Item types, block facts and fuel, for `items`.
+    pub(super) res: Option<Arc<super::Resources>>,
 }
 /// `players.style-stack`.
 pub(super) fn style_stack(
@@ -241,6 +243,275 @@ impl Lent {
             .map(|(_, m)| m.clone())
             .unwrap_or_default()
     }
+}
+
+/// `items`: what the game knows of item types and stacks, from the world's
+/// resources the call holds.
+impl Lent {
+    fn res(&self) -> Option<&super::Resources> {
+        self.res.as_deref()
+    }
+    pub(super) fn item_facts(&self, item: &str) -> Option<horizon_mods::ItemFacts> {
+        let res = self.res()?;
+        let items = res.items();
+        let info = items.get(item)?;
+        let stack = ItemStack::new(item, 1);
+        let name = horizon_client::item_tooltip::name_line(&stack, &|key| {
+            let text = horizon_client::lang::get(key);
+            (text != key).then_some(text)
+        });
+        Some(horizon_mods::ItemFacts {
+            name,
+            max_stack: info.max_stack,
+            max_damage: info.max_damage,
+            food: info.food.map(|(n, s)| (n, s, info.can_always_eat)),
+            block: info.block.map(|b| res.facts().get(b).name.to_string()),
+            fuel_ticks: res.providers().burn_time(items, &stack, false).max(0) as u32,
+            rarity: items
+                .enchantments
+                .props(item)
+                .map_or_else(|| "common".to_owned(), |p| p.rarity.clone()),
+        })
+    }
+    pub(super) fn item_ids(&self) -> Vec<String> {
+        let Some(res) = self.res() else {
+            return Vec::new();
+        };
+        let items = res.items();
+        items.registry_order.iter().map(|i| i.to_string()).collect()
+    }
+    pub(super) fn items_in_tag(&self, tag: &str) -> Option<Vec<String>> {
+        let items = self.res()?.items();
+        let members = items.item_tags.get(tag)?;
+        Some(
+            items
+                .registry_order
+                .iter()
+                .filter(|i| members.contains(&***i))
+                .map(|i| i.to_string())
+                .collect(),
+        )
+    }
+    pub(super) fn stack_facts(&self, stack: &HostStack) -> Option<horizon_mods::StackFacts> {
+        use horizon_items::item_data::{canon_tag, encode_components};
+        let s = game_stack(stack)?;
+        let items = self.res()?.items();
+        let tag = encode_components(&s);
+        let each = match &tag {
+            Some(Tag::Compound(c)) => c
+                .iter()
+                .map(|(k, v)| (k.to_string_lossy(), canon_tag(v)))
+                .collect(),
+            _ => Vec::new(),
+        };
+        let data = s.data();
+        let text = |t: &Tag| match t {
+            Tag::String(s) => Some(s.to_string_lossy()),
+            Tag::Compound(c) => match c.get(&JavaString::from("text")) {
+                Some(Tag::String(s)) => Some(s.to_string_lossy()),
+                _ => None,
+            },
+            _ => None,
+        };
+        let lore = match data.and_then(|d| d.other("minecraft:lore")) {
+            Some(Tag::List(lines)) => lines.iter().filter_map(text).collect(),
+            _ => Vec::new(),
+        };
+        let mut enchantments: Vec<(String, u32)> = s
+            .enchantments()
+            .iter()
+            .chain(s.stored_enchantments())
+            .map(|(e, l)| (e.to_string(), *l))
+            .collect();
+        enchantments.dedup();
+        let glint = items.enchantments.props(&s.item).is_some_and(|p| p.glint);
+        let potion = s.potion().map(|p| {
+            let effects = horizon_client_core::potions::potion(p).map_or_else(Vec::new, |def| {
+                def.effects
+                    .iter()
+                    .map(|(e, d, a)| (format!("minecraft:{e}"), *d, (*a).clamp(0, 255) as u8))
+                    .collect()
+            });
+            (p.to_owned(), effects)
+        });
+        let contents = data.map_or_else(Vec::new, |d| {
+            d.container
+                .iter()
+                .map(|(_, s)| host_stack(s))
+                .chain(d.bundle_contents.iter().map(host_stack))
+                .collect()
+        });
+        Some(horizon_mods::StackFacts {
+            components: tag.as_ref().map_or_else(|| "{}".to_owned(), canon_tag),
+            each,
+            damage: s.damage,
+            custom_name: s.custom_name().map(str::to_owned),
+            lore,
+            enchantments,
+            glint: s.has_foil(glint),
+            modifiers: stack_modifiers(&s, items),
+            dyed: data
+                .and_then(|d| d.dyed_color)
+                .map(|c| c as u32 & 0xFF_FFFF),
+            potion,
+            contents,
+        })
+    }
+    pub(super) fn edit_stack(
+        &self,
+        stack: &HostStack,
+        edit: &horizon_mods::StackEdit,
+    ) -> Result<HostStack, String> {
+        use horizon_items::item_data::{command_components, decode_components, encode_components};
+        use horizon_mods::StackEdit as E;
+        let mut s = game_stack(stack).ok_or("a stack the game can't read")?;
+        let items = self.res().ok_or("the game lent no items")?.items();
+        let info = items.get(&s.item).ok_or("an item the game doesn't have")?;
+        match edit {
+            E::SetComponent(name, _) | E::RemoveComponent(name) => {
+                let mut all = match encode_components(&s) {
+                    Some(Tag::Compound(c)) => c,
+                    _ => nbt::Compound::new(),
+                };
+                match edit {
+                    E::SetComponent(_, value) => {
+                        let one = command_components(&format!("[{name}={value}]"))?;
+                        let Tag::Compound(one) = one else {
+                            return Err(format!("{name}: not a component"));
+                        };
+                        for (k, v) in one {
+                            all.insert(k, v);
+                        }
+                    }
+                    _ => {
+                        all.remove(&JavaString::from(name.as_str()));
+                    }
+                }
+                let (damage, extra) = decode_components(Some(&Tag::Compound(all)));
+                s.damage = damage;
+                s.extra = extra;
+            }
+            E::Damage(d) => {
+                if info.max_damage == 0 {
+                    return Err(format!("{} doesn't wear", s.item));
+                }
+                s.damage = (*d).min(info.max_damage);
+            }
+            E::Repair(n) => {
+                if info.max_damage == 0 {
+                    return Err(format!("{} doesn't wear", s.item));
+                }
+                s.damage = s.damage.saturating_sub(*n);
+            }
+            E::Enchant(id, level) => {
+                if items.enchantments.get(id).is_none() {
+                    return Err(format!("no enchantment {id}"));
+                }
+                let book = &*s.item == "minecraft:enchanted_book";
+                let d = s.data_mut();
+                let list = if book {
+                    &mut d.stored_enchantments
+                } else {
+                    &mut d.enchantments
+                };
+                horizon_items::item_data::set_level(list, id, *level);
+            }
+            E::Disenchant(id) => {
+                let d = s.data_mut();
+                d.enchantments.retain(|(e, _)| &**e != id.as_str());
+                d.stored_enchantments.retain(|(e, _)| &**e != id.as_str());
+            }
+            E::AddModifier(m) => {
+                let mut list: Vec<Tag> = stack_modifiers(&s, items)
+                    .into_iter()
+                    .filter(|o| o.id != m.id)
+                    .chain(std::iter::once(m.clone()))
+                    .map(|m| {
+                        Tag::compound([
+                            ("type", Tag::String(m.attribute.as_str().into())),
+                            ("id", Tag::String(m.id.as_str().into())),
+                            ("amount", Tag::Double(m.amount.to_bits())),
+                            ("operation", Tag::String(m.operation.as_str().into())),
+                            ("slot", Tag::String(m.slot.as_str().into())),
+                        ])
+                    })
+                    .collect();
+                list.shrink_to_fit();
+                s.data_mut()
+                    .set_other("minecraft:attribute_modifiers", Some(Tag::List(list)));
+            }
+            E::Dye(color) => s.data_mut().dyed_color = color.map(|c| c as i32),
+            E::Potion(potion) => {
+                if let Some(p) = potion
+                    && horizon_client_core::potions::potion(p).is_none()
+                {
+                    return Err(format!("no potion {p}"));
+                }
+                s.data_mut().potion = potion.as_deref().map(std::sync::Arc::from);
+            }
+        }
+        s.tidy();
+        Ok(host_stack(&s))
+    }
+    pub(super) fn tool(&self, tool: &HostStack, block: &str) -> Option<(f32, bool)> {
+        let s = game_stack(tool)?;
+        let items = self.res()?.items();
+        items.get(&s.item)?;
+        Some((
+            items.mining_speed(Some(&s), block),
+            items.correct_for_drops(Some(&s), block),
+        ))
+    }
+}
+
+/// A stack's attribute modifiers: its own component, else its item's.
+fn stack_modifiers(
+    s: &ItemStack,
+    items: &horizon_client::items::Items,
+) -> Vec<horizon_mods::ModifierFacts> {
+    let text = |c: &nbt::Compound, k: &str| match c.get(&JavaString::from(k)) {
+        Some(Tag::String(s)) => s.to_string_lossy(),
+        _ => String::new(),
+    };
+    if let Some(Tag::List(list)) = s
+        .data()
+        .and_then(|d| d.other("minecraft:attribute_modifiers"))
+    {
+        return list
+            .iter()
+            .filter_map(|t| match t {
+                Tag::Compound(c) => Some(horizon_mods::ModifierFacts {
+                    attribute: text(c, "type"),
+                    id: text(c, "id"),
+                    amount: match c.get(&JavaString::from("amount")) {
+                        Some(Tag::Double(v)) => f64::from_bits(*v),
+                        Some(Tag::Float(v)) => f64::from(f32::from_bits(*v)),
+                        _ => 0.0,
+                    },
+                    operation: text(c, "operation"),
+                    slot: match text(c, "slot") {
+                        s if s.is_empty() => "any".to_owned(),
+                        s => s,
+                    },
+                }),
+                _ => None,
+            })
+            .collect();
+    }
+    items.get(&s.item).map_or_else(Vec::new, |info| {
+        info.modifiers
+            .iter()
+            .map(
+                |(attribute, id, amount, operation, slot)| horizon_mods::ModifierFacts {
+                    attribute: attribute.clone(),
+                    id: id.clone(),
+                    amount: *amount,
+                    operation: operation.clone(),
+                    slot: slot.clone(),
+                },
+            )
+            .collect()
+    })
 }
 
 impl Game<'_> {
@@ -419,7 +690,7 @@ impl Game<'_> {
     pub(super) fn lend_more(&mut self) -> Lent {
         let dim = self.dim.id();
         let mut redstone = HashMap::new();
-        for (x, y, z) in self.mods.mods.machine_positions(dim) {
+        for (x, y, z) in self.mods_now(|m| m.machine_positions(dim)) {
             let pos = horizon_core::position::BlockPos::new(x, y, z);
             let power =
                 self.with_level(|b, level, ticks| b.best_neighbor_signal(level, ticks, pos));
@@ -486,6 +757,7 @@ impl Game<'_> {
             .get_or_insert_with(|| tags("entity_type"))
             .clone();
         Lent {
+            res: Some(self.res.clone()),
             item_tags,
             block_tags,
             entity_tags,

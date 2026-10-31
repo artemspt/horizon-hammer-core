@@ -214,6 +214,50 @@ mod run {
         fn max_stack(&self, item: &str) -> Option<u32> {
             self.more.max_stack(item)
         }
+        fn item_facts(&self, item: &str) -> Option<horizon_mods::ItemFacts> {
+            self.more.item_facts(item)
+        }
+        fn item_ids(&self) -> Vec<String> {
+            self.more.item_ids()
+        }
+        fn items_in_tag(&self, tag: &str) -> Option<Vec<String>> {
+            self.more.items_in_tag(tag)
+        }
+        fn stack_facts(&self, stack: &HostStack) -> Option<horizon_mods::StackFacts> {
+            self.more.stack_facts(stack)
+        }
+        fn edit_stack(
+            &self,
+            stack: &HostStack,
+            edit: &horizon_mods::StackEdit,
+        ) -> Result<HostStack, String> {
+            self.more.edit_stack(stack, edit)
+        }
+        fn tool(&self, tool: &HostStack, block: &str) -> Option<(f32, bool)> {
+            self.more.tool(tool, block)
+        }
+        fn dimensions(&self) -> Vec<horizon_mods::DimensionFacts> {
+            let vanilla = [
+                "minecraft:overworld",
+                "minecraft:the_nether",
+                "minecraft:the_end",
+            ];
+            let mods = horizon_client::mod_dimensions::all();
+            vanilla
+                .into_iter()
+                .chain(mods.iter().map(|d| d.id))
+                .map(|id| {
+                    let dim = crate::game::Dim::from_id(id);
+                    horizon_mods::DimensionFacts {
+                        id: id.to_owned(),
+                        base: dim.base().id().to_owned(),
+                        min_y: dim.min_y(),
+                        max_y: dim.max_y(),
+                        loaded: self.dims.iter().any(|(d, _)| *d == id),
+                    }
+                })
+                .collect()
+        }
         fn container(
             &self,
             dimension: &str,

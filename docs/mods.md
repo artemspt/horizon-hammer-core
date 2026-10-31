@@ -966,6 +966,15 @@ Everything below sits in `data/<id>/horizon/` and needs a restart. `mods/showcas
 - **Entities flown by code**: `"ticks": true` calls `entity_tick` each tick; with `"projectile": {"gravity": 0, "drag": 1,
   "through_blocks": true}` and `entities.set-velocity` that is a boomerang.
 
+## Items and dimensions (API level 19)
+
+Capability `world` also reads item types and stacks (`items`) and the dimensions (`dimensions`), from the world the game
+lends the call. A stack is a `players.item-stack`: functions that change one hand back a new stack and leave the old
+alone, with the mod's own bytes kept. `components` and `get-component` give SNBT as `/give` writes it, and
+`set-component` takes it the same way: `items::set_component(&sword, "minecraft:custom_name", "\"Edge\"")`. Reads made
+inside a mob's tick by a `before-events` hook answer nothing, as the world isn't lent there. `/showcase api items` checks
+every function of the level against vanilla 26.3.
+
 ## Smaller functions (API level 18)
 
 Conveniences over `players`, `world`, `entities` and `storages`, so a mod needn't write them: `world.get-blocks`, `find-blocks`

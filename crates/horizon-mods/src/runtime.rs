@@ -32,6 +32,8 @@ use wasmtime::{
 
 mod before;
 mod events;
+mod items;
+pub use items::{DimensionFacts, ItemFacts, ModifierFacts, StackEdit, StackFacts};
 mod net;
 mod server_api;
 pub use net::{NET_BYTES, NET_PREFIX};
@@ -431,6 +433,34 @@ pub trait WorldView: std::any::Any + Send {
         false
     }
     /// The living mobs of a dimension (`entities.near`).
+    /// `items`: an item type; `None` for an unknown one.
+    fn item_facts(&self, _item: &str) -> Option<ItemFacts> {
+        None
+    }
+    /// Every item id, in registry order.
+    fn item_ids(&self) -> Vec<String> {
+        Vec::new()
+    }
+    /// The items in an item tag (no `#`); `None` for an unknown tag.
+    fn items_in_tag(&self, _tag: &str) -> Option<Vec<String>> {
+        None
+    }
+    /// What a stack carries; `None` for one the game can't read.
+    fn stack_facts(&self, _stack: &HostStack) -> Option<StackFacts> {
+        None
+    }
+    /// `stack` changed as `edit` says, or why not.
+    fn edit_stack(&self, _stack: &HostStack, _edit: &StackEdit) -> Result<HostStack, String> {
+        Err("this game edits no stacks".into())
+    }
+    /// How fast `tool` breaks `block`, and whether it gets its drops.
+    fn tool(&self, _tool: &HostStack, _block: &str) -> Option<(f32, bool)> {
+        None
+    }
+    /// `dimensions`: every dimension the server has.
+    fn dimensions(&self) -> Vec<DimensionFacts> {
+        Vec::new()
+    }
     fn mobs(&self, _dimension: &str) -> Vec<EntityInfo> {
         Vec::new()
     }
@@ -1529,6 +1559,16 @@ impl Mods {
                 .map_err(|e| e.to_string())?;
             worldgen::add_to_linker::<State, HasSelf<State>>(&mut linker, |s| s)
                 .map_err(|e| e.to_string())?;
+            server_bindings::horizon::mods::items::add_to_linker::<State, HasSelf<State>>(
+                &mut linker,
+                |s| s,
+            )
+            .map_err(|e| e.to_string())?;
+            server_bindings::horizon::mods::dimensions::add_to_linker::<State, HasSelf<State>>(
+                &mut linker,
+                |s| s,
+            )
+            .map_err(|e| e.to_string())?;
             UiHost::add_to_linker::<State, HasSelf<State>>(&mut linker, |s| s)
                 .map_err(|e| e.to_string())?;
             RenderHost::add_to_linker::<State, HasSelf<State>>(&mut linker, |s| s)

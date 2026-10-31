@@ -7,13 +7,13 @@
 //! version's level so the launcher can tell before it installs.
 
 /// The newest level this Horizon serves.
-pub const LEVEL: u32 = 18;
+pub const LEVEL: u32 = 19;
 
 /// Every function the game offers mods, as `interface.function`, with its
 /// level. Level 0 is the contract of Horizon 0.2.67 to 0.2.69. A new
 /// function takes the next level and raises [`LEVEL`] (the `api_reference`
 /// test fails until it is listed here).
-pub const FUNCTIONS: [(&str, u32); 198] = [
+pub const FUNCTIONS: [(&str, u32); 243] = [
     ("log.write", 0),
     ("game.get-player", 0),
     ("game.get-clock", 0),
@@ -212,6 +212,51 @@ pub const FUNCTIONS: [(&str, u32); 198] = [
     ("storages.transfer-item", 18),
     ("storages.transfer-energy", 18),
     ("storages.transfer-fluid", 18),
+    ("items.all", 19),
+    ("items.exists-in-tag", 19),
+    ("items.name", 19),
+    ("items.max-damage", 19),
+    ("items.is-damageable", 19),
+    ("items.is-food", 19),
+    ("items.food-values", 19),
+    ("items.is-block-item", 19),
+    ("items.block-of", 19),
+    ("items.fuel-ticks", 19),
+    ("items.rarity", 19),
+    ("items.components", 19),
+    ("items.get-component", 19),
+    ("items.set-component", 19),
+    ("items.remove-component", 19),
+    ("items.get-damage", 19),
+    ("items.set-damage", 19),
+    ("items.repair", 19),
+    ("items.get-custom-name", 19),
+    ("items.get-lore", 19),
+    ("items.same-item", 19),
+    ("items.can-stack", 19),
+    ("items.split", 19),
+    ("items.grow", 19),
+    ("items.enchantments", 19),
+    ("items.enchantment-level", 19),
+    ("items.set-enchantment", 19),
+    ("items.remove-enchantment", 19),
+    ("items.has-glint", 19),
+    ("items.attribute-modifiers", 19),
+    ("items.add-attribute-modifier", 19),
+    ("items.tool-speed", 19),
+    ("items.is-correct-tool", 19),
+    ("items.dyed-color", 19),
+    ("items.set-dyed-color", 19),
+    ("items.potion-contents", 19),
+    ("items.set-potion-contents", 19),
+    ("items.container-contents", 19),
+    ("dimensions.list", 19),
+    ("dimensions.exists", 19),
+    ("dimensions.loaded", 19),
+    ("dimensions.base", 19),
+    ("dimensions.min-y", 19),
+    ("dimensions.max-y", 19),
+    ("dimensions.players-in", 19),
 ];
 
 /// What the game's program carries so the launcher can read its level

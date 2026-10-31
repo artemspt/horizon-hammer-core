@@ -102,46 +102,46 @@ Hooks missing today; each comes with its entry in `manifest::EVENTS`, so a mod n
 
 Every mod with items needs this. `style-stack` covers only the look; components are opaque today.
 
-- [ ] `items.exists-in-tag`: every item in a tag
-- [ ] `items.all`: every item id
-- [ ] `items.name`: an item's translated name
-- [ ] `items.max-damage`: an item's durability
-- [ ] `items.is-damageable`: whether it wears out
-- [ ] `items.is-food`: whether it can be eaten
-- [ ] `items.food-values`: nutrition and saturation
-- [ ] `items.is-block-item`: whether it places a block
-- [ ] `items.block-of`: the block it places
-- [ ] `items.fuel-ticks`: how long it burns in a furnace
-- [ ] `items.rarity`: an item's rarity
-- [ ] `items.components`: a stack's components as JSON
-- [ ] `items.get-component`: one component of a stack
-- [ ] `items.set-component`: a stack with one component set
-- [ ] `items.remove-component`: a stack with one component removed
-- [ ] `items.get-damage`: a stack's damage
-- [ ] `items.set-damage`: a stack with this damage
-- [ ] `items.repair`: a stack repaired by an amount
-- [ ] `items.get-custom-name`: a stack's name
-- [ ] `items.get-lore`: a stack's lore
-- [ ] `items.same-item`: whether two stacks are the same item
-- [ ] `items.can-stack`: whether two stacks stack together
-- [ ] `items.split`: a stack split in two
-- [ ] `items.grow`: a stack with its count changed, within limits
-- [ ] `items.enchantments`: a stack's enchantments and levels
-- [ ] `items.enchantment-level`: one enchantment's level on a stack
-- [ ] `items.set-enchantment`: a stack with an enchantment set
-- [ ] `items.remove-enchantment`: a stack without an enchantment
-- [ ] `items.has-glint`: whether a stack shines
-- [ ] `items.attribute-modifiers`: a stack's attribute modifiers
-- [ ] `items.add-attribute-modifier`: a stack with a modifier added
-- [ ] `items.tool-speed`: how fast a tool breaks a block
-- [ ] `items.is-correct-tool`: whether a tool gets a block's drops
-- [ ] `items.set-cooldown`: an item's cooldown for a player
-- [ ] `items.get-cooldown`: ticks left on it
-- [ ] `items.dyed-color`: a stack's dye colour
-- [ ] `items.set-dyed-color`: a stack with a dye colour
-- [ ] `items.potion-contents`: a potion's effects
-- [ ] `items.set-potion-contents`: a potion with these effects
-- [ ] `items.container-contents`: what a shulker box or bundle holds
+- [x] `items.exists-in-tag`: every item in a tag
+- [x] `items.all`: every item id
+- [x] `items.name`: an item's translated name (the server's language: English on a dedicated server)
+- [x] `items.max-damage`: an item's durability
+- [x] `items.is-damageable`: whether it wears out
+- [x] `items.is-food`: whether it can be eaten
+- [x] `items.food-values`: nutrition and saturation
+- [x] `items.is-block-item`: whether it places a block
+- [x] `items.block-of`: the block it places
+- [x] `items.fuel-ticks`: how long it burns in a furnace
+- [x] `items.rarity`: an item's rarity
+- [x] `items.components`: a stack's components as JSON
+- [x] `items.get-component`: one component of a stack
+- [x] `items.set-component`: a stack with one component set
+- [x] `items.remove-component`: a stack with one component removed
+- [x] `items.get-damage`: a stack's damage
+- [x] `items.set-damage`: a stack with this damage
+- [x] `items.repair`: a stack repaired by an amount
+- [x] `items.get-custom-name`: a stack's name
+- [x] `items.get-lore`: a stack's lore
+- [x] `items.same-item`: whether two stacks are the same item
+- [x] `items.can-stack`: whether two stacks stack together
+- [x] `items.split`: a stack split in two
+- [x] `items.grow`: a stack with its count changed, within limits
+- [x] `items.enchantments`: a stack's enchantments and levels
+- [x] `items.enchantment-level`: one enchantment's level on a stack
+- [x] `items.set-enchantment`: a stack with an enchantment set
+- [x] `items.remove-enchantment`: a stack without an enchantment
+- [x] `items.has-glint`: whether a stack shines
+- [x] `items.attribute-modifiers`: a stack's attribute modifiers
+- [x] `items.add-attribute-modifier`: a stack with a modifier added
+- [x] `items.tool-speed`: how fast a tool breaks a block (the tool's own speed, before Efficiency and the player's effects)
+- [x] `items.is-correct-tool`: whether a tool gets a block's drops
+- [ ] `items.set-cooldown`: an item's cooldown for a player (waits: cooldowns live in each player's state in the game; needs an action and a read in the snapshot)
+- [ ] `items.get-cooldown`: ticks left on it (waits: cooldowns live in each player's state in the game; needs an action and a read in the snapshot)
+- [x] `items.dyed-color`: a stack's dye colour
+- [x] `items.set-dyed-color`: a stack with a dye colour
+- [x] `items.potion-contents`: a potion's effects
+- [x] `items.set-potion-contents`: a potion with these effects (the base potion only: Horizon keeps no effects of a potion's own)
+- [x] `items.container-contents`: what a shulker box or bundle holds
 
 ## 4. Item behaviour in code (20, kind C)
 
@@ -253,15 +253,15 @@ What a Twilight Forest or TerraFirmaCraft analogue needs first. Upstream's `for_
 
 Mod dimensions work; getting into them and how they look does not.
 
-- [ ] `dimensions.list`: every dimension, the mods' included
-- [ ] `dimensions.exists`: whether one exists
-- [ ] `dimensions.loaded`: whether one is open now
-- [ ] `dimensions.base`: the vanilla type under a mod's dimension
-- [ ] `dimensions.min-y`: its lowest block
-- [ ] `dimensions.max-y`: its highest block
-- [ ] `dimensions.time`: its own time of day
-- [ ] `dimensions.set-time`: sets it
-- [ ] `dimensions.players-in`: the players there
+- [x] `dimensions.list`: every dimension, the mods' included
+- [x] `dimensions.exists`: whether one exists
+- [x] `dimensions.loaded`: whether one is open now
+- [x] `dimensions.base`: the vanilla type under a mod's dimension
+- [x] `dimensions.min-y`: its lowest block
+- [x] `dimensions.max-y`: its highest block
+- [ ] `dimensions.time`: its own time of day (waits: every level shares the overworld's day time today, as in vanilla)
+- [ ] `dimensions.set-time`: sets it (waits: every level shares the overworld's day time today, as in vanilla)
+- [x] `dimensions.players-in`: the players there
 - [ ] `dimensions.keep-loaded`: keeps it ticking with no one there
 - [ ] `dimensions.register-portal`: a frame block and light item make a portal to a dimension
 - [ ] `dimensions.teleport-rule`: where arrivals land: same x z, scaled, or fixed

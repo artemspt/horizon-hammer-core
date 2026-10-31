@@ -25,6 +25,23 @@ The project has a working WASM mod system in `crates/horizon-mods/` with:
 
 ## Changelog
 
+### 2026-10-31 - Items and dimensions (API level 19)
+
+#### Added
+- **WIT `items`** (38, capability `world`): `all`, `exists-in-tag`, `name`, `max-damage`, `is-damageable`, `is-food`,
+  `food-values`, `is-block-item`, `block-of`, `fuel-ticks`, `rarity`, `components`, `get-component`, `set-component`,
+  `remove-component`, `get-damage`, `set-damage`, `repair`, `get-custom-name`, `get-lore`, `same-item`, `can-stack`,
+  `split`, `grow`, `enchantments`, `enchantment-level`, `set-enchantment`, `remove-enchantment`, `has-glint`,
+  `attribute-modifiers`, `add-attribute-modifier`, `tool-speed`, `is-correct-tool`, `dyed-color`, `set-dyed-color`,
+  `potion-contents`, `set-potion-contents`, `container-contents`
+- **WIT `dimensions`** (7, capability `world`): `list`, `exists`, `loaded`, `base`, `min-y`, `max-y`, `players-in`
+- **Runtime** - `runtime/items.rs`: `ItemFacts`, `StackFacts`, `StackEdit`, `DimensionFacts` and `WorldView` reads for
+  them; ids and SNBT checked before they reach the game
+- **Game** - `mod_machines.rs` `Lent` holds the world's resources (`Arc<Resources>`) and reads and edits stacks with
+  `horizon_items` (`encode_components`, `command_components`, `decode_components`); `server_mods.rs` lists the dimensions
+- **`/showcase api items`** - every function of the level, checked against vanilla 26.3
+- Not run in the game yet: no game resources on this machine. Built, and the runtime tested
+
 ### 2026-10-31 - Events asked before they happen (`before-events`)
 
 #### Added

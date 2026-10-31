@@ -5,6 +5,9 @@ Fixed ones are removed from this list.
 
 ## Behaviour
 
+- **A potion keeps its base potion only**: `potion_contents`' custom effects and colour are dropped by the game's own
+  stacks, so `items.set-potion-contents` takes no effects.
+- **`items.name` is English on a dedicated server**, which loads no language.
 - **`before-entity-hurt` misses `/damage` and a conduit's attack**: they hurt mobs outside the phases
   `Game::mod_gated` covers. In-frame single player's own attack isn't asked either.
 - **`before-player-hurt` names no attacker for PvP**: only `hurt_player_from` says which mob hit

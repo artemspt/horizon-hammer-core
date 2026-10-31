@@ -8,6 +8,7 @@
 //!   (`client.rs`, this mod's other half) fed over the mod's own network channel.
 mod before;
 mod client;
+mod tour19;
 
 use horizon_mod_sdk::server::{
     Args, Argument, BlockChange, BlockPos, Entity, ItemStack, Player, Registration, ServerMod,
@@ -488,6 +489,8 @@ impl Showcase {
             }
             // The API's level 18 in one go: `/showcase api set`, then, a tick later, `/showcase api check`,
             // then `/showcase api act` for what shows on screen.
+            // Level 19 (`items`, `dimensions`) answers at once: `/showcase api items`.
+            "api" if arg == "items" => tour19::run(player).map(Some),
             "api" => api_tour(player, arg, (fx + 8, fy + 5, fz)).map(Some),
             // `before-events`: `on` turns each hook's rule on, `check` says how often each was asked.
             "before" => match arg {
