@@ -509,6 +509,10 @@ interface render {
     /// Distance setting, when on, wins. One far terrain shows at a time: the
     /// first loaded mod's.
     set-far-terrain: func(far-terrain: option<far-terrain>);
+
+    /// Lines shown under the tooltip of `item`, from now on; empty takes them
+    /// away. A stack's own lines are `players.style-stack`'s lore.
+    set-item-tooltip: func(item: string, lines: list<string>);
 }
 
 /// What the game calls. Only the hooks `init` asks for are ever called.
@@ -951,6 +955,12 @@ interface players {
     raycast-block: func(player: string, reach: f64) -> option<tuple<s32, s32, s32>>;
     /// Teleports a player in their dimension and turns them.
     teleport-look: func(player: string, x: f64, y: f64, z: f64, yaw: f32, pitch: f32) -> result<_, string>;
+
+    /// Puts the held item in use for `ticks`, whatever it is: `item-events`
+    /// hears each tick and the end. Other players see the arm raised.
+    start-using: func(player: string, ticks: u32) -> result<_, string>;
+    /// Ends the use; `use-stopped` hears.
+    stop-using: func(player: string) -> result<_, string>;
 }
 
 /// Capability `world`, server mods only (manifest `api = "0.3"`,
@@ -2317,6 +2327,58 @@ interface before-events {
     /// brewing stand or crafter): true keeps it shut.
     container-open: func(player: player, x: s32, y: s32, z: s32, block: string) -> bool;
 }
+/// What players do with items a mod names in its manifest's `hook_items`,
+/// for the events it lists as `item-<name>`. They only tell, at the tick's end.
+/// A click on a block or a mob is `block-events.use-block`, `entity-events.use-entity`.
+interface item-events {
+    use players.{player, item-stack};
+    use entities.{entity};
+
+    /// Each tick of a use, `ticks` so far: eating, or `players.start-using`.
+    use-tick: func(player: player, item: item-stack, ticks: u32);
+    /// A use ran its whole time.
+    use-finished: func(player: player, item: item-stack);
+    /// A use ended early, after `ticks`.
+    use-stopped: func(player: player, item: item-stack, ticks: u32);
+    /// Each tick the item is in the inventory, per stack (`slot` as `players.inventory`).
+    inventory-tick: func(player: player, item: item-stack, slot: u32);
+    /// Each tick the item is in the main hand.
+    held-tick: func(player: player, item: item-stack);
+    /// The item broke a block in survival; `state` is what was there.
+    mine-block: func(player: player, item: item-stack, dimension: string, x: s32, y: s32, z: s32, state: string);
+    /// The item hit a mob.
+    hit-entity: func(player: player, item: item-stack, target: entity);
+    /// The player took a crafted result: every mod listing `item-crafted`, no
+    /// `hook_items` needed.
+    crafted: func(player: player, recipe: string);
+}
+
+/// The game's side of `item-events`.
+world item-events-host {
+    export item-events;
+}
+
+/// What happens at blocks a mod names in its manifest's `hook_blocks`, for the
+/// events it lists as `block-<name>`. They only tell, at the tick's end; `entity`
+/// is a player's or a mob's id, of the level in place.
+interface block-hooks {
+    /// A random tick, as often as vanilla's for any block.
+    random-tick: func(dimension: string, x: s32, y: s32, z: s32, state: string);
+    /// Each tick an entity's feet are in the block.
+    entity-inside: func(dimension: string, x: s32, y: s32, z: s32, state: string, entity: string);
+    /// An entity on the ground walked onto the block.
+    stepped-on: func(dimension: string, x: s32, y: s32, z: s32, state: string, entity: string);
+    /// An entity landed on the block after falling `distance`.
+    fell-on: func(dimension: string, x: s32, y: s32, z: s32, state: string, entity: string, distance: f32);
+    /// An explosion took the block.
+    exploded: func(dimension: string, x: s32, y: s32, z: s32, state: string);
+}
+
+/// The game's side of `block-hooks`.
+world block-hooks-host {
+    export block-hooks;
+}
+
 /// The game's side of `before-events`.
 world before-events-host {
     export before-events;
@@ -2446,6 +2508,8 @@ world horizon-server-block-mod {
     export block-events;
     export game-events;
     export before-events;
+    export item-events;
+    export block-hooks;
     export entity-events;
     export logic-events;
     export server-net-events;

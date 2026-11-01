@@ -105,6 +105,26 @@ mod before_bindings {
     });
 }
 use before_bindings::BeforeEventsHost;
+/// `item-events`, as `before-events` is.
+mod item_bindings {
+    wasmtime::component::bindgen!({
+        path: "../horizon-mod-sdk/wit",
+        world: "item-events-host",
+        with: {
+            "horizon:mods/players": super::server_bindings::horizon::mods::players,
+            "horizon:mods/entities": super::server_bindings::horizon::mods::entities,
+        },
+    });
+}
+/// `block-hooks`.
+mod block_hook_bindings {
+    wasmtime::component::bindgen!({
+        path: "../horizon-mod-sdk/wit",
+        world: "block-hooks-host",
+    });
+}
+mod play;
+pub use play::{BlockHook, ItemEvent};
 /// `entity-events`, as `block-events` is.
 mod entity_bindings {
     wasmtime::component::bindgen!({
@@ -625,6 +645,9 @@ struct Running {
     events: Option<EventsHost>,
     /// A server mod's `before-events` export; none for one built before it.
     before: Option<BeforeEventsHost>,
+    /// `item-events` and `block-hooks`; none for a mod built before them.
+    item_events: Option<play::ItemEventsHost>,
+    block_hooks: Option<play::BlockHooksHost>,
     /// A server mod's `entity-events` export; none for one built before it.
     entity_events: Option<EntityEventsHost>,
     /// A server mod's `logic-events` export; none for one built before it.
@@ -792,6 +815,13 @@ pub struct BlockData {
     /// locks go with it, a running one's are set again.
     #[serde(skip)]
     pub locked: std::collections::BTreeMap<String, Vec<String>>,
+    /// `render.set-item-tooltip`: item → mod id → lines. Set again by a mod
+    /// that runs, so not saved.
+    #[serde(skip)]
+    pub tooltips: std::collections::BTreeMap<
+        String,
+        std::collections::BTreeMap<String, Vec<String>>,
+    >,
     /// `players.set-data`: player → mod id → key → bytes in hex.
     #[serde(default)]
     pub player_data: std::collections::BTreeMap<
@@ -1922,7 +1952,15 @@ impl Mods {
         let before = server
             .then(|| BeforeEventsHost::new(&mut store, &instance).ok())
             .flatten();
+        let item_events = server
+            .then(|| play::ItemEventsHost::new(&mut store, &instance).ok())
+            .flatten();
+        let block_hooks = server
+            .then(|| play::BlockHooksHost::new(&mut store, &instance).ok())
+            .flatten();
         Ok(Some(Running {
+            item_events,
+            block_hooks,
             entity_events,
             logic_events,
             events,
@@ -3964,6 +4002,15 @@ impl players::Host for State {
     fn is_flying(&mut self, player: String) -> bool {
         self.player_flag(&player, |p| p.flying)
     }
+    fn start_using(&mut self, player: String, ticks: u32) -> Result<(), String> {
+        if ticks == 0 || ticks > 72_000 {
+            return Err("1 to 72000 ticks".into());
+        }
+        self.change_player(player, server_api::PlayerChange::StartUsing(ticks))
+    }
+    fn stop_using(&mut self, player: String) -> Result<(), String> {
+        self.change_player(player, server_api::PlayerChange::StopUsing)
+    }
     fn set_may_fly(&mut self, player: String, on: bool) -> Result<(), String> {
         self.change_player(player, server_api::PlayerChange::MayFly(on))
     }
@@ -4223,6 +4270,17 @@ fn clip_shapes(shapes: Vec<Shape>) -> Vec<Shape> {
 }
 
 impl render::Host for State {
+    fn set_item_tooltip(&mut self, item: String, lines: Vec<String>) {
+        if let Ok(mut data) = self.block_data.lock() {
+            let lines: Vec<String> = lines.into_iter().take(16).map(clip).collect();
+            let of_item = data.tooltips.entry(item).or_default();
+            if lines.is_empty() {
+                of_item.remove(&self.id);
+            } else {
+                of_item.insert(self.id.clone(), lines);
+            }
+        }
+    }
     fn open_canvas(
         &mut self,
         title: String,

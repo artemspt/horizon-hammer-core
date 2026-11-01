@@ -102,6 +102,33 @@ impl Game<'_> {
     }
     pub(super) fn mod_crafted(&mut self, _uuid: u128, _recipes: &[String]) {}
     pub(super) fn mod_item_event(&mut self, _kind: &str, _item: &str) {}
+    pub(super) fn mod_use_tick(&mut self, _stack: &horizon_client::items::ItemStack, _ticks: u32) {}
+    pub(super) fn mod_use_stopped(
+        &mut self,
+        _stack: &horizon_client::items::ItemStack,
+        _ticks: u32,
+    ) {
+    }
+    pub(super) fn mod_use_finished(&mut self, _stack: &horizon_client::items::ItemStack) {}
+    pub(super) fn mod_own_use(
+        &mut self,
+        _slot: usize,
+        _ticks: u32,
+        _stack: &horizon_client::items::ItemStack,
+    ) -> bool {
+        false
+    }
+    pub(super) fn mod_mined(
+        &mut self,
+        _held: Option<&horizon_client::items::ItemStack>,
+        _pos: [i32; 3],
+        _state: horizon_world::registry::BlockStateId,
+    ) {
+    }
+    pub(super) fn mod_hit(&mut self, _index: usize) {}
+    pub(super) fn mod_tooltip_lines(&self, _item: &str) -> Vec<String> {
+        Vec::new()
+    }
     pub(super) fn mod_undying(&self) -> bool {
         false
     }

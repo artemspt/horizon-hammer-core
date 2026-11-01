@@ -13,6 +13,7 @@ mod tour20;
 mod tour21;
 mod tour22;
 mod tour24;
+mod tour25;
 
 use horizon_mod_sdk::server::{
     Args, Argument, BlockChange, BlockPos, Entity, ItemStack, Player, Registration, ServerMod,
@@ -510,6 +511,11 @@ impl Showcase {
             "api" if arg == "l24" => tour24::set(player).map(Some),
             "api" if arg == "l24check" => tour24::check(player).map(Some),
             "api" if arg == "l24after" => tour24::after(player).map(Some),
+            // Level 25: item-events. `l25`, then `l25stop`, `l25stop2`, then `l25check`.
+            "api" if arg == "l25" => tour25::set(player).map(Some),
+            "api" if arg == "l25stop" => tour25::stop(player).map(Some),
+            "api" if arg == "l25stop2" => tour25::stop2(player).map(Some),
+            "api" if arg == "l25check" => tour25::check().map(Some),
             "api" => api_tour(player, arg, (fx + 8, fy + 5, fz)).map(Some),
             // `before-events`: `on` turns each hook's rule on, `check` says how often each was asked.
             "before" => match arg {
@@ -629,6 +635,42 @@ fn cell_stack(energy: u64) -> ItemStack {
 }
 
 impl ServerMod for Showcase {
+    fn item_use_tick(&mut self, player: &Player, item: &horizon_mod_sdk::server::ItemStack, ticks: u32) {
+        tour25::use_tick(player, item, ticks);
+    }
+    fn item_use_finished(&mut self, _: &Player, _: &horizon_mod_sdk::server::ItemStack) {
+        tour25::heard("use-finished");
+    }
+    fn item_use_stopped(&mut self, _: &Player, _: &horizon_mod_sdk::server::ItemStack, _: u32) {
+        tour25::heard("use-stopped");
+    }
+    fn item_inventory_tick(&mut self, _: &Player, _: &horizon_mod_sdk::server::ItemStack, _: u32) {
+        tour25::heard("inventory");
+    }
+    fn item_held_tick(&mut self, _: &Player, _: &horizon_mod_sdk::server::ItemStack) {
+        tour25::heard("held");
+    }
+    fn item_mine_block(
+        &mut self,
+        _: &Player,
+        item: &horizon_mod_sdk::server::ItemStack,
+        _: &str,
+        _: (i32, i32, i32),
+        state: &str,
+    ) {
+        tour25::heard(&format!("mine:{}:{state}", item.item));
+    }
+    fn item_hit_entity(
+        &mut self,
+        player: &Player,
+        item: &horizon_mod_sdk::server::ItemStack,
+        target: &Entity,
+    ) {
+        tour25::hit(player, item, target);
+    }
+    fn item_crafted(&mut self, _: &Player, recipe: &str) {
+        tour25::heard(&format!("crafted:{recipe}"));
+    }
     /// A rift: hills from sines, one biome.
     fn generate_chunk(
         &mut self,

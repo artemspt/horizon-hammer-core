@@ -51,6 +51,7 @@ impl Game<'_> {
         // ServerPlayer: the used statistic and the consume_item trigger.
         self.stats.add("used", &stack.item, 1);
         self.mod_item_event("used-item", &stack.item);
+        self.mod_use_finished(stack);
         self.trigger_item("minecraft:consume_item", stack);
         // FoodProperties.onConsume, the player's one ConsumableListener.
         if let Some((nutrition, saturation)) = info.food {

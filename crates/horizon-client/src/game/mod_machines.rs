@@ -808,6 +808,9 @@ impl Game<'_> {
     pub(super) fn mod_crafted(&mut self, uuid: u128, recipes: &[String]) {
         if self.mods.server {
             let id = uuid_string(uuid);
+            self.mods
+                .crafted_events
+                .extend(recipes.iter().map(|r| (id.clone(), r.clone())));
             self.mods.crafted.extend(
                 recipes
                     .iter()
@@ -830,6 +833,118 @@ impl Game<'_> {
             self.mods
                 .crafted
                 .push((id, kind.to_owned(), item.to_owned()));
+        }
+    }
+
+    fn queue_item_event(&mut self, stack: &ItemStack, event: horizon_mods::ItemEvent) {
+        if self.mods.server && self.mods_now(|m| m.has_item_hooks()) {
+            let id = self.mod_acting_id();
+            self.mods.item_events.push((id, host_stack(stack), event));
+        }
+    }
+    pub(super) fn mod_use_tick(&mut self, stack: &ItemStack, ticks: u32) {
+        self.queue_item_event(stack, horizon_mods::ItemEvent::UseTick(ticks));
+    }
+    pub(super) fn mod_use_stopped(&mut self, stack: &ItemStack, ticks: u32) {
+        let id = self.mod_acting_id();
+        self.mods.own_uses.remove(&id);
+        self.queue_item_event(stack, horizon_mods::ItemEvent::UseStopped(ticks));
+    }
+    pub(super) fn mod_use_finished(&mut self, stack: &ItemStack) {
+        self.queue_item_event(stack, horizon_mods::ItemEvent::UseFinished);
+    }
+    /// A use `players.start-using` began: it runs its time on any item. True
+    /// when this tick was one of its.
+    pub(super) fn mod_own_use(&mut self, slot: usize, ticks: u32, stack: &ItemStack) -> bool {
+        if self.mods.own_uses.is_empty() {
+            return false;
+        }
+        let id = self.mod_acting_id();
+        let Some(&duration) = self.mods.own_uses.get(&id) else {
+            return false;
+        };
+        if ticks + 1 >= duration {
+            self.using = None;
+            self.mods.own_uses.remove(&id);
+            self.mod_use_finished(stack);
+        } else {
+            self.using = Some((slot, ticks + 1));
+        }
+        true
+    }
+    pub(super) fn mod_mined(
+        &mut self,
+        held: Option<&ItemStack>,
+        pos: [i32; 3],
+        state: horizon_world::registry::BlockStateId,
+    ) {
+        let Some(held) = held else {
+            return;
+        };
+        let state = self
+            .pack
+            .assets
+            .registry
+            .state(state)
+            .map_or_else(String::new, |s| {
+                if s.properties.is_empty() {
+                    return s.name.to_string();
+                }
+                let props: Vec<String> = s
+                    .properties
+                    .iter()
+                    .map(|(k, v)| format!("{k}={v}"))
+                    .collect();
+                format!("{}[{}]", s.name, props.join(","))
+            });
+        let event = horizon_mods::ItemEvent::Mine {
+            dimension: self.dim.id().to_owned(),
+            pos: (pos[0], pos[1], pos[2]),
+            state,
+        };
+        self.queue_item_event(held, event);
+    }
+    pub(super) fn mod_hit(&mut self, index: usize) {
+        let Some(held) = self.held().cloned() else {
+            return;
+        };
+        let info = self.mobs.get(index).and_then(|m| self.mob_info(m));
+        if let Some(info) = info {
+            self.queue_item_event(&held, horizon_mods::ItemEvent::Hit(info));
+        }
+    }
+    /// What the mods add under `item`'s tooltip.
+    pub(super) fn mod_tooltip_lines(&self, item: &str) -> Vec<String> {
+        self.mods.mods.item_tooltip(item)
+    }
+    /// The tick's `item-events`, and the items carried and held.
+    fn mod_deliver_item_events(&mut self, players: &[horizon_mods::ServerPlayer]) {
+        use horizon_mods::ItemEvent;
+        for (id, recipe) in std::mem::take(&mut self.mods.crafted_events) {
+            if let Some(player) = players.iter().find(|p| p.id == id) {
+                self.mods.mods.item_crafted(player, &recipe);
+            }
+        }
+        if !self.mods_now(|m| m.has_item_hooks()) {
+            self.mods.item_events.clear();
+            return;
+        }
+        let mut events = std::mem::take(&mut self.mods.item_events);
+        for (id, selected, slots) in self.mod_inventories(None) {
+            for (i, stack) in slots.iter().enumerate() {
+                let Some(stack) = stack else {
+                    continue;
+                };
+                events.push((id.clone(), stack.clone(), ItemEvent::InventoryTick(i as u32)));
+                if i as u32 == selected {
+                    events.push((id.clone(), stack.clone(), ItemEvent::HeldTick));
+                }
+            }
+        }
+        for (id, stack, event) in &events {
+            if let Some(player) = players.iter().find(|p| p.id == *id) {
+                self.mods.mods.item_event(player, stack, event);
+            }
         }
     }
 
@@ -1032,6 +1147,25 @@ impl Game<'_> {
                     let _ = p.set_health(health.min(max.map_or(20.0, |m| m as f32)), false);
                 }
             }),
+            C::StartUsing(ticks) => {
+                let owner = id.to_owned();
+                self.mods.own_uses.insert(owner, ticks);
+                self.on_mod_player(id, |g| {
+                    if g.held().is_some() {
+                        g.using = Some((g.held_slot(), 0));
+                    }
+                });
+            }
+            C::StopUsing => {
+                self.mods.own_uses.remove(id);
+                self.on_mod_player(id, |g| {
+                    if let Some((slot, ticks)) = g.using.take()
+                        && let Some(stack) = g.stack_in(slot).cloned()
+                    {
+                        g.mod_use_stopped(&stack, ticks);
+                    }
+                });
+            }
             C::SelectedSlot(slot) => self.on_mod_guest(id, |_, host, i| {
                 let g = &mut host.hub.guests[i];
                 g.selected = slot as usize;
@@ -2450,6 +2584,7 @@ impl Game<'_> {
     }
 
     pub(super) fn mod_game_events(&mut self, players: &[horizon_mods::ServerPlayer]) {
+        self.mod_deliver_item_events(players);
         self.mod_logic(players);
         self.mod_mob_events();
         self.mod_player_hurt_events(players);

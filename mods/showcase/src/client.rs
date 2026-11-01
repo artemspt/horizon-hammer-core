@@ -217,6 +217,10 @@ impl Mod for ShowcaseHud {
         })]);
         input::register_key("showcase_tour", "Showcase tour", "key.keyboard.k")?;
         input::claim_items(&["showcase:wand".to_owned()]);
+        horizon_mod_sdk::render::set_item_tooltip(
+            "minecraft:stick",
+            &["Core Showcase says: a stick".to_owned()],
+        );
         Ok((
             ShowcaseHud::default(),
             Registration::new()

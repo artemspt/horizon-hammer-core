@@ -104,6 +104,15 @@ pub(super) struct ModsState {
     pub(super) entity_tags: Option<TagMap>,
     /// Recipes players crafted this tick, for `players.poll-events`.
     pub(super) crafted: Vec<(String, String, String)>,
+    /// `item-events` waiting for the tick's end: player, stack, what.
+    #[cfg(feature = "mods")]
+    pub(super) item_events: Vec<(String, horizon_mods::HostStack, horizon_mods::ItemEvent)>,
+    /// `item-events.crafted` waiting: player, recipe.
+    #[cfg(feature = "mods")]
+    pub(super) crafted_events: Vec<(String, String)>,
+    /// `players.start-using`: player, how long the use runs.
+    #[cfg(feature = "mods")]
+    pub(super) own_uses: std::collections::HashMap<String, u32>,
     /// `world.set-locked-results` as last published.
     pub(super) locked: std::collections::BTreeSet<String>,
     /// Every item's stack size, for server mods' calls, made once.

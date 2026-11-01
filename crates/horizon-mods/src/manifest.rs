@@ -67,6 +67,12 @@ pub struct Manifest {
     /// the rest); equal ones go in load order.
     #[serde(default)]
     pub priority: i32,
+    /// The items `item-events` tell this mod of.
+    #[serde(default)]
+    pub hook_items: Vec<String>,
+    /// The blocks `block-hooks` tell this mod of.
+    #[serde(default)]
+    pub hook_blocks: Vec<String>,
     /// The expansion boards this mod calls: `id`, or `id@2` for that major
     /// version (`docs/boards.md`). A mod listing one is marked unsafe.
     #[serde(default)]
@@ -108,7 +114,7 @@ pub fn load_config(path: &Path, m: &Manifest) -> std::collections::BTreeMap<Stri
 
 /// The events of `game-events`, as a manifest's `events` names them, then
 /// those of `before-events` with `before-` in front.
-pub const EVENTS: [&str; 17] = [
+pub const EVENTS: [&str; 30] = [
     "entity-dying",
     "entity-spawned",
     "entity-hurt",
@@ -126,6 +132,19 @@ pub const EVENTS: [&str; 17] = [
     "before-mob-drop",
     "before-xp-drop",
     "before-container-open",
+    "item-use-tick",
+    "item-use-finished",
+    "item-use-stopped",
+    "item-inventory-tick",
+    "item-held-tick",
+    "item-mine-block",
+    "item-hit-entity",
+    "item-crafted",
+    "block-random-tick",
+    "block-entity-inside",
+    "block-stepped-on",
+    "block-fell-on",
+    "block-exploded",
 ];
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]

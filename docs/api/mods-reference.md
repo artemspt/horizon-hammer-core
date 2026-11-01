@@ -30,6 +30,20 @@ The game's side of `game-events`.
 - Imports (what the game offers): `players`, `entities`
 - Exports (what the mod provides): `game-events`
 
+## World `item-events-host`
+
+The game's side of `item-events`.
+
+- Imports (what the game offers): `players`, `entities`
+- Exports (what the mod provides): `item-events`
+
+## World `block-hooks-host`
+
+The game's side of `block-hooks`.
+
+- Imports (what the game offers): 
+- Exports (what the mod provides): `block-hooks`
+
 ## World `before-events-host`
 
 The game's side of `before-events`.
@@ -85,7 +99,7 @@ A server mod (manifest `side = "server"`, `api = "0.3"`, experimental): runs whe
 What the SDK builds a server mod as: `horizon-server-mod` and the block hooks.
 
 - Imports (what the game offers): `log`, `storage`, `players`, `world`, `storages`, `entities`, `worldgen`, `items`, `dimensions`, `blocks`, `chunks`, `loot`, `recipes-server`, `boards`, `shapes`, `patterns`, `noise`, `timers`, `crowd`, `fx`, `stock`, `admin`, `server-net`
-- Exports (what the mod provides): `block-events`, `game-events`, `before-events`, `entity-events`, `logic-events`, `server-net-events`, `server-events`
+- Exports (what the mod provides): `block-events`, `game-events`, `before-events`, `item-events`, `block-hooks`, `entity-events`, `logic-events`, `server-net-events`, `server-events`
 
 ## World `horizon-ui-mod`
 
@@ -567,6 +581,7 @@ A place on a canvas that hears clicks: `ui-events::select(id, 0)`.
 | `set-zoom` | `func(zoom: zoom)` | Zooms the camera until the next call (`factor` 1 ends it), only while playing: a screen opening or the spyglass's own view (which wins) leave the camera vanilla's. With several mods, the strongest zoom counts. |
 | `set-minimap` | `func(minimap: option<minimap>)` | Shows a map of the world around the player in `corner`, stacked with the game's overlays and the mods' panels, until the next call (none hides it). It looks like a map item: vanilla's map colours with their height shading and water depth, and the player's arrow. Underground, under a roof and in the Nether it maps the floor around the player's height. The game keeps the map's tiles and refreshes them within its own frame budget; hidden, they are dropped. One map shows at a time: the first loaded mod's. |
 | `set-far-terrain` | `func(far-terrain: option<far-terrain>)` | Draws the world beyond the render distance as distant terrain, out to `distance` chunks, until the next call (none ends it). The game builds it on its own workers, from the chunks already loaded or saved and, where nobody has been, from the world's generator; the simulation distance doesn't change. Only worlds whose generator the game has (single player and a LAN world you host) show it. The player's own LOD Distance setting, when on, wins. One far terrain shows at a time: the first loaded mod's. |
+| `set-item-tooltip` | `func(item: string, lines: list<string>)` | Lines shown under the tooltip of `item`, from now on; empty takes them away. A stack's own lines are `players.style-stack`'s lore. |
 
 ## `events`
 
@@ -901,6 +916,8 @@ Experience: the level, how far into the next one (0 to 1), the total.
 | `broadcast-json` | `func(json: string) -> result<_, string>` | A chat component, as JSON, to everyone. |
 | `raycast-block` | `func(player: string, reach: f64) -> option<tuple<s32, s32, s32>>` | The first block that isn't air along a player's view, within `reach`. Whole cells: a torch's cell counts, and so does water. |
 | `teleport-look` | `func(player: string, x: f64, y: f64, z: f64, yaw: f32, pitch: f32) -> result<_, string>` | Teleports a player in their dimension and turns them. |
+| `start-using` | `func(player: string, ticks: u32) -> result<_, string>` | Puts the held item in use for `ticks`, whatever it is: `item-events` hears each tick and the end. Other players see the arm raised. |
+| `stop-using` | `func(player: string) -> result<_, string>` | Ends the use; `use-stopped` hears. |
 
 ## `world`
 
@@ -1825,6 +1842,49 @@ Asked before something happens, as it happens, of the server mods whose manifest
 | `mob-drop` | `func(dimension: string, entity: entity, killer: option<string>, drops: list<item-stack>) -> option<list<item-stack>>` | What a dead mob is about to drop, by `killer` when a player killed it: `none` leaves it, a list is what drops instead (up to 64 stacks). |
 | `xp-drop` | `func(dimension: string, x: f64, y: f64, z: f64, source: string, amount: u32) -> u32` | Experience about to drop at x y z: `source` is `mob` (a dead mob's, asked after `mob-drop`). The answer is what drops. |
 | `container-open` | `func(player: player, x: s32, y: s32, z: s32, block: string) -> bool` | `player` is about to open the window of `block` at x y z (a chest, barrel, ender chest, shulker box, hopper, dispenser, dropper, furnace, brewing stand or crafter): true keeps it shut. |
+
+## `item-events`
+
+Access: exported by the mod: the game calls it.
+
+What players do with items a mod names in its manifest's `hook_items`, for the events it lists as `item-<name>`. They only tell, at the tick's end. A click on a block or a mob is `block-events.use-block`, `entity-events.use-entity`.
+
+### type `player`
+
+`type player = player`
+
+### type `item-stack`
+
+`type item-stack = item-stack`
+
+### type `entity`
+
+`type entity = entity`
+
+| Function | Signature | What it does |
+| --- | --- | --- |
+| `use-tick` | `func(player: player, item: item-stack, ticks: u32)` | Each tick of a use, `ticks` so far: eating, or `players.start-using`. |
+| `use-finished` | `func(player: player, item: item-stack)` | A use ran its whole time. |
+| `use-stopped` | `func(player: player, item: item-stack, ticks: u32)` | A use ended early, after `ticks`. |
+| `inventory-tick` | `func(player: player, item: item-stack, slot: u32)` | Each tick the item is in the inventory, per stack (`slot` as `players.inventory`). |
+| `held-tick` | `func(player: player, item: item-stack)` | Each tick the item is in the main hand. |
+| `mine-block` | `func(player: player, item: item-stack, dimension: string, x: s32, y: s32, z: s32, state: string)` | The item broke a block in survival; `state` is what was there. |
+| `hit-entity` | `func(player: player, item: item-stack, target: entity)` | The item hit a mob. |
+| `crafted` | `func(player: player, recipe: string)` | The player took a crafted result: every mod listing `item-crafted`, no `hook_items` needed. |
+
+## `block-hooks`
+
+Access: exported by the mod: the game calls it.
+
+What happens at blocks a mod names in its manifest's `hook_blocks`, for the events it lists as `block-<name>`. They only tell, at the tick's end; `entity` is a player's or a mob's id, of the level in place.
+
+| Function | Signature | What it does |
+| --- | --- | --- |
+| `random-tick` | `func(dimension: string, x: s32, y: s32, z: s32, state: string)` | A random tick, as often as vanilla's for any block. |
+| `entity-inside` | `func(dimension: string, x: s32, y: s32, z: s32, state: string, entity: string)` | Each tick an entity's feet are in the block. |
+| `stepped-on` | `func(dimension: string, x: s32, y: s32, z: s32, state: string, entity: string)` | An entity on the ground walked onto the block. |
+| `fell-on` | `func(dimension: string, x: s32, y: s32, z: s32, state: string, entity: string, distance: f32)` | An entity landed on the block after falling `distance`. |
+| `exploded` | `func(dimension: string, x: s32, y: s32, z: s32, state: string)` | An explosion took the block. |
 
 ## `entity-events`
 

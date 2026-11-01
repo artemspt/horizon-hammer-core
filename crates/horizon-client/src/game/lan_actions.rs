@@ -1128,6 +1128,7 @@ impl Game<'_> {
                             if let Some((slot, ticks)) = g.using.take()
                                 && let Some(stack) = g.stack_in(slot).cloned()
                             {
+                                g.mod_use_stopped(&stack, ticks);
                                 g.release_used_item(&stack, ticks, false);
                             }
                         });

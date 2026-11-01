@@ -7,7 +7,10 @@ api = "0.3"
 side = "both"
 capabilities = ["players", "world", "entities", "storage", "registries", "net", "worldgen", "hud", "chat", "ui", "render", "game-read", "command", "input", "recipes"]
 experimental = ["worldgen", "ui", "render", "game-read", "command", "input", "recipes"]
-events = ["entity-spawned", "entity-hurt", "entity-died", "player-hurt", "item-picked-up", "explosion", "entity-dying",
+hook_items = ["minecraft:stick", "minecraft:iron_pickaxe", "minecraft:iron_sword"]
+events = ["item-use-tick", "item-use-finished", "item-use-stopped", "item-inventory-tick", "item-held-tick",
+    "item-mine-block", "item-hit-entity", "item-crafted",
+    "entity-spawned", "entity-hurt", "entity-died", "player-hurt", "item-picked-up", "explosion", "entity-dying",
     "before-entity-spawn", "before-entity-hurt", "before-player-hurt", "before-player-death", "before-explosion-blocks",
     "before-item-pickup", "before-item-toss", "before-mob-drop", "before-xp-drop", "before-container-open"]
 priority = 5

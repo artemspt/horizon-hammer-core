@@ -4046,6 +4046,7 @@ impl Game<'_> {
         if removed && !creative {
             let held = self.held().cloned();
             self.mine_block_with_held(&facts.name, facts.hardness);
+            self.mod_mined(held.as_ref(), pos, broken);
             let harvest = !facts.requires_tool
                 || self
                     .res
@@ -4631,7 +4632,12 @@ impl Game<'_> {
         let hand_changed = slot != self.selected && slot != shield::OFFHAND_SLOT;
         if !self.right || hand_changed || self.screen != Screen::Playing {
             self.using = None;
+            self.mod_use_stopped(&stack, ticks);
             self.release_used_item(&stack, ticks, hand_changed);
+            return;
+        }
+        self.mod_use_tick(&stack, ticks);
+        if self.mod_own_use(slot, ticks, &stack) {
             return;
         }
         // ServerPlayer.updateUsingItem: USING_ITEM every tick of the use.
@@ -8699,6 +8705,7 @@ impl Game<'_> {
     /// `Player.attack` on a mob: the damage, knockback, sweep, particles and
     /// sounds.
     pub(super) fn attack_mob(&mut self, index: usize) {
+        self.mod_hit(index);
         let target_kind = self.mobs[index].kind.id.clone();
         let target_kind = format!("minecraft:{}", target_kind.trim_start_matches("minecraft:"));
         let (amount, scale, crit, magic) = self.melee_damage(&target_kind);

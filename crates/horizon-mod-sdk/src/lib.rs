@@ -203,6 +203,8 @@ pub mod server {
     });
 
     pub use exports::horizon::mods::before_events::Guest as __BeforeGuest;
+    pub use exports::horizon::mods::block_hooks::Guest as __BlockHooksGuest;
+    pub use exports::horizon::mods::item_events::Guest as __ItemGuest;
     pub use exports::horizon::mods::block_events::Guest as __BlockGuest;
     pub use exports::horizon::mods::entity_events::Guest as __EntityGuest;
     pub use exports::horizon::mods::game_events::Guest as __EventsGuest;
@@ -422,6 +424,55 @@ pub mod server {
         }
         /// A message from `player`'s client mods on `channel` (capability `net`).
         fn net_received(&mut self, _player: &Player, _channel: &str, _data: &[u8]) {}
+
+        /// `item-events`, for items the manifest names in `hook_items` and
+        /// events it lists as `item-<name>`.
+        fn item_use_tick(&mut self, _player: &Player, _item: &ItemStack, _ticks: u32) {}
+        fn item_use_finished(&mut self, _player: &Player, _item: &ItemStack) {}
+        fn item_use_stopped(&mut self, _player: &Player, _item: &ItemStack, _ticks: u32) {}
+        fn item_inventory_tick(&mut self, _player: &Player, _item: &ItemStack, _slot: u32) {}
+        fn item_held_tick(&mut self, _player: &Player, _item: &ItemStack) {}
+        fn item_mine_block(
+            &mut self,
+            _player: &Player,
+            _item: &ItemStack,
+            _dimension: &str,
+            _pos: (i32, i32, i32),
+            _state: &str,
+        ) {
+        }
+        fn item_hit_entity(&mut self, _player: &Player, _item: &ItemStack, _target: &Entity) {}
+        fn item_crafted(&mut self, _player: &Player, _recipe: &str) {}
+
+        /// `block-hooks`, for blocks the manifest names in `hook_blocks` and
+        /// events it lists as `block-<name>`.
+        fn block_random_tick(&mut self, _dimension: &str, _pos: (i32, i32, i32), _state: &str) {}
+        fn block_entity_inside(
+            &mut self,
+            _dimension: &str,
+            _pos: (i32, i32, i32),
+            _state: &str,
+            _entity: &str,
+        ) {
+        }
+        fn block_stepped_on(
+            &mut self,
+            _dimension: &str,
+            _pos: (i32, i32, i32),
+            _state: &str,
+            _entity: &str,
+        ) {
+        }
+        fn block_fell_on(
+            &mut self,
+            _dimension: &str,
+            _pos: (i32, i32, i32),
+            _state: &str,
+            _entity: &str,
+            _distance: f32,
+        ) {
+        }
+        fn block_exploded(&mut self, _dimension: &str, _pos: (i32, i32, i32), _state: &str) {}
 
         /// `before-events`, for the events the manifest lists with `before-`
         /// in front (`events = ["before-entity-hurt", ...]`), asked as they
@@ -878,6 +929,79 @@ macro_rules! export_server_mod {
                     let mut out = false;
                     with(|m| out = m.explosion(&dimension, x, y, z, power));
                     out
+                }
+            }
+            impl $crate::server::__ItemGuest for Export {
+                fn use_tick(player: Player, item: ItemStack, ticks: u32) {
+                    with(|m| m.item_use_tick(&player, &item, ticks))
+                }
+                fn use_finished(player: Player, item: ItemStack) {
+                    with(|m| m.item_use_finished(&player, &item))
+                }
+                fn use_stopped(player: Player, item: ItemStack, ticks: u32) {
+                    with(|m| m.item_use_stopped(&player, &item, ticks))
+                }
+                fn inventory_tick(player: Player, item: ItemStack, slot: u32) {
+                    with(|m| m.item_inventory_tick(&player, &item, slot))
+                }
+                fn held_tick(player: Player, item: ItemStack) {
+                    with(|m| m.item_held_tick(&player, &item))
+                }
+                fn mine_block(
+                    player: Player,
+                    item: ItemStack,
+                    dimension: String,
+                    x: i32,
+                    y: i32,
+                    z: i32,
+                    state: String,
+                ) {
+                    with(|m| m.item_mine_block(&player, &item, &dimension, (x, y, z), &state))
+                }
+                fn hit_entity(player: Player, item: ItemStack, target: Entity) {
+                    with(|m| m.item_hit_entity(&player, &item, &target))
+                }
+                fn crafted(player: Player, recipe: String) {
+                    with(|m| m.item_crafted(&player, &recipe))
+                }
+            }
+            impl $crate::server::__BlockHooksGuest for Export {
+                fn random_tick(dimension: String, x: i32, y: i32, z: i32, state: String) {
+                    with(|m| m.block_random_tick(&dimension, (x, y, z), &state))
+                }
+                fn entity_inside(
+                    dimension: String,
+                    x: i32,
+                    y: i32,
+                    z: i32,
+                    state: String,
+                    entity: String,
+                ) {
+                    with(|m| m.block_entity_inside(&dimension, (x, y, z), &state, &entity))
+                }
+                fn stepped_on(
+                    dimension: String,
+                    x: i32,
+                    y: i32,
+                    z: i32,
+                    state: String,
+                    entity: String,
+                ) {
+                    with(|m| m.block_stepped_on(&dimension, (x, y, z), &state, &entity))
+                }
+                fn fell_on(
+                    dimension: String,
+                    x: i32,
+                    y: i32,
+                    z: i32,
+                    state: String,
+                    entity: String,
+                    distance: f32,
+                ) {
+                    with(|m| m.block_fell_on(&dimension, (x, y, z), &state, &entity, distance))
+                }
+                fn exploded(dimension: String, x: i32, y: i32, z: i32, state: String) {
+                    with(|m| m.block_exploded(&dimension, (x, y, z), &state))
                 }
             }
             impl $crate::server::__BeforeGuest for Export {

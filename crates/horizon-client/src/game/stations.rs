@@ -2089,6 +2089,9 @@ impl Game<'_> {
                 ));
             }
         }
+        for line in self.mod_tooltip_lines(&stack.item) {
+            push(&mut lines, line, gray);
+        }
         lines
     }
     /// Menu state for the control socket.

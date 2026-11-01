@@ -75,6 +75,8 @@ pub enum PlayerChange {
     CloseWindow,
     EnderSlot(u32, Option<HostStack>),
     SelectedSlot(u32),
+    StartUsing(u32),
+    StopUsing,
 }
 
 /// What a mod changes on a mob.
