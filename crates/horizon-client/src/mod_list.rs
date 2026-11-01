@@ -10,6 +10,8 @@ use std::{
 pub const FILE: &str = "horizon-mods.txt";
 /// The folder holding `.hmod` files, beside `options.txt`.
 pub const DIR: &str = "horizon-mods";
+/// Begins the title of a row that isn't sandboxed: a board, or a mod calling one.
+pub const UNSAFE: &str = "[UNSAFE] ";
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ModList {

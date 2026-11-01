@@ -8,8 +8,12 @@
 #[derive(Clone, Debug, PartialEq)]
 pub enum HmodCommand {
     List,
+    /// The expansion boards in `horizon-boards/`.
+    Boards,
     /// Every mod that is on, or only the one with this id.
     Reload(Option<String>),
+    /// The whole game restarts on this world, for what a running one can't change.
+    FullReload,
     /// Anything else: the usage line.
     Help,
 }
@@ -22,12 +26,14 @@ pub fn parse(line: &str) -> Option<HmodCommand> {
     }
     Some(match (words.next(), words.next(), words.next()) {
         (Some("list"), None, _) => HmodCommand::List,
+        (Some("boards"), None, _) => HmodCommand::Boards,
+        (Some("full-reload"), None, _) => HmodCommand::FullReload,
         (Some("reload"), id, None) => HmodCommand::Reload(id.map(str::to_owned)),
         _ => HmodCommand::Help,
     })
 }
 
-pub const USAGE: &str = "/hmod list | /hmod reload [mod id]";
+pub const USAGE: &str = "/hmod list | /hmod boards | /hmod reload [mod id] | /hmod full-reload";
 
 #[cfg(test)]
 mod tests {
@@ -41,6 +47,7 @@ mod tests {
             parse("hmod reload test_core"),
             Some(HmodCommand::Reload(Some("test_core".into())))
         );
+        assert_eq!(parse("hmod full-reload"), Some(HmodCommand::FullReload));
         assert_eq!(parse("hmod"), Some(HmodCommand::Help));
         assert_eq!(parse("hmod reload a b"), Some(HmodCommand::Help));
         assert_eq!(parse("hmods list"), None);

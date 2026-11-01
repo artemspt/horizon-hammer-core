@@ -23,6 +23,8 @@ folder, loads no runtime and plays exactly like vanilla 26.3.
 | Registry index (`index.json`, `.hpack`), signatures | `horizon_mods::index`, [api/mod-index.md](api/mod-index.md) | schema 1; launcher and website next |
 | Server mods, registries | this page, [Roadmap](#roadmap) | planned |
 
+When the API isn't enough, a developer can write an [expansion board](boards.md): native code a mod calls, marked unsafe.
+
 ## Design goals
 
 1. **Safe to install.** A mod is untrusted code. It runs in a WebAssembly

@@ -1,0 +1,9 @@
+id = "board_user"
+name = "Board User"
+version = "0.1.0"
+description = "Calls Example Board. /board_demo runs every function of it."
+authors = ["Horizon Hammer Core"]
+api = "0.3"
+side = "server"
+capabilities = ["players", "world"]
+boards = ["example_board@1"]

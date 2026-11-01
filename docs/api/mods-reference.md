@@ -77,14 +77,14 @@ A server mod (manifest `side = "server"`, `api = "0.3"`, experimental): runs whe
 
 ## World `horizon-server-mod`
 
-- Imports (what the game offers): `log`, `storage`, `players`, `world`, `storages`, `entities`, `worldgen`, `items`, `dimensions`, `loot`, `recipes-server`, `shapes`, `patterns`, `noise`, `timers`, `crowd`, `fx`, `stock`, `admin`, `server-net`
+- Imports (what the game offers): `log`, `storage`, `players`, `world`, `storages`, `entities`, `worldgen`, `items`, `dimensions`, `loot`, `recipes-server`, `boards`, `shapes`, `patterns`, `noise`, `timers`, `crowd`, `fx`, `stock`, `admin`, `server-net`
 - Exports (what the mod provides): `server-events`
 
 ## World `horizon-server-block-mod`
 
 What the SDK builds a server mod as: `horizon-server-mod` and the block hooks.
 
-- Imports (what the game offers): `log`, `storage`, `players`, `world`, `storages`, `entities`, `worldgen`, `items`, `dimensions`, `loot`, `recipes-server`, `shapes`, `patterns`, `noise`, `timers`, `crowd`, `fx`, `stock`, `admin`, `server-net`
+- Imports (what the game offers): `log`, `storage`, `players`, `world`, `storages`, `entities`, `worldgen`, `items`, `dimensions`, `loot`, `recipes-server`, `boards`, `shapes`, `patterns`, `noise`, `timers`, `crowd`, `fx`, `stock`, `admin`, `server-net`
 - Exports (what the mod provides): `block-events`, `game-events`, `before-events`, `entity-events`, `logic-events`, `server-net-events`, `server-events`
 
 ## World `horizon-ui-mod`
@@ -1427,6 +1427,18 @@ What happens to entities and the world, for server mods that list the event in t
 | `player-hurt` | `func(player: player, amount: f32)` | A player lost `amount` health this tick. |
 | `item-picked-up` | `func(player: player, stack: item-stack)` | A player picked up `stack` from the ground. |
 | `explosion` | `func(dimension: string, x: f64, y: f64, z: f64, power: f32) -> bool` | An explosion of `power` (TNT: 4) is about to go off: true stops it, with no damage and no blocks broken. Asked as it happens. |
+
+## `boards`
+
+Access: not granted by any capability.
+
+Expansion boards (`docs/boards.md`), server mods. A board is native code the player turned on, offering functions the API doesn't have. A mod lists the boards it calls in its manifest (`boards = ["grid@1"]`), doesn't start without them, and is marked unsafe on the Mods page.
+
+| Function | Signature | What it does |
+| --- | --- | --- |
+| `call` | `func(board: string, function: string, input: list<u8>) -> result<list<u8>, string>` | Calls a board's function with bytes and gets bytes back: the format is the board's. Err when it isn't listed in the manifest or isn't running, for a function it doesn't offer, and for what the function itself says. Unlike a mod's code, a board isn't limited in time: it holds the game while it works. |
+| `available` | `func(board: string) -> bool` | A board from the manifest is running. |
+| `version` | `func(board: string) -> option<string>` | That board's version. |
 
 ## `shapes`
 

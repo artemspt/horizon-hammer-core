@@ -17,6 +17,7 @@ use horizon_mods::{
     testing::{Script, TestGame},
 };
 mod check;
+mod board;
 mod registry;
 
 use std::{
@@ -42,6 +43,7 @@ fn main() -> ExitCode {
         Some("test") => test(&args[1..]),
         Some("check") => check(&args[1..]),
         Some("registry") => registry::main(&args[1..]),
+        Some("board") => board::main(&args[1..]),
         _ => Err("usage: cargo horizon-mod new <path> [--template code|content] | build [--debug] | run [--game <horizon-client>] [-- <game args>] | test [--debug] [--hmod <file>] [<name>] | check <file> [--kind <kind>] [--key <public key> --signature <file.minisig>] [--json] | registry build|review|check|list".into()),
     };
     match result {

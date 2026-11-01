@@ -1,6 +1,6 @@
 # Horizon Hammer Core - Modding Core Development Log
 
-> **Extending the mod API?** Read `crates/horizon-mods/AGENTS.md` first; the list is `docs/mod-api-plan.md`.
+> **Extending the mod API?** Read `crates/horizon-mods/AGENTS.md` first; the list is `docs/mod-api-plan.md`. **Writing an expansion board?** `crates/horizon-board-sdk/AGENTS.md`.
 
 > **FORK NOTICE:** В этом форке мы работаем **ТОЛЬКО** над модовым ядром.  
 > Зона работы: `crates/horizon-mods/`, `crates/horizon-mod-sdk/`, `crates/cargo-horizon-mod/`, `mods/test_core/`.  
@@ -24,6 +24,22 @@ The project has a working WASM mod system in `crates/horizon-mods/` with:
 - Basic hooks (tick, frame, chat, command)
 
 ## Changelog
+
+### 2026-11-01 - `/hmod full-reload`
+
+#### Added
+- **`game/mod_reload.rs`** - the game restarts itself on the same world: the old process closes the world, starts the new one,
+  waits hidden, exits when told over localhost; a crash or 3 minutes' silence kills and reaps the new one and reopens the world.
+  Tried on Linux: success, a killed child, a frozen child, a board turned off and on. `docs/boards.md`
+
+### 2026-11-01 - Expansion boards (API level 23)
+
+#### Added
+- **`.hboard` in `horizon-boards/`** (made at start): native libraries offering functions to mods, on a C interface so nothing rebuilds. `docs/boards.md`
+- **`crates/horizon-board-sdk`** - `export_board!`, `host`, `abi`; **`crates/horizon-mods/src/boards.rs`** - registry, consent by the file's hash, conflicts; `board_manifest.rs`; `runtime/board_calls.rs`
+- **WIT `boards`** (3): `call`, `available`, `version`; manifest `boards = ["id@major"]`
+- **Mods page** - red `[UNSAFE]` rows for boards and mods calling them; `/hmod boards`; `cargo horizon-mod board new|build`
+- **`mods/example_board`, `mods/board_user`**; test `tests/boards.rs`. Run in the game on Linux: off then on, `/board_demo` set a gold block from native code
 
 ### 2026-11-01 - 100 functions outside the plan (API level 22)
 

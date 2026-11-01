@@ -74,6 +74,16 @@ impl AuthSession {
             access_token: access_token.to_owned(),
         })
     }
+    /// A session file like the launcher's, for a game this one starts.
+    pub fn write_file(&self, path: &Path) -> std::io::Result<()> {
+        let text = serde_json::json!({
+            "name": self.name,
+            "uuid": horizon_protocol::crypto::uuid_string(self.uuid),
+            "xuid": self.xuid,
+            "access_token": self.access_token,
+        });
+        crate::control::write_private(path, &text.to_string())
+    }
     /// Read the session file the launcher wrote and delete it at once. It
     /// must be fresh and, on Unix, readable by its owner only.
     pub fn load(path: &Path) -> Result<Self, String> {

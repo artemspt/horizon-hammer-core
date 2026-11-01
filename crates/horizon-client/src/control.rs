@@ -114,7 +114,7 @@ pub fn connect(path: &Path) -> io::Result<Stream> {
 }
 
 /// 128 random bits as hex, from the standard library's OS-seeded hasher keys.
-fn random_token() -> String {
+pub fn random_token() -> String {
     use std::hash::{BuildHasher, Hasher};
     (0..2)
         .map(|i| {
@@ -132,7 +132,7 @@ fn random_token() -> String {
 }
 
 /// Write the endpoint file so that only this user can read it.
-fn write_private(path: &Path, text: &str) -> io::Result<()> {
+pub(crate) fn write_private(path: &Path, text: &str) -> io::Result<()> {
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create(true).truncate(true);
     #[cfg(unix)]

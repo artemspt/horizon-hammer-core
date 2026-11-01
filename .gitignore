@@ -38,3 +38,4 @@
 # Release-only compiled original exporter bundle.
 /exporters/
 /mods/*/target/
+/horizon-boards/

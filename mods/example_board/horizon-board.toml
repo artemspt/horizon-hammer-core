@@ -1,0 +1,6 @@
+id = "example_board"
+name = "Example Board"
+version = "1.0.0"
+description = "Shows how a board works: a sum over bytes, and blocks read and set from native code."
+authors = ["Horizon Hammer Core"]
+functions = ["echo", "sum", "block", "place", "panics"]

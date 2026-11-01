@@ -1022,6 +1022,8 @@ mod run {
             } else {
                 match command {
                     HmodCommand::Help => vec![USAGE.to_owned()],
+                    HmodCommand::Boards => horizon_mods::boards::lines(),
+                    HmodCommand::FullReload => vec!["A full reload is for the game's window".to_owned()],
                     HmodCommand::List => {
                         let rows: Vec<String> = self
                             .mods

@@ -1488,7 +1488,7 @@ impl OptionsUi {
             Page::Mods => {
                 if s.mods.installed.is_empty() {
                     return vec![Row::Header(
-                        "No mods: put .hmod files in the horizon-mods folder",
+                        "No mods: put .hmod files in the horizon-mods folder, boards in horizon-boards",
                     )];
                 }
                 s.mods
@@ -1498,6 +1498,9 @@ impl OptionsUi {
                     .map(|(i, installed)| {
                         let mut label = Text::literal(format!("{}: ", installed.title))
                             .append(on_off(s.mods.is_on(i)));
+                        if installed.title.starts_with(crate::mod_list::UNSAFE) {
+                            label = label.with_color(text::RED);
+                        }
                         if installed.problem.is_some() {
                             label = label.append(" (Stopped)");
                         } else if installed.dev {

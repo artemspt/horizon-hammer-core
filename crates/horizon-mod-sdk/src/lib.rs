@@ -219,7 +219,7 @@ pub mod server {
     pub use horizon::mods::world::{self, BlockChange};
     pub use horizon::mods::worldgen::{self};
     pub use horizon::mods::{
-        admin, crowd, dimensions, fx, items, loot, noise, patterns, recipes_server, shapes, stock,
+        admin, boards, crowd, dimensions, fx, items, loot, noise, patterns, recipes_server, shapes, stock,
         timers,
     };
 

@@ -19,6 +19,9 @@ wit-component = { version = "0.254", optional = true }
 wit-parser = { version = "0.254", optional = true }
 # The functions a mod imports, for its API level (src/api_level.rs): the game and the registry index.
 wasmparser = { version = "0.254", optional = true }
+# Expansion boards (src/boards.rs): native libraries the player turned on.
+libloading = { version = "0.8", optional = true }
+horizon-board-sdk = { path = "../horizon-board-sdk", optional = true }
 # The registry index's checks (feature `index`): SHA-256, and minisign signatures (no dependencies of its own).
 sha2 = { version = "0.10", optional = true }
 minisign-verify = { version = "0.3", optional = true }
@@ -34,7 +37,7 @@ wit-parser = "0.254"
 # Loads and runs mods (the game's `mods` feature); without it only manifests,
 # content and packaging. Off by default so builds that don't run mods (the
 # game's tests and probes) skip wasmtime and cranelift.
-runtime = ["dep:wasmtime", "dep:wasmparser"]
+runtime = ["dep:wasmtime", "dep:wasmparser", "dep:libloading", "dep:horizon-board-sdk", "dep:sha2"]
 pack = ["dep:wit-component", "dep:wit-parser"]
 # The mod registry's index (docs/api/mod-index.md): the launcher, the registry server and its CI.
 index = ["dep:sha2", "dep:minisign-verify", "dep:horizon-shader-api", "dep:wasmparser"]
@@ -42,6 +45,11 @@ index = ["dep:sha2", "dep:minisign-verify", "dep:horizon-shader-api", "dep:wasmp
 # Runs real mods: `cargo test -p horizon-mods --features runtime,pack`.
 [[test]]
 name = "sandbox"
+required-features = ["runtime", "pack"]
+
+# A real board called by a real mod (docs/boards.md).
+[[test]]
+name = "boards"
 required-features = ["runtime", "pack"]
 
 # docs/api/mods-reference.md from the WIT contract (HORIZON_WRITE_DOCS=1 rewrites it).

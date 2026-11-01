@@ -1,0 +1,10 @@
+[package]
+name = "horizon-board-sdk"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version = "1.86"
+description = "Write Horizon expansion boards: native libraries offering functions to sandboxed mods (docs/boards.md)"
+
+[lints]
+workspace = true

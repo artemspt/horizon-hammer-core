@@ -5,7 +5,21 @@ The list for extending the mod API, most useful first. Tick a box in the commit 
 Names are proposals: rename when it reads better, and leave out one that turns out useless, with a word why. Nothing here was checked against
 the game's code one by one, so some will turn out bigger than their kind says, and a few impossible: say so here rather than faking them.
 
-**The goal is sections 1 to 14, about 460 functions.** Sections 15 to 17 are in reserve, for after them or when one is needed.
+**The goal is the base list below, about 110 functions, not the whole page.** Everything else here is a menu: add a function when a real mod needs it, and otherwise leave it to extensions (`docs/mod-core-plan.md` section 14).
+
+**Base list:**
+
+- **Items in code (14):** `item-events.use-tick`, `use-finished`, `use-stopped`, `use-on-entity`, `use-on-block`, `inventory-tick`, `held-tick`, `mine-block`, `hit-entity`, `tooltip`, `crafted`; `players.start-using`, `stop-using`, `is-using`
+- **Players (20):** `players.food`, `set-food`, `heal`, `set-health`, `xp`, `set-xp`, `position`, `velocity`, `set-velocity`, `is-sprinting`, `is-flying`, `set-may-fly`, `is-on-ground`, `raycast-block`, `raycast-entity`, `open-container`, `close-window`, `has-advancement`, `drop-held`, `tell-json`
+- **Blocks (18):** `blocks.properties`, `hardness`, `light-at`, `can-see-sky`, `is-solid`, `is-replaceable`, `has-collision`, `fluid-at`, `has-block-entity`, `get-nbt`, `merge-nbt`, `can-place`, `drops`, `random-tick`, `entity-inside`, `stepped-on`, `fell-on`, `exploded`
+- **Windows and machines (12):** `menus.set-progress`, `set-text`, `set-button`, `button-pressed`, `close`, `open-for`, `set-tooltip`; `storages.set-side-config`, `side-config`, `set-filter`, `save-to-stack`, `load-from-stack`
+- **Chunks (9):** `chunks.read-section`, `state-id`, `state-of-id`, `write-section`, `is-generated`, `force-load`, `force-unload`, `subscribe-changes`, `poll-changes`
+- **Mobs (9):** `mob-ai.navigate`, `stop-navigation`, `is-navigating`, `look-at`, `attack`, `set-speed`, `play-animation`, `set-scale`, `boss-bar`
+- **World (8):** `worldgen.place-feature`, `place-structure`, `place-template`, `save-template`, `find-biome`, `add-spawn`, `seed`, `column-height`
+- **Events that tell (8):** `game-events.chunk-loaded`, `player-advancement`, `player-opened-container`, `player-closed-container`, `projectile-fired`, `block-exploded`, `block-grown`, `level-saved`
+- **Events asked first (6):** `game-events.before-teleport`, `before-effect-added`, `before-block-drop`, `before-mob-target`, `before-craft`, `before-chat`
+- **Damage (5):** `damage.deal`, `is-type`, `last-source`; `enchantments.level-on`, `hook`
+- **Dimensions (3):** `dimensions.keep-loaded`, `register-portal`, `teleport-rule`
 
 **Kinds**, by where the work is:
 

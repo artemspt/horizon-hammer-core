@@ -67,6 +67,10 @@ pub struct Manifest {
     /// the rest); equal ones go in load order.
     #[serde(default)]
     pub priority: i32,
+    /// The expansion boards this mod calls: `id`, or `id@2` for that major
+    /// version (`docs/boards.md`). A mod listing one is marked unsafe.
+    #[serde(default)]
+    pub boards: Vec<String>,
     /// `storage.config`'s defaults: the `[config]` table.
     #[serde(default)]
     pub config: std::collections::BTreeMap<String, String>,
@@ -279,7 +283,8 @@ impl Capability {
             return Err(format!("needs API {version}; this Horizon runs {API}"));
         }
         // Pure sums and a mod's own clocks reach nothing of the game's.
-        if matches!(interface, "log" | "noise" | "timers") {
+        // `boards` needs the manifest's `boards` instead of a capability.
+        if matches!(interface, "log" | "noise" | "timers" | "boards") {
             return Ok(None);
         }
         // A recipe viewer's panel is part of capability `ui`.
@@ -411,6 +416,9 @@ impl Manifest {
                 "{MANIFEST}: capability {c} is experimental and may change in any release: \
                  add experimental = [\"{c}\"] to use it"
             ));
+        }
+        for need in &m.boards {
+            crate::board_manifest::check_need(need).map_err(|e| format!("{MANIFEST}: {e}"))?;
         }
         if !m.namespaces.is_empty() && !m.capabilities.contains(&Capability::Registries) {
             return Err(format!(

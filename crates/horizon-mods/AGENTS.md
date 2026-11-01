@@ -13,6 +13,8 @@ a NeoForge-like core big enough for Twilight Forest, TerraFirmaCraft or GregTech
 The sandbox's weakness is that a mod can do only what the API offers. **Your job is to grow that API**: most useful first,
 real behaviour, no stubs.
 
+A developer who needs more than the API has can write an expansion board instead: `crates/horizon-board-sdk/AGENTS.md`.
+
 ## Setting up from nothing
 
 You need Rust stable 1.95 or newer, Python 3.10+, JDK 25, and on Linux `libasound2-dev libudev-dev`. For the game's resources

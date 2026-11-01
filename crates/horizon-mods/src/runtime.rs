@@ -32,7 +32,9 @@ use wasmtime::{
 
 mod before;
 mod events;
+mod board_calls;
 mod extra;
+pub use board_calls::HOST as BOARD_HOST;
 mod items;
 pub use items::{DimensionFacts, ItemFacts, ModifierFacts, StackEdit, StackFacts};
 mod loot;
@@ -1624,6 +1626,11 @@ impl Mods {
                 |s| s,
             )
             .map_err(|e| e.to_string())?;
+            server_bindings::horizon::mods::boards::add_to_linker::<State, HasSelf<State>>(
+                &mut linker,
+                |s| s,
+            )
+            .map_err(|e| e.to_string())?;
             server_bindings::horizon::mods::shapes::add_to_linker::<State, HasSelf<State>>(
                 &mut linker,
                 |s| s,
@@ -1703,6 +1710,9 @@ impl Mods {
         let m = &package.manifest;
         // In-frame, where one game is both, a two-halved mod runs its server half.
         let client_half = m.two_halves() && self.client_half;
+        if !client_half && let Some(reason) = crate::boards::missing(&m.boards) {
+            return Err(reason);
+        }
         let code = if client_half {
             &package.client_wasm
         } else {

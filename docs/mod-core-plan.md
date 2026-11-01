@@ -193,3 +193,95 @@ Engine mods like Sodium stay plainly native.
 Steps: one native mod offering one function to one WebAssembly mod, with `requires` checked at load; then the warning;
 then a first real extension. Build on upstream's `native_hooks.rs`, and raise it with upstream (#3911): the core itself could
 become a native mod with extensions, leaving almost no fork of the game.
+
+## 14. Direction: a sufficient base, then developers extend it (decided 2026-11-01)
+
+The goal is not every function. The core covers base and slightly-above-base needs (the base list in `docs/mod-api-plan.md`),
+and past that a developer has two ways on. This replaces section 13's order, and keeps its native extension idea.
+
+**1. A safe extension.** A `.hext` file in `horizon-extensions/`: WebAssembly, in the sandbox, no rebuild, reloads while the game
+runs. It builds new functions from the existing API, as all of API level 22 could have been built, and offers them to mods. It can't
+add a hook or read what the API doesn't show.
+
+**2. Into the core.** A native extension or a mod changing the game. Full access to the player's computer, and the launcher rebuilds the
+game: Rust has no stable binary interface, so dropping a file in can't be enough here. Upstream's native mods are the base, so this
+needs `merge/upstream` finished first: that branch is local and lacks everything since API level 17.
+
+```toml
+id = "energy_grid"
+version = "1.2.0"
+kind = "wasm"                         # or "native"
+provides = ["energy_grid:network@1"]
+requires = ["horizon-api>=22"]
+conflicts = ["other_grid"]
+touches = ["mob-tick"]                # native only
+```
+
+**Conflicts**, checked at start, before a world loads, with an error a player can read and a way to turn the extension off:
+
+- Names: a function is always `extension:name`, so nobody overrides another's.
+- Versions: semver; several versions of a WebAssembly extension may run side by side.
+- The same hook: `priority`, as `before-events` does it.
+- The same place in the game (native): overlapping `touches` warn and the player chooses. It can't be solved automatically.
+
+`dependency.rs` already sorts and finds cycles.
+
+**The warning.** The Mods page marks a mod **unsafe** when it is native, or requires a native extension directly or through another
+extension. The mark comes from the manifests and what the file really is, never from a mod's own word. Before such a mod first runs, the
+player confirms that it has full access to the computer. Sandboxed mods show nothing new.
+
+**Order:**
+
+1. Finish the upstream merge: native mods come from it.
+2. One native extension offering one function to one WebAssembly mod, then the Mods page and the unsafe mark (section 15).
+3. `/hmod full-reload` (section 15).
+4. The base list, alongside; a friend's ports say what comes first.
+5. Safe extensions: `patterns` moves out as the first real one, to prove them.
+
+An extension that becomes the standard moves into the core, so mods don't split between rival APIs.
+
+## 15. Native extensions: managing them and reloading (designed 2026-11-01)
+
+Upstream's native mods are the base: mixin bundles patching the game's source, built by the launcher with its own toolchain into a game of the
+instance's own (the first build 20 to 30 minutes, later ones minutes), pinned to a commit or to a `NATIVE_HOOKS_API` level, listed by the registry
+after a review. Dedicated servers don't build them yet. An extension is such a bundle that also offers functions to WebAssembly mods. Prefer hook
+points to mixins: those survive a new release.
+
+**Three kinds, one place: the Mods page, with a filter**, no separate button.
+
+| Kind | Who checked it | Turning it on |
+|---|---|---|
+| Verified, shipped in a build | reviewed, compiled into official builds | a switch, takes effect at the next world load, no compile |
+| From the registry | reviewed for the listing, not shipped | red warning, then a build |
+| A mod's own, or a local file | nobody | red warning naming the mod, then a build |
+
+Every verified extension's code is in the program but does nothing until switched on: each entry point checks its flag first, so one that is off
+costs a branch. Moving an extension here is how popular ones reach players with no compile. A later build may drop one again; mods needing it then
+say so.
+
+A row shows: name, kind, version, who needs it, the functions it offers, what it touches, on/off. Turning off one that a mod needs names the mods
+that stop with it. A mod requiring a missing extension offers to install it: a player's choice, never automatic. Conflicts as in section 14. A set
+of extensions that was built is kept by its hash, so turning one back on needs no second build.
+
+**`/hmod full-reload`** shipped on 2026-11-01 for boards, simpler than below as the binary doesn't change: `game/mod_reload.rs`, the same exe, the old process waits hidden, a hand-over over localhost, no inherited port. The steps below remain for builds that do change it. The owner's idea, a parent holding the game while a child restarts, can't keep the old process's state: its memory's layout
+is the old code's, and a window and a GPU device belong to the process that made them (a Wayland surface can't be handed over at all). What survives
+is what a save holds and what can be inherited, so:
+
+1. **Build in the background, playing on.** A failed build changes nothing: the player sees the error.
+2. **Save and pause**, with a screen saying so. The window stays open.
+3. **Start the child** on the same world, with a control socket to say when it's ready. It inherits the listening socket.
+4. **Hand over** when the child draws its first frame in the world: the parent closes its window and exits.
+5. **Roll back:** the child crashed or isn't ready in time? It is killed and the parent, still holding its state, plays on with the old code. The
+   child doesn't save before step 4.
+6. **Guests:** the parent sends each a `ClientboundTransferPacket` to the same address (`remote.rs` handles it), so they rejoin by themselves.
+
+Limits: only a change to native code needs this; `/hmod reload` stays for the rest. What a world doesn't save is lost: open windows, a mob's path.
+Not built, and to be tried first: what the world's save lock allows while both processes live.
+
+## 16. Boards landed: what section 15 became (2026-11-01)
+
+Built instead of source patches first, because a compile is too much to ask of an old computer: prebuilt libraries on a C interface (`docs/boards.md`). Done:
+folder, `.hboard`, consent by file hash, conflicts, `boards` for mods, the unsafe mark. Left from sections 14 and 15: hooks for boards (ticks, events), boards
+shipped in a build with a switch, a registry listing, client mods, Windows and macOS runs, an Open Boards Folder button, the upstream merge
+for source patches.
+

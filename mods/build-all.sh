@@ -9,3 +9,10 @@ for manifest in "$root"/mods/*/horizon-mod.toml; do
     cp "$built" "$root/horizon-mods/"
     echo "$(basename "$built")"
 done
+for manifest in "$root"/mods/*/horizon-board.toml; do
+    dir="$(dirname "$manifest")"
+    built="$(cd "$dir" && "$root/target/debug/cargo-horizon-mod" horizon-mod board build | sed -n 's/^Built //p')"
+    mkdir -p "$root/horizon-boards"
+    cp "$built" "$root/horizon-boards/"
+    echo "$(basename "$built")"
+done

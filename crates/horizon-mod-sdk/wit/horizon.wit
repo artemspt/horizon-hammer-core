@@ -1772,6 +1772,22 @@ interface game-events {
     explosion: func(dimension: string, x: f64, y: f64, z: f64, power: f32) -> bool;
 }
 
+/// Expansion boards (`docs/boards.md`), server mods. A board is native code the
+/// player turned on, offering functions the API doesn't have. A mod lists the
+/// boards it calls in its manifest (`boards = ["grid@1"]`), doesn't start
+/// without them, and is marked unsafe on the Mods page.
+interface boards {
+    /// Calls a board's function with bytes and gets bytes back: the format is the
+    /// board's. Err when it isn't listed in the manifest or isn't running, for a
+    /// function it doesn't offer, and for what the function itself says. Unlike a
+    /// mod's code, a board isn't limited in time: it holds the game while it works.
+    call: func(board: string, function: string, input: list<u8>) -> result<list<u8>, string>;
+    /// A board from the manifest is running.
+    available: func(board: string) -> bool;
+    /// That board's version.
+    version: func(board: string) -> option<string>;
+}
+
 /// Shapes of blocks, written and read in one call (capability `world`, server
 /// mods). Writes wait for the tick's end, like `world.set-blocks`, and stop at
 /// 4096 blocks a call: Err, and nothing is written. Reads see loaded chunks of
@@ -2266,6 +2282,7 @@ world horizon-server-mod {
     import dimensions;
     import loot;
     import recipes-server;
+    import boards;
     import shapes;
     import patterns;
     import noise;

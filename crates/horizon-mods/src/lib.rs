@@ -25,6 +25,9 @@ pub mod event_bus;
 pub mod fluid_interactions;
 pub mod fluid_machines;
 pub mod game_events;
+pub mod board_manifest;
+#[cfg(feature = "runtime")]
+pub mod boards;
 pub mod hmod_command;
 #[cfg(feature = "index")]
 pub mod index;

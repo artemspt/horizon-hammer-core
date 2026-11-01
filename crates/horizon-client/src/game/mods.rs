@@ -367,6 +367,9 @@ impl Game<'_> {
             .collect();
         let enabled = &self.settings.mods.enabled;
         let on = |id: &str| enabled.contains(id) || dev_ids.iter().any(|d| d == id);
+        // Before the mods: a mod needing a board that isn't on doesn't start.
+        let boards = Self::options_path().with_file_name(horizon_mods::boards::DIR);
+        horizon_mods::boards::start(&boards, &horizon_mods::BOARD_HOST, |id| enabled.contains(id));
         let mods = Mods::load_for(self.mod_runs(), &paths, on, vanilla_command);
         self.mods.mods = mods;
         let chosen = &self.settings.mods;
@@ -421,9 +424,15 @@ impl Game<'_> {
                 } else {
                     format!("May {}.", may.join(", "))
                 };
+                // Calling native code makes the mod as trusted as that code.
+                let (mark, may) = if m.boards.is_empty() {
+                    ("", may)
+                } else {
+                    (mod_list::UNSAFE, format!("Calls native code: {}. {may}", m.boards.join(", ")))
+                };
                 Installed {
                     id: m.id.clone(),
-                    title: format!("{} {}", m.name, m.version),
+                    title: format!("{mark}{} {}", m.name, m.version),
                     description: format!("{may} {}", m.description).trim().to_owned(),
                     problem,
                     dev: dev.contains(&e.path),
@@ -431,6 +440,32 @@ impl Game<'_> {
                 }
             })
             .collect();
+        // After the mods: a mod's settings go by its index in the entries.
+        let boards = horizon_mods::boards::rows().into_iter().map(|b| {
+            let file = b.file.file_name().unwrap_or_default().to_string_lossy();
+            let Some(m) = b.manifest else {
+                return Installed {
+                    id: String::new(),
+                    title: format!("{}Board {file}", mod_list::UNSAFE),
+                    description: String::new(),
+                    problem: b.problem,
+                    dev: false,
+                    has_settings: false,
+                };
+            };
+            Installed {
+                id: b.row,
+                title: format!("{}Board {} {}", mod_list::UNSAFE, m.name, m.version),
+                description: format!(
+                    "Native code, not sandboxed: it can do anything you can on this computer. Turn it on only if you trust its author. {}",
+                    m.description
+                ),
+                problem: b.problem,
+                dev: false,
+                has_settings: false,
+            }
+        });
+        self.settings.mods.installed.extend(boards);
     }
     /// The chat's tree after the running mods changed.
     fn sync_mod_commands(&mut self) {
@@ -1027,6 +1062,8 @@ impl Game<'_> {
         let side = if all_here { "" } else { " (client)" };
         let lines: Vec<String> = match &command {
             HmodCommand::Help => vec![USAGE.to_owned()],
+            HmodCommand::Boards => horizon_mods::boards::lines(),
+            HmodCommand::FullReload => self.start_full_reload(),
             HmodCommand::List => {
                 let rows: Vec<String> = self
                     .mods
@@ -1069,7 +1106,7 @@ impl Game<'_> {
         }
         self.show_mod_output();
         // The server runs the command for its mods; in-frame the window did it all.
-        all_here || command == HmodCommand::Help
+        all_here || matches!(command, HmodCommand::Help | HmodCommand::FullReload)
     }
     /// Opens the screen a mod put in place of the vanilla screen `vanilla`
     /// (`ui.replace-screen`); false when no running mod replaced it, and the

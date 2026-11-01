@@ -115,6 +115,7 @@ mod mod_browser_recipes;
 mod mod_input;
 #[cfg(feature = "mods")]
 mod mod_machines;
+mod mod_reload;
 #[cfg(feature = "mods")]
 mod mod_recipes;
 mod mod_render;
@@ -1803,6 +1804,7 @@ struct Game<'a> {
     item_columns: Option<machines::ItemColumns>,
     creative_screen: Creative,
     control: Option<horizon_client::control::Server>,
+    full_reload: mod_reload::FullReload,
     /// The Agent Control setting the socket was last opened or closed for (`agent_settings`).
     agent_control_on: bool,
     /// When an agent's last command came.
@@ -8985,6 +8987,7 @@ impl Game<'_> {
         })? {
             return Ok(());
         }
+        self.full_reload.world = folder.to_owned();
         self.join_world_rest()?;
         if self
             .options
@@ -13661,6 +13664,9 @@ impl ApplicationHandler for Game<'_> {
             }
             return;
         }
+        if self.poll_full_reload(event_loop) {
+            return;
+        }
         if let Err(error) = self.resume_world_entry() {
             self.error = Some(error);
             event_loop.exit();
@@ -14029,6 +14035,7 @@ impl<'a> Game<'a> {
             item_columns: None,
             creative_screen: prepared.creative_screen,
             control: None,
+            full_reload: Default::default(),
             agent_control_on: false,
             agent_last: None,
             frame_stats: Default::default(),
