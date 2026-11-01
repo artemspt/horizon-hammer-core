@@ -179,7 +179,7 @@ Custom tools, guns, staffs and tooltips: the core of tech and magic mods.
 - [ ] `item-events.entity-tick`: each tick for a thrown item entity, for chosen items
 - [ ] `players.start-using`: makes a player begin using the held item
 - [ ] `players.stop-using`: ends it
-- [ ] `players.is-using`: whether a player is using an item, and which
+- [x] `players.is-using`: whether a player is using an item, and which
 - [ ] `players.use-time`: ticks of use so far
 
 ## 5. Loot, recipes and drops (31, kind A/C)
@@ -396,30 +396,30 @@ Code goals exist; goals from vanilla and pathing don't. See section 12 of the co
 
 Reads every machine and worldgen mod needs, and hooks on what happens to a block.
 
-- [ ] `blocks.all`: every block id
-- [ ] `blocks.properties`: a block's properties and their values
-- [ ] `blocks.default-state`: its default state
-- [ ] `blocks.hardness`: how hard it is
+- [x] `blocks.all`: every block id
+- [x] `blocks.properties`: a block's properties and their values
+- [x] `blocks.default-state`: its default state
+- [x] `blocks.hardness`: how hard it is
 - [ ] `blocks.resistance`: its blast resistance
-- [ ] `blocks.light-emission`: the light it gives
-- [ ] `blocks.light-at`: light level at a position
-- [ ] `blocks.sky-light-at`: sky light at a position
-- [ ] `blocks.block-light-at`: block light at a position
-- [ ] `blocks.can-see-sky`: whether a position sees the sky
-- [ ] `blocks.is-solid`: solid or not
-- [ ] `blocks.is-replaceable`: can be placed over or not
-- [ ] `blocks.is-opaque`: blocks light or not
-- [ ] `blocks.has-collision`: can be walked through or not
+- [x] `blocks.light-emission`: the light it gives
+- [x] `blocks.light-at`: light level at a position
+- [x] `blocks.sky-light-at`: sky light at a position
+- [x] `blocks.block-light-at`: block light at a position
+- [x] `blocks.can-see-sky`: whether a position sees the sky
+- [x] `blocks.is-solid`: solid or not
+- [x] `blocks.is-replaceable`: can be placed over or not
+- [x] `blocks.is-opaque`: blocks light or not
+- [x] `blocks.has-collision`: can be walked through or not
 - [ ] `blocks.collision-boxes`: its shape's boxes
-- [ ] `blocks.requires-tool`: needs the right tool for drops or not
+- [x] `blocks.requires-tool`: needs the right tool for drops or not
 - [ ] `blocks.map-color`: its map colour
 - [ ] `blocks.sound-type`: its sound set
 - [ ] `blocks.piston-reaction`: how a piston treats it
-- [ ] `blocks.fluid-at`: the fluid at a position, with level
-- [ ] `blocks.is-waterlogged`: waterlogged or not
-- [ ] `blocks.has-block-entity`: has a block entity or not
-- [ ] `blocks.get-nbt`: a block entity's NBT
-- [ ] `blocks.merge-nbt`: `/data merge block`
+- [x] `blocks.fluid-at`: the fluid at a position, with level
+- [x] `blocks.is-waterlogged`: waterlogged or not
+- [x] `blocks.has-block-entity`: has a block entity or not
+- [x] `blocks.get-nbt`: a block entity's NBT
+- [x] `blocks.merge-nbt`: `/data merge block`
 - [ ] `blocks.tick-now`: asks a block's random tick now
 - [ ] `blocks.neighbor-update`: tells neighbours of a change
 - [ ] `blocks.drop-contents`: drops a container's contents
@@ -443,20 +443,20 @@ Reads every machine and worldgen mod needs, and hooks on what happens to a block
 
 Performance first: see `docs/mod-core-known-issues.md`. Worth measuring before and after.
 
-- [ ] `chunks.read-section`: a 16 x 16 x 16 section at once, as state ids
-- [ ] `chunks.state-id`: a state's number, for fast reads
-- [ ] `chunks.state-of-id`: the state a number means
-- [ ] `chunks.write-section`: writes a section at once
+- [x] `chunks.read-section`: a 16 x 16 x 16 section at once, as state ids
+- [x] `chunks.state-id`: a state's number, for fast reads
+- [x] `chunks.state-of-id`: the state a number means
+- [x] `chunks.write-section`: writes a section at once
 - [ ] `chunks.biomes`: a chunk's biomes
-- [ ] `chunks.heightmap`: a chunk's top blocks
+- [x] `chunks.heightmap`: a chunk's top blocks
 - [ ] `chunks.is-generated`: whether a chunk exists in the save
-- [ ] `chunks.force-load`: `/forceload add`
-- [ ] `chunks.force-unload`: `/forceload remove`
+- [x] `chunks.force-load`: `/forceload add`
+- [x] `chunks.force-unload`: `/forceload remove`
 - [ ] `chunks.forced`: which chunks are kept loaded
-- [ ] `chunks.loaded`: every loaded chunk of a dimension
-- [ ] `chunks.get-data`: the mod's bytes on a chunk, saved with the world (radiation, pollution)
-- [ ] `chunks.set-data`: sets them
-- [ ] `chunks.data-chunks`: every chunk where the mod keeps data
+- [x] `chunks.loaded`: every loaded chunk of a dimension
+- [x] `chunks.get-data`: the mod's bytes on a chunk, saved with the world (radiation, pollution)
+- [x] `chunks.set-data`: sets them
+- [x] `chunks.data-chunks`: every chunk where the mod keeps data
 - [ ] `chunks.subscribe-changes`: lists changed blocks in chosen boxes, without polling
 - [ ] `chunks.poll-changes`: what changed there since the last tick
 - [ ] `chunks.schedule-many`: many block timers in one call
@@ -478,21 +478,21 @@ Lets the game do the heavy work natively. Biggest win for GregTech and AE2 analo
 - [ ] `networks.set-priority`: which node is served first
 - [ ] `networks.set-tier`: a voltage or pipe tier: what it passes per tick
 - [ ] `networks.on-overload`: a hook: a node took too much
-- [ ] `storages.set-side-config`: which side takes and gives what
-- [ ] `storages.side-config`: reads it
+- [x] `storages.set-side-config`: which side takes and gives what
+- [x] `storages.side-config`: reads it
 - [ ] `storages.auto-output`: pushes to a neighbour by itself each tick
 - [ ] `storages.auto-input`: pulls from a neighbour by itself each tick
-- [ ] `storages.set-filter`: which items a storage takes
+- [x] `storages.set-filter`: which items a storage takes
 - [ ] `storages.set-capacity`: changes a slot's size limit
-- [ ] `storages.transfer-all`: moves everything that fits
-- [ ] `storages.neighbors`: which of six sides hold storages or containers
-- [ ] `storages.total-energy`: stored energy over many positions
-- [ ] `storages.sort`: sorts a storage's slots
-- [ ] `storages.compact`: merges its stacks
-- [ ] `storages.drop-all`: drops what it holds, without removing it
+- [x] `storages.transfer-all`: moves everything that fits
+- [x] `storages.neighbors`: which of six sides hold storages or containers
+- [x] `storages.total-energy`: stored energy over many positions
+- [x] `storages.sort`: sorts a storage's slots
+- [x] `storages.compact`: merges its stacks
+- [x] `storages.drop-all`: drops what it holds, without removing it
 - [ ] `storages.changed`: a hook: a storage's slots changed
-- [ ] `storages.save-to-stack`: a stack keeping a storage's contents
-- [ ] `storages.load-from-stack`: a storage taking them back
+- [x] `storages.save-to-stack`: a stack keeping a storage's contents
+- [x] `storages.load-from-stack`: a storage taking them back
 - [ ] `menus.set-progress`: a bar in a window of the mod's layout
 - [ ] `menus.set-text`: a line of text in it
 - [ ] `menus.set-button`: a button in it
@@ -505,45 +505,45 @@ Lets the game do the heavy work natively. Biggest win for GregTech and AE2 analo
 
 What a survival or RPG mod reaches for.
 
-- [ ] `players.food`: hunger and saturation
-- [ ] `players.set-food`: sets them
-- [ ] `players.add-exhaustion`: makes them hungrier
-- [ ] `players.air`: air left
-- [ ] `players.set-air`: sets it
-- [ ] `players.max-health`: their maximum
-- [ ] `players.heal`: heals a player
-- [ ] `players.set-health`: sets their health
-- [ ] `players.xp`: level, progress and total
-- [ ] `players.set-xp`: sets them
-- [ ] `players.position`: where they stand, fresh
-- [ ] `players.velocity`: their motion
-- [ ] `players.set-velocity`: sets it
-- [ ] `players.is-sprinting`: sprinting or not
-- [ ] `players.is-flying`: flying or not
+- [x] `players.food`: hunger and saturation
+- [x] `players.set-food`: sets them
+- [x] `players.add-exhaustion`: makes them hungrier
+- [x] `players.air`: air left
+- [x] `players.set-air`: sets it
+- [x] `players.max-health`: their maximum
+- [x] `players.heal`: heals a player
+- [x] `players.set-health`: sets their health
+- [x] `players.xp`: level, progress and total
+- [x] `players.set-xp`: sets them
+- [x] `players.position`: where they stand, fresh
+- [x] `players.velocity`: their motion
+- [x] `players.set-velocity`: sets it
+- [x] `players.is-sprinting`: sprinting or not
+- [x] `players.is-flying`: flying or not
 - [ ] `players.set-flying`: starts or stops flight
-- [ ] `players.set-may-fly`: allows flight in survival
-- [ ] `players.is-on-ground`: on the ground or not
-- [ ] `players.is-sleeping`: in bed or not
-- [ ] `players.is-swimming`: swimming or not
-- [ ] `players.is-gliding`: gliding or not
-- [ ] `players.is-op`: an operator or not
-- [ ] `players.ping`: their latency
-- [ ] `players.raycast-block`: the block they look at
+- [x] `players.set-may-fly`: allows flight in survival
+- [x] `players.is-on-ground`: on the ground or not
+- [x] `players.is-sleeping`: in bed or not
+- [x] `players.is-swimming`: swimming or not
+- [x] `players.is-gliding`: gliding or not
+- [x] `players.is-op`: an operator or not
+- [x] `players.ping`: their latency
+- [x] `players.raycast-block`: the block they look at
 - [ ] `players.raycast-entity`: the entity they look at
 - [ ] `players.open-container`: opens a chest or crafting table window
-- [ ] `players.close-window`: closes what they have open
-- [ ] `players.ender-chest`: their ender chest's slots
-- [ ] `players.set-ender-chest-slot`: sets one
-- [ ] `players.spawn-point`: their respawn point
+- [x] `players.close-window`: closes what they have open
+- [x] `players.ender-chest`: their ender chest's slots
+- [x] `players.set-ender-chest-slot`: sets one
+- [x] `players.spawn-point`: their respawn point
 - [ ] `players.statistic`: a statistic by name
-- [ ] `players.has-advancement`: whether they have an advancement
-- [ ] `players.set-selected-slot`: changes the held slot
+- [x] `players.has-advancement`: whether they have an advancement
+- [x] `players.set-selected-slot`: changes the held slot
 - [ ] `players.drop-held`: makes them drop what they hold
 - [ ] `players.swing-hand`: swings their arm
-- [ ] `players.teleport-look`: teleports with a yaw and pitch
+- [x] `players.teleport-look`: teleports with a yaw and pitch
 - [ ] `players.particle-to`: a particle only they see
-- [ ] `players.tell-json`: a chat component to one player
-- [ ] `players.broadcast-json`: a chat component to everyone
+- [x] `players.tell-json`: a chat component to one player
+- [x] `players.broadcast-json`: a chat component to everyone
 - [ ] `players.set-tab-header`: the player list's header and footer
 - [ ] `players.set-display-name`: the name others see
 - [ ] `players.set-permission`: a mod's own permission on a player
@@ -702,6 +702,9 @@ Things that make a mod comfortable to write and keep.
 - [ ] `log.debug`: a line only with a dev mod
 - [ ] `profiler.span`: times a piece of the mod for `/hmod profile`
 - [ ] `profiler.report`: what the mod's calls cost
+
+Landed at API level 24: the reads of `players` answer from a copy of the body made only while a mod imports one
+(`PLAYER_STATE_READS`), in a game with a server; `--in-frame` has none.
 
 ## 18. Outside this list: API level 22 (100, kind A/B)
 

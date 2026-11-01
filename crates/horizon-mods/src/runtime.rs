@@ -39,13 +39,15 @@ mod items;
 pub use items::{DimensionFacts, ItemFacts, ModifierFacts, StackEdit, StackFacts};
 mod loot;
 pub use loot::{LOOT_STACKS, LootRoll, RecipeFacts};
+mod blocks;
+pub use blocks::{BlockFacts, PLAYER_STATE_READS, PlayerState};
 mod mobs;
 pub use mobs::{DroppedItem, MOB_STATE_READS, MobState};
 mod net;
 mod server_api;
 pub use net::{NET_BYTES, NET_PREFIX};
 pub use server_api::{
-    EntityInfo, HostStack, INVENTORY_SLOTS, MobChange, MobFlag, ScheduledTick, ServerAction,
+    EntityInfo, HostStack, INVENTORY_SLOTS, MobChange, MobFlag, PlayerChange, ScheduledTick, ServerAction,
     SlotRule, StackLook, Storage, Tank,
 };
 
@@ -268,6 +270,9 @@ pub struct Snapshot {
     /// Each player's id, held hotbar slot and 41 inventory slots
     /// (`players.inventory`), for server mods.
     pub inventories: Vec<(String, u32, Vec<Option<HostStack>>)>,
+    /// What `players` reads of a body, made only while a running mod imports
+    /// one of those reads ([`Mods::reads_players`]).
+    pub player_states: Vec<PlayerState>,
     /// The ids of the players holding sneak.
     pub sneaking: Vec<String>,
     /// Where players look: id, yaw, pitch.
@@ -464,6 +469,50 @@ pub trait WorldView: std::any::Any + Send {
     fn tool(&self, _tool: &HostStack, _block: &str) -> Option<(f32, bool)> {
         None
     }
+    /// `blocks`: every block id.
+    fn block_ids(&self) -> Vec<String> {
+        Vec::new()
+    }
+    /// `blocks`: what the game knows of a state.
+    fn block_facts(&self, _state: &str) -> Option<BlockFacts> {
+        None
+    }
+    /// A block's properties, each with its values.
+    fn block_properties(&self, _block: &str) -> Vec<(String, Vec<String>)> {
+        Vec::new()
+    }
+    /// A block's default state.
+    fn default_state(&self, _block: &str) -> Option<String> {
+        None
+    }
+    /// Sky and block light at a position.
+    fn light(&self, _dimension: &str, _x: i32, _y: i32, _z: i32) -> Option<(u8, u8)> {
+        None
+    }
+    /// A block entity's NBT as SNBT.
+    fn block_entity_nbt(&self, _dimension: &str, _x: i32, _y: i32, _z: i32) -> Option<String> {
+        None
+    }
+    /// `chunks`: a state's number.
+    fn state_id(&self, _state: &str) -> Option<u32> {
+        None
+    }
+    /// The state a number means.
+    fn state_of_id(&self, _id: u32) -> Option<String> {
+        None
+    }
+    /// A section's 4096 state numbers.
+    fn section(&self, _dimension: &str, _cx: i32, _sy: i32, _cz: i32) -> Option<Vec<u32>> {
+        None
+    }
+    /// A chunk's highest block per column.
+    fn heightmap(&self, _dimension: &str, _cx: i32, _cz: i32) -> Option<Vec<i32>> {
+        None
+    }
+    /// Every loaded chunk of a dimension.
+    fn loaded_chunks(&self, _dimension: &str) -> Vec<(i32, i32)> {
+        Vec::new()
+    }
     /// `dimensions`: every dimension the server has.
     fn dimensions(&self) -> Vec<DimensionFacts> {
         Vec::new()
@@ -590,6 +639,7 @@ struct Running {
     reads_recipes: bool,
     /// It imports a read of [`MOB_STATE_READS`], or `entities.items-near`.
     reads_mobs: bool,
+    reads_players: bool,
     reads_items: bool,
 }
 
@@ -729,6 +779,9 @@ pub struct BlockData {
     /// `storages.declare`: `"dimension x y z"` → the storage.
     #[serde(default)]
     pub storages: std::collections::BTreeMap<String, Storage>,
+    /// `chunks.set-data`: mod id → `"dimension x z"` → bytes in hex.
+    #[serde(default)]
+    pub chunk_data: std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>>,
     /// `world.schedule-tick`s waiting.
     #[serde(default)]
     pub ticks: Vec<ScheduledTick>,
@@ -1671,6 +1724,16 @@ impl Mods {
                 |s| s,
             )
             .map_err(|e| e.to_string())?;
+            server_bindings::horizon::mods::blocks::add_to_linker::<State, HasSelf<State>>(
+                &mut linker,
+                |s| s,
+            )
+            .map_err(|e| e.to_string())?;
+            server_bindings::horizon::mods::chunks::add_to_linker::<State, HasSelf<State>>(
+                &mut linker,
+                |s| s,
+            )
+            .map_err(|e| e.to_string())?;
             server_bindings::horizon::mods::dimensions::add_to_linker::<State, HasSelf<State>>(
                 &mut linker,
                 |s| s,
@@ -1875,6 +1938,9 @@ impl Mods {
             reads_mobs: functions
                 .iter()
                 .any(|f| MOB_STATE_READS.contains(&f.as_str())),
+            reads_players: functions
+                .iter()
+                .any(|f| PLAYER_STATE_READS.contains(&f.as_str())),
             reads_items: functions.iter().any(|f| f == "entities.items-near"),
         }))
     }
@@ -1889,6 +1955,12 @@ impl Mods {
         self.entries
             .iter()
             .any(|e| e.run.as_ref().is_some_and(|r| r.reads_mobs))
+    }
+    /// Whether a running mod reads players' state ([`PLAYER_STATE_READS`]).
+    pub fn reads_players(&self) -> bool {
+        self.entries
+            .iter()
+            .any(|e| e.run.as_ref().is_some_and(|r| r.reads_players))
     }
     /// Whether a running mod reads the items on the ground.
     pub fn reads_items(&self) -> bool {
@@ -3812,6 +3884,181 @@ impl players::Host for State {
             "advancement revoke {} only {advancement}",
             player.name
         ))
+    }
+    fn food(&mut self, player: String) -> Option<players::FoodLevel> {
+        let p = self.player_state(&player)?;
+        Some(players::FoodLevel {
+            food: p.food,
+            saturation: p.saturation,
+        })
+    }
+    fn set_food(&mut self, player: String, food: u32, saturation: f32) -> Result<(), String> {
+        if food > 20 || !saturation.is_finite() {
+            return Err("hunger is 0 to 20".into());
+        }
+        let saturation = saturation.clamp(0.0, food as f32);
+        self.change_player(player, server_api::PlayerChange::Food(food, saturation))
+    }
+    fn add_exhaustion(&mut self, player: String, amount: f32) -> Result<(), String> {
+        if !amount.is_finite() || amount < 0.0 {
+            return Err("an amount of 0 or more".into());
+        }
+        self.change_player(player, server_api::PlayerChange::Exhaustion(amount))
+    }
+    fn air(&mut self, player: String) -> Option<i32> {
+        Some(self.player_state(&player)?.air)
+    }
+    fn set_air(&mut self, player: String, air: i32) -> Result<(), String> {
+        self.change_player(player, server_api::PlayerChange::Air(air.clamp(-20, 300)))
+    }
+    fn max_health(&mut self, player: String) -> Option<f32> {
+        Some(self.player_state(&player)?.max_health)
+    }
+    fn heal(&mut self, player: String, amount: f32) -> Result<(), String> {
+        if !amount.is_finite() || amount < 0.0 {
+            return Err("an amount of 0 or more".into());
+        }
+        self.change_player(player, server_api::PlayerChange::Heal(amount))
+    }
+    fn set_health(&mut self, player: String, health: f32) -> Result<(), String> {
+        if !health.is_finite() || health <= 0.0 {
+            return Err("health above 0: entities.kill kills".into());
+        }
+        self.change_player(player, server_api::PlayerChange::Health(health))
+    }
+    fn xp(&mut self, player: String) -> Option<players::XpState> {
+        let p = self.player_state(&player)?;
+        Some(players::XpState {
+            level: p.xp_level,
+            progress: p.xp_progress,
+            total: p.xp_total,
+        })
+    }
+    fn set_xp(&mut self, player: String, level: u32, progress: f32) -> Result<(), String> {
+        self.check_online(&player)?;
+        if level > 21_000 || !(0.0..=1.0).contains(&progress) {
+            return Err("a level up to 21000, a progress of 0 to 1".into());
+        }
+        // Points past the level's last one read as the level's end.
+        let needed = blocks::xp_for_level(level);
+        let points = ((progress * needed as f32) as u32).min(needed - 1);
+        self.console(format!("experience set {player} {level} levels"))?;
+        self.console(format!("experience set {player} {points} points"))
+    }
+    fn position(&mut self, player: String) -> Option<(f64, f64, f64)> {
+        let p = self.snapshot.players.iter().find(|p| p.id == player)?;
+        Some((p.x, p.y, p.z))
+    }
+    fn velocity(&mut self, player: String) -> Option<(f64, f64, f64)> {
+        Some(self.player_state(&player)?.velocity)
+    }
+    fn set_velocity(&mut self, player: String, x: f64, y: f64, z: f64) -> Result<(), String> {
+        if ![x, y, z].iter().all(|c| c.is_finite() && c.abs() <= 64.0) {
+            return Err("a motion of at most 64 blocks a tick".into());
+        }
+        self.change_player(player, server_api::PlayerChange::Velocity(x, y, z))
+    }
+    fn is_sprinting(&mut self, player: String) -> bool {
+        self.player_flag(&player, |p| p.sprinting)
+    }
+    fn is_flying(&mut self, player: String) -> bool {
+        self.player_flag(&player, |p| p.flying)
+    }
+    fn set_may_fly(&mut self, player: String, on: bool) -> Result<(), String> {
+        self.change_player(player, server_api::PlayerChange::MayFly(on))
+    }
+    fn is_on_ground(&mut self, player: String) -> bool {
+        self.player_flag(&player, |p| p.on_ground)
+    }
+    fn is_sleeping(&mut self, player: String) -> bool {
+        self.player_flag(&player, |p| p.sleeping)
+    }
+    fn is_swimming(&mut self, player: String) -> bool {
+        self.player_flag(&player, |p| p.swimming)
+    }
+    fn is_gliding(&mut self, player: String) -> bool {
+        self.player_flag(&player, |p| p.gliding)
+    }
+    fn is_using(&mut self, player: String) -> bool {
+        self.player_flag(&player, |p| p.using)
+    }
+    fn is_op(&mut self, player: String) -> bool {
+        self.player_flag(&player, |p| p.permission >= 2)
+    }
+    fn ping(&mut self, player: String) -> Option<i32> {
+        Some(self.player_state(&player)?.ping)
+    }
+    fn close_window(&mut self, player: String) -> Result<(), String> {
+        self.change_player(player, server_api::PlayerChange::CloseWindow)
+    }
+    fn ender_chest(&mut self, player: String) -> Vec<Option<players::ItemStack>> {
+        let me = self.id.clone();
+        self.player_state(&player)
+            .map(|p| {
+                p.ender
+                    .iter()
+                    .map(|s| s.as_ref().map(|s| server_api::to_guest(s, &me)))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+    fn set_ender_chest_slot(
+        &mut self,
+        player: String,
+        slot: u32,
+        stack: Option<players::ItemStack>,
+    ) -> Result<(), String> {
+        if slot >= 27 {
+            return Err(format!("{slot}: an ender chest has slots 0 to 26"));
+        }
+        let stack = stack
+            .map(|s| server_api::from_guest(s, &self.id))
+            .transpose()?;
+        self.change_player(player, server_api::PlayerChange::EnderSlot(slot, stack))
+    }
+    fn spawn_point(&mut self, player: String) -> Option<(String, i32, i32, i32)> {
+        let (dimension, (x, y, z)) = self.player_state(&player)?.spawn.clone()?;
+        Some((dimension, x, y, z))
+    }
+    fn has_advancement(&mut self, player: String, advancement: String) -> bool {
+        self.player_state(&player)
+            .is_some_and(|p| p.advancements.contains(&advancement))
+    }
+    fn set_selected_slot(&mut self, player: String, slot: u32) -> Result<(), String> {
+        if slot > 8 {
+            return Err(format!("{slot}: the hotbar has slots 0 to 8"));
+        }
+        self.change_player(player, server_api::PlayerChange::SelectedSlot(slot))
+    }
+    fn tell_json(&mut self, player: String, json: String) -> Result<(), String> {
+        self.check_online(&player)?;
+        let line = self.tell_json_line(&player, &json)?;
+        self.console(line)
+    }
+    fn broadcast_json(&mut self, json: String) -> Result<(), String> {
+        let line = self.tell_json_line("@a", &json)?;
+        self.console(line)
+    }
+    fn raycast_block(&mut self, player: String, reach: f64) -> Option<(i32, i32, i32)> {
+        self.ray_block(&player, reach)
+    }
+    fn teleport_look(
+        &mut self,
+        player: String,
+        x: f64,
+        y: f64,
+        z: f64,
+        yaw: f32,
+        pitch: f32,
+    ) -> Result<(), String> {
+        self.check_online(&player)?;
+        if ![x, y, z, f64::from(yaw), f64::from(pitch)]
+            .iter()
+            .all(|c| c.is_finite() && c.abs() < 3.0e7)
+        {
+            return Err("not a position".into());
+        }
+        self.console(format!("tp {player} {x} {y} {z} {yaw} {pitch}"))
     }
 }
 /// A key a mod registered (capability `input`).

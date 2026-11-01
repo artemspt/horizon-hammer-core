@@ -318,6 +318,103 @@ mod run {
         fn mobs(&self, dimension: &str) -> Vec<horizon_mods::EntityInfo> {
             self.more.mobs(dimension)
         }
+        fn block_ids(&self) -> Vec<String> {
+            let mut ids: Vec<String> = (0..self.registry.len())
+                .filter_map(|i| self.registry.state(BlockStateId(i as u32)))
+                .map(|s| s.name.to_string())
+                .collect();
+            ids.dedup();
+            ids
+        }
+        fn block_facts(&self, state: &str) -> Option<horizon_mods::BlockFacts> {
+            let id = crate::game::render_control::parse_state(self.registry, state).ok()?;
+            self.more.block_facts(id)
+        }
+        fn block_properties(&self, block: &str) -> Vec<(String, Vec<String>)> {
+            let mut out: Vec<(String, Vec<String>)> = Vec::new();
+            for i in 0..self.registry.len() {
+                let Some(s) = self.registry.state(BlockStateId(i as u32)) else {
+                    continue;
+                };
+                if s.name.as_ref() as &str != block {
+                    continue;
+                }
+                for (k, v) in s.properties.iter() {
+                    let (k, v) = (k.to_string(), v.to_string());
+                    match out.iter_mut().find(|(n, _)| *n == k) {
+                        Some((_, values)) if !values.contains(&v) => values.push(v),
+                        Some(_) => {}
+                        None => out.push((k, vec![v])),
+                    }
+                }
+            }
+            out
+        }
+        fn default_state(&self, block: &str) -> Option<String> {
+            let id = self.registry.default_state(block)?;
+            Some(state_string(self.registry, id))
+        }
+        fn light(&self, dimension: &str, x: i32, y: i32, z: i32) -> Option<(u8, u8)> {
+            let (_, chunks) = self.dims.iter().find(|(d, _)| *d == dimension)?;
+            let light = chunks.get(&(x >> 4, z >> 4))?.light(x & 15, y, z & 15);
+            Some((light >> 4, light & 15))
+        }
+        fn block_entity_nbt(&self, dimension: &str, x: i32, y: i32, z: i32) -> Option<String> {
+            let block = self.block(dimension, x, y, z)?;
+            self.more.block_entity_nbt(dimension, (x, y, z), &block)
+        }
+        fn state_id(&self, state: &str) -> Option<u32> {
+            crate::game::render_control::parse_state(self.registry, state)
+                .ok()
+                .map(|id| id.0)
+        }
+        fn state_of_id(&self, id: u32) -> Option<String> {
+            let id = BlockStateId(id);
+            self.registry.state(id)?;
+            Some(state_string(self.registry, id))
+        }
+        fn section(&self, dimension: &str, cx: i32, sy: i32, cz: i32) -> Option<Vec<u32>> {
+            let (_, chunks) = self.dims.iter().find(|(d, _)| *d == dimension)?;
+            let chunk = chunks.get(&(cx, cz))?;
+            let dim = crate::game::Dim::from_id(dimension);
+            let base = sy.checked_mul(16)?;
+            if base < dim.min_y() || base > dim.max_y() {
+                return None;
+            }
+            let mut out = Vec::with_capacity(4096);
+            for i in 0..4096 {
+                out.push(chunk.block(i & 15, base + (i >> 8), (i >> 4) & 15).0);
+            }
+            Some(out)
+        }
+        fn heightmap(&self, dimension: &str, cx: i32, cz: i32) -> Option<Vec<i32>> {
+            let (_, chunks) = self.dims.iter().find(|(d, _)| *d == dimension)?;
+            let chunk = chunks.get(&(cx, cz))?;
+            let dim = crate::game::Dim::from_id(dimension);
+            let air = |id: BlockStateId| {
+                self.registry
+                    .state(id)
+                    .is_none_or(|s| s.name.ends_with(":air") || s.name.ends_with("_air"))
+            };
+            let mut out = Vec::with_capacity(256);
+            for i in 0..256 {
+                let (x, z) = (i & 15, i >> 4);
+                out.push(
+                    (dim.min_y()..=dim.max_y())
+                        .rev()
+                        .find(|&y| !air(chunk.block(x, y, z)))
+                        .unwrap_or(dim.min_y() - 1),
+                );
+            }
+            Some(out)
+        }
+        fn loaded_chunks(&self, dimension: &str) -> Vec<(i32, i32)> {
+            self.dims
+                .iter()
+                .find(|(d, _)| *d == dimension)
+                .map(|(_, chunks)| chunks.keys().copied().collect())
+                .unwrap_or_default()
+        }
     }
 
     /// Server mods' commands as a root of the commands report
@@ -478,6 +575,7 @@ mod run {
             self.mod_name_mobs();
             let mut snapshot = self.mod_snapshot_with(players.clone());
             snapshot.inventories = self.mod_inventories(None);
+            snapshot.player_states = self.mod_player_states(None);
             snapshot.sneaking = self.mod_sneaking(None);
             snapshot.looks = self.mod_looks(None);
             snapshot.player_events = self.mod_player_events(&players);
@@ -993,6 +1091,7 @@ mod run {
             };
             let mut snapshot = self.mod_snapshot_with(players);
             snapshot.inventories = self.mod_inventories(None);
+            snapshot.player_states = self.mod_player_states(None);
             snapshot.sneaking = self.mod_sneaking(None);
             snapshot.looks = self.mod_looks(None);
             self.mods.mods.set_snapshot(snapshot);
@@ -1102,6 +1201,7 @@ mod run {
             };
             let mut snapshot = self.mod_snapshot_with(players);
             snapshot.inventories = self.mod_inventories(Some(host));
+            snapshot.player_states = self.mod_player_states(Some(host));
             snapshot.sneaking = self.mod_sneaking(Some(host));
             snapshot.looks = self.mod_looks(Some(host));
             self.mods.mods.set_snapshot(snapshot);

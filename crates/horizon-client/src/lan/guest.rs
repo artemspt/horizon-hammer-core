@@ -110,6 +110,11 @@ pub struct Guest {
     pub sprinting: bool,
     pub fall_flying: bool,
     pub flying: bool,
+    /// `players.set-may-fly`.
+    pub mod_may_fly: bool,
+    /// The maximum health at the end of the guest's last turn: reading the
+    /// attribute takes the body mutably, and `players.max-health` has it lent.
+    pub mod_max_health: f32,
     pub sleeping: bool,
     /// `LivingEntity.DATA_LIVING_ENTITY_FLAGS`: 1 while using an item, 2 if
     /// it is in the off hand.
@@ -298,6 +303,8 @@ impl Guest {
             sprinting: false,
             fall_flying: false,
             flying: false,
+            mod_may_fly: false,
+            mod_max_health: 20.0,
             sleeping: false,
             living_flags: 0,
             bed: None,
@@ -404,7 +411,7 @@ impl Guest {
         if self.flying || self.spectator() {
             f |= 2;
         }
-        if self.creative() || self.spectator() {
+        if self.creative() || self.spectator() || self.mod_may_fly {
             f |= 4;
         }
         if self.creative() {

@@ -594,6 +594,7 @@ impl Game<'_> {
             font_widths: self.mods.font_widths.clone(),
             players,
             inventories: Vec::new(),
+            player_states: Vec::new(),
             view_hit: self.mod_view_hit(),
             recipes,
             known_recipes,

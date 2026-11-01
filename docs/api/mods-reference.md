@@ -77,14 +77,14 @@ A server mod (manifest `side = "server"`, `api = "0.3"`, experimental): runs whe
 
 ## World `horizon-server-mod`
 
-- Imports (what the game offers): `log`, `storage`, `players`, `world`, `storages`, `entities`, `worldgen`, `items`, `dimensions`, `loot`, `recipes-server`, `boards`, `shapes`, `patterns`, `noise`, `timers`, `crowd`, `fx`, `stock`, `admin`, `server-net`
+- Imports (what the game offers): `log`, `storage`, `players`, `world`, `storages`, `entities`, `worldgen`, `items`, `dimensions`, `blocks`, `chunks`, `loot`, `recipes-server`, `boards`, `shapes`, `patterns`, `noise`, `timers`, `crowd`, `fx`, `stock`, `admin`, `server-net`
 - Exports (what the mod provides): `server-events`
 
 ## World `horizon-server-block-mod`
 
 What the SDK builds a server mod as: `horizon-server-mod` and the block hooks.
 
-- Imports (what the game offers): `log`, `storage`, `players`, `world`, `storages`, `entities`, `worldgen`, `items`, `dimensions`, `loot`, `recipes-server`, `boards`, `shapes`, `patterns`, `noise`, `timers`, `crowd`, `fx`, `stock`, `admin`, `server-net`
+- Imports (what the game offers): `log`, `storage`, `players`, `world`, `storages`, `entities`, `worldgen`, `items`, `dimensions`, `blocks`, `chunks`, `loot`, `recipes-server`, `boards`, `shapes`, `patterns`, `noise`, `timers`, `crowd`, `fx`, `stock`, `admin`, `server-net`
 - Exports (what the mod provides): `block-events`, `game-events`, `before-events`, `entity-events`, `logic-events`, `server-net-events`, `server-events`
 
 ## World `horizon-ui-mod`
@@ -805,6 +805,25 @@ An item stack, as server mods hand it around (inventories, block storages, item 
 | `data` | `list<u8>` | The mod's own bytes on the stack (up to 1024), kept in the item's `minecraft:custom_data` and saved with it: every mod sees only its own. Stacks with different bytes do not stack together. |
 | `components` | `list<u8>` | Everything else the stack carries (enchantments, damage, a name, other mods' bytes), opaque: hand it back unchanged when moving the stack; empty for a plain new stack. |
 
+### record `food-level`
+
+Hunger and saturation.
+
+| Field | Type | |
+| --- | --- | --- |
+| `food` | `u32` |  |
+| `saturation` | `f32` |  |
+
+### record `xp-state`
+
+Experience: the level, how far into the next one (0 to 1), the total.
+
+| Field | Type | |
+| --- | --- | --- |
+| `level` | `u32` |  |
+| `progress` | `f32` |  |
+| `total` | `u32` |  |
+
 | Function | Signature | What it does |
 | --- | --- | --- |
 | `style-stack` | `func(stack: item-stack, look: item-look) -> result<item-stack, string>` | The same stack with this look, seen by every client. |
@@ -849,6 +868,39 @@ An item stack, as server mods hand it around (inventories, block storages, item 
 | `revoke-advancement` | `func(player: string, advancement: string) -> result<_, string>` | `/advancement revoke ... only`. |
 | `unlock-recipe` | `func(player: string, recipe: string) -> result<_, string>` | `/recipe give`: puts a recipe (`minecraft:oak_planks`) in the player's recipe book. Err for a recipe the book can't hold. |
 | `lock-recipe` | `func(player: string, recipe: string) -> result<_, string>` | `/recipe take`: takes it out again. |
+| `food` | `func(player: string) -> option<food-level>` | A player's hunger and saturation; `none` for one not online. This and the reads below need a server: `--in-frame` has none. |
+| `set-food` | `func(player: string, food: u32, saturation: f32) -> result<_, string>` | Sets hunger (0 to 20) and saturation (at most the hunger). |
+| `add-exhaustion` | `func(player: string, amount: f32) -> result<_, string>` | Makes a player hungrier, as running does. |
+| `air` | `func(player: string) -> option<s32>` | Air left, in ticks: 300 is full. |
+| `set-air` | `func(player: string, air: s32) -> result<_, string>` | Sets the air left. |
+| `max-health` | `func(player: string) -> option<f32>` | A player's maximum health. |
+| `heal` | `func(player: string, amount: f32) -> result<_, string>` | Heals a player, up to their maximum. |
+| `set-health` | `func(player: string, health: f32) -> result<_, string>` | Sets a player's health, up to their maximum; 0 is refused: `entities.kill` kills. |
+| `xp` | `func(player: string) -> option<xp-state>` | A player's experience. |
+| `set-xp` | `func(player: string, level: u32, progress: f32) -> result<_, string>` | Sets a player's level and how far into the next one (0 to 1). |
+| `position` | `func(player: string) -> option<tuple<f64, f64, f64>>` | Where a player stands now. |
+| `velocity` | `func(player: string) -> option<tuple<f64, f64, f64>>` | How far a player moved in the last tick. |
+| `set-velocity` | `func(player: string, x: f64, y: f64, z: f64) -> result<_, string>` | Pushes a player: their client gets this motion. |
+| `is-sprinting` | `func(player: string) -> bool` | Sprinting or not; false for one not online, as for the reads below. |
+| `is-flying` | `func(player: string) -> bool` | Flying or not. |
+| `set-may-fly` | `func(player: string, on: bool) -> result<_, string>` | Allows flight in survival, until the player leaves. |
+| `is-on-ground` | `func(player: string) -> bool` | On the ground or not. |
+| `is-sleeping` | `func(player: string) -> bool` | In bed or not. |
+| `is-swimming` | `func(player: string) -> bool` | Swimming or not. |
+| `is-gliding` | `func(player: string) -> bool` | Gliding with an elytra or not. |
+| `is-using` | `func(player: string) -> bool` | Using a held item or not (eating, drawing a bow). |
+| `is-op` | `func(player: string) -> bool` | An operator or not: permission level 2 or more. |
+| `ping` | `func(player: string) -> option<s32>` | A player's latency in milliseconds. |
+| `close-window` | `func(player: string) -> result<_, string>` | Closes a block's window the player has open; crafting tables and other stations stay open. |
+| `ender-chest` | `func(player: string) -> list<option<item-stack>>` | A player's 27 ender chest slots; empty for one not online. |
+| `set-ender-chest-slot` | `func(player: string, slot: u32, stack: option<item-stack>) -> result<_, string>` | Sets one ender chest slot. |
+| `spawn-point` | `func(player: string) -> option<tuple<string, s32, s32, s32>>` | A player's respawn point: dimension, x, y, z; `none` for the world's spawn. |
+| `has-advancement` | `func(player: string, advancement: string) -> bool` | Whether a player has every criterion of an advancement. |
+| `set-selected-slot` | `func(player: string, slot: u32) -> result<_, string>` | Changes the held hotbar slot (0 to 8). |
+| `tell-json` | `func(player: string, json: string) -> result<_, string>` | A chat component, as JSON, to one player. |
+| `broadcast-json` | `func(json: string) -> result<_, string>` | A chat component, as JSON, to everyone. |
+| `raycast-block` | `func(player: string, reach: f64) -> option<tuple<s32, s32, s32>>` | The first block that isn't air along a player's view, within `reach`. Whole cells: a torch's cell counts, and so does water. |
+| `teleport-look` | `func(player: string, x: f64, y: f64, z: f64, yaw: f32, pitch: f32) -> result<_, string>` | Teleports a player in their dimension and turns them. |
 
 ## `world`
 
@@ -986,6 +1038,18 @@ What players may do with a slot of the mod's storage in a window.
 | `transfer-item` | `func(dimension: string, from: tuple<s32, s32, s32>, to: tuple<s32, s32, s32>, item: option<string>, count: u32) -> u32` | Moves up to `count` of `item` (none: any) from one block to another as a hopper would, only as much as fits: how many moved. |
 | `transfer-energy` | `func(dimension: string, from: tuple<s32, s32, s32>, to: tuple<s32, s32, s32>, amount: u64) -> u64` | Moves up to `amount` FE, only as much as fits: how much moved. |
 | `transfer-fluid` | `func(dimension: string, from: tuple<s32, s32, s32>, to: tuple<s32, s32, s32>, fluid: option<string>, amount: u32) -> u32` | Moves up to `amount` mB of `fluid` (none: any): how many moved. |
+| `set-side-config` | `func(dimension: string, x: s32, y: s32, z: s32, side: string, mode: string) -> result<_, string>` | What a side lets through: `none`, `in`, `out` or `both` (the default). Sides are `down`, `up`, `north`, `south`, `west`, `east`. `transfer-all` obeys it; a mod's own calls decide for themselves. |
+| `side-config` | `func(dimension: string, x: s32, y: s32, z: s32, side: string) -> option<string>` | What a side of a storage lets through; `none` where no storage is. |
+| `set-filter` | `func(dimension: string, x: s32, y: s32, z: s32, items: list<string>) -> result<_, string>` | The items `insert-item` accepts into this storage; empty: any. Windows follow `set-slot-rule` instead. |
+| `filter` | `func(dimension: string, x: s32, y: s32, z: s32) -> list<string>` | A storage's filter. |
+| `save-to-stack` | `func(dimension: string, x: s32, y: s32, z: s32, stack: item-stack) -> result<item-stack, string>` | `stack` carrying a copy of the storage's contents in its data, which it replaces. Err past the 1024 bytes a stack's data may hold. |
+| `load-from-stack` | `func(dimension: string, x: s32, y: s32, z: s32, stack: item-stack) -> result<_, string>` | Puts back what `save-to-stack` saved, into a storage of the same shape. |
+| `transfer-all` | `func(dimension: string, from: tuple<s32, s32, s32>, to: tuple<s32, s32, s32>) -> u32` | Moves every item that fits from one storage or container to another; how many. Between neighbours, both side configs must allow it. |
+| `neighbors` | `func(dimension: string, x: s32, y: s32, z: s32) -> list<string>` | Which of the six sides of a position hold a storage or container. |
+| `total-energy` | `func(dimension: string, positions: list<tuple<s32, s32, s32>>) -> u64` | The energy stored over these positions. |
+| `sort` | `func(dimension: string, x: s32, y: s32, z: s32) -> result<_, string>` | Orders the slots by item, empties last. |
+| `compact` | `func(dimension: string, x: s32, y: s32, z: s32) -> result<_, string>` | Merges stacks that can stack. |
+| `drop-all` | `func(dimension: string, x: s32, y: s32, z: s32) -> result<_, string>` | Drops the items held at the position; the storage stays. |
 
 ## `entities`
 
@@ -1357,6 +1421,54 @@ An effect a potion gives.
 | `potion-contents` | `func(stack: item-stack) -> option<tuple<string, list<potion-effect>>>` | A potion's, a tipped arrow's or a lingering potion's potion (`minecraft:swiftness`) and the effects it gives. |
 | `set-potion-contents` | `func(stack: item-stack, potion: option<string>) -> result<item-stack, string>` | The stack as `potion` (`none`: water). Horizon keeps a potion's base only, not effects of its own. Err for a potion the game doesn't have. |
 | `container-contents` | `func(stack: item-stack) -> list<item-stack>` | What a shulker box or a bundle holds. |
+
+## `blocks`
+
+Access: not granted by any capability.
+
+Capability `world` for a server mod: block types and what is known of a position.
+
+| Function | Signature | What it does |
+| --- | --- | --- |
+| `all` | `func() -> list<string>` | Every block id. |
+| `properties` | `func(block: string) -> list<tuple<string, list<string>>>` | A block's properties, each with its values. |
+| `default-state` | `func(block: string) -> option<string>` | A block's default state, `minecraft:oak_log[axis=y]`. |
+| `hardness` | `func(state: string) -> option<f32>` | How hard a state is to break; -1 can't be broken. |
+| `light-emission` | `func(state: string) -> option<u8>` | The light a state gives, 0 to 15. |
+| `light-at` | `func(dimension: string, x: s32, y: s32, z: s32) -> option<u8>` | The brighter of sky and block light at a position, ignoring time of day. |
+| `sky-light-at` | `func(dimension: string, x: s32, y: s32, z: s32) -> option<u8>` | Sky light at a position. |
+| `block-light-at` | `func(dimension: string, x: s32, y: s32, z: s32) -> option<u8>` | Block light at a position. |
+| `can-see-sky` | `func(dimension: string, x: s32, y: s32, z: s32) -> bool` | Whether a position has full sky light. |
+| `is-solid` | `func(state: string) -> bool` | Solid or not; false for an unknown state, as for the reads below. |
+| `is-replaceable` | `func(state: string) -> bool` | Can be placed over or not. |
+| `is-opaque` | `func(state: string) -> bool` | Hides what is behind it or not. |
+| `has-collision` | `func(state: string) -> bool` | Stops an entity or not. |
+| `requires-tool` | `func(state: string) -> bool` | Needs the right tool for its drops or not. |
+| `is-waterlogged` | `func(state: string) -> bool` | `waterlogged=true` or not. |
+| `fluid-at` | `func(dimension: string, x: s32, y: s32, z: s32) -> option<tuple<string, u8>>` | The fluid at a position and its amount, 1 to 8; `none` for no fluid. |
+| `has-block-entity` | `func(dimension: string, x: s32, y: s32, z: s32) -> bool` | Whether a block entity is at a position. |
+| `get-nbt` | `func(dimension: string, x: s32, y: s32, z: s32) -> option<string>` | A block entity's NBT as SNBT. |
+| `merge-nbt` | `func(dimension: string, x: s32, y: s32, z: s32, snbt: string) -> result<_, string>` | `/data merge block`: mods don't see if it fails. |
+
+## `chunks`
+
+Access: not granted by any capability.
+
+Capability `world` for a server mod: whole chunks at once.
+
+| Function | Signature | What it does |
+| --- | --- | --- |
+| `state-id` | `func(state: string) -> option<u32>` | A state's number, for fast reads. It holds until the game stops: don't save it. |
+| `state-of-id` | `func(id: u32) -> option<string>` | The state a number means. |
+| `read-section` | `func(dimension: string, chunk-x: s32, section-y: s32, chunk-z: s32) -> option<list<u32>>` | A section's 4096 state numbers, at `y * 256 + z * 16 + x`. `section-y` is the block y divided by 16. |
+| `write-section` | `func(dimension: string, chunk-x: s32, section-y: s32, chunk-z: s32, ids: list<u32>) -> result<_, string>` | Writes the 4096 numbers `read-section` gives; only what differs is sent. |
+| `heightmap` | `func(dimension: string, chunk-x: s32, chunk-z: s32) -> option<list<s32>>` | A chunk's highest block that isn't air, per column at `z * 16 + x`. |
+| `loaded` | `func(dimension: string) -> list<tuple<s32, s32>>` | Every loaded chunk of a dimension. |
+| `force-load` | `func(dimension: string, chunk-x: s32, chunk-z: s32) -> result<_, string>` | `/forceload add`. |
+| `force-unload` | `func(dimension: string, chunk-x: s32, chunk-z: s32) -> result<_, string>` | `/forceload remove`. |
+| `get-data` | `func(dimension: string, chunk-x: s32, chunk-z: s32) -> option<list<u8>>` | This mod's bytes on a chunk, saved with the world. |
+| `set-data` | `func(dimension: string, chunk-x: s32, chunk-z: s32, data: list<u8>) -> result<_, string>` | Sets them, up to 4096 bytes; empty removes them. |
+| `data-chunks` | `func(dimension: string) -> list<tuple<s32, s32>>` | The chunks of a dimension where this mod keeps data. |
 
 ## `dimensions`
 

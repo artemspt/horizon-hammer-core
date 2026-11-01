@@ -706,6 +706,9 @@ impl Game<'_> {
             }
             let teleported = std::mem::take(&mut m.teleported);
             let moved: f64 = (0..3).map(|k| (at[k] - g.position[k]).powi(2)).sum();
+            if let Ok(max) = horizon_world::living_health::HealthWorld::max_health_attribute(&mut m) {
+                g.mod_max_health = max as f32;
+            }
             g.motion = Some(Box::new(m));
             // Entity.teleportTo takes a rider out of its vehicle.
             let left_vehicle = match g.vehicle.filter(|_| teleported) {

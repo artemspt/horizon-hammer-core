@@ -25,6 +25,15 @@ The project has a working WASM mod system in `crates/horizon-mods/` with:
 
 ## Changelog
 
+### 2026-11-01 - Players' bodies, blocks, chunks, storages (API level 24)
+
+#### Added
+- **75 functions from the base list:** 33 in `players` (food, air, health, experience, motion, flags, ender chest, advancement,
+  raycast, chat components), new interfaces `blocks` (19) and `chunks` (11), 12 in `storages` (sides, filter, save to a stack,
+  sort, compact). `/showcase api l24`, `l24check`, `l24after`
+- `runtime/blocks.rs`; `PlayerState` in the snapshot, made only while a mod reads one; `ServerAction::Player`,
+  `game/mod_machines.rs` `mod_change_player`; `Guest.mod_may_fly`, `mod_max_health`
+
 ### 2026-11-01 - `/hmod full-reload`
 
 #### Added

@@ -194,7 +194,7 @@ fn turned_state(state: &str, turns: u8, mirror: bool) -> String {
 }
 
 /// The cells a ray crosses, from its start, and the distance to each.
-fn ray_cells(from: [f64; 3], dir: [f64; 3], reach: f64) -> Vec<(Pos, f64)> {
+pub(super) fn ray_cells(from: [f64; 3], dir: [f64; 3], reach: f64) -> Vec<(Pos, f64)> {
     let len = dir.iter().map(|d| d * d).sum::<f64>().sqrt();
     if !len.is_finite() || len == 0.0 || !from.iter().all(|c| c.abs() < 3.0e7) {
         return Vec::new();

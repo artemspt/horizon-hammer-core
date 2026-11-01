@@ -299,6 +299,8 @@ impl Capability {
             "storages"
                 | "items"
                 | "dimensions"
+                | "blocks"
+                | "chunks"
                 | "loot"
                 | "recipes-server"
                 | "shapes"

@@ -47,6 +47,12 @@ pub struct Storage {
     /// `storages.set-slot-rule`, by slot.
     #[serde(default)]
     pub slot_rules: std::collections::BTreeMap<u32, SlotRule>,
+    /// `storages.set-side-config`: side → mode; a side not here is `both`.
+    #[serde(default)]
+    pub sides: std::collections::BTreeMap<String, String>,
+    /// `storages.set-filter`.
+    #[serde(default)]
+    pub filter: Vec<String>,
 }
 
 /// What a window's player may do with a slot.
@@ -54,6 +60,21 @@ pub struct Storage {
 pub struct SlotRule {
     pub take_only: bool,
     pub items: Vec<String>,
+}
+
+/// What a mod changes on a player.
+#[derive(Clone, Debug, PartialEq)]
+pub enum PlayerChange {
+    Food(u32, f32),
+    Exhaustion(f32),
+    Air(i32),
+    Heal(f32),
+    Health(f32),
+    Velocity(f64, f64, f64),
+    MayFly(bool),
+    CloseWindow,
+    EnderSlot(u32, Option<HostStack>),
+    SelectedSlot(u32),
 }
 
 /// What a mod changes on a mob.
@@ -185,6 +206,11 @@ pub enum ServerAction {
     PickupDelay {
         id: String,
         ticks: i32,
+    },
+    /// `players.set-food`, `set-velocity` and the like.
+    Player {
+        player: String,
+        change: PlayerChange,
     },
     /// `entities.xp-orb`.
     XpOrb {
@@ -753,6 +779,68 @@ impl State {
 }
 
 // ---------------------------------------------------------------- storages
+/// The six sides: each pair of opposites differs in the lowest bit.
+const SIDES: [(&str, (i32, i32, i32)); 6] = [
+    ("down", (0, -1, 0)),
+    ("up", (0, 1, 0)),
+    ("north", (0, 0, -1)),
+    ("south", (0, 0, 1)),
+    ("west", (-1, 0, 0)),
+    ("east", (1, 0, 0)),
+];
+
+impl State {
+    /// This mod's storage at a position, changed by `f`.
+    fn own_storage(
+        &mut self,
+        dimension: &str,
+        at: (i32, i32, i32),
+        f: impl FnOnce(&mut Storage),
+    ) -> Result<(), String> {
+        let me = self.id.clone();
+        self.with_storage(dimension, at, |s| {
+            if s.owner == me {
+                f(s);
+                Ok(())
+            } else {
+                Err("another mod's storage".to_owned())
+            }
+        })
+        .ok_or_else(|| "no storage there".to_owned())?
+    }
+    /// The slots of a storage or a vanilla container, changed by `f`.
+    fn edit_slots(
+        &mut self,
+        dimension: &str,
+        at: (i32, i32, i32),
+        f: impl FnOnce(&mut Vec<Option<HostStack>>),
+    ) -> Result<(), String> {
+        let me = self.id.clone();
+        let mut f = Some(f);
+        let mine = self.with_storage(dimension, at, |s| {
+            if s.owner != me {
+                return Err("another mod's storage".to_owned());
+            }
+            if let Some(f) = f.take() {
+                f(&mut s.slots);
+            }
+            Ok(())
+        });
+        if let Some(result) = mine {
+            return result;
+        }
+        let mut slots = self.container(dimension, at).ok_or("no storage there")?;
+        if let Some(f) = f.take() {
+            f(&mut slots);
+        }
+        if self.set_container(dimension, at, slots) {
+            Ok(())
+        } else {
+            Err("no storage there".to_owned())
+        }
+    }
+}
+
 impl storages::Host for State {
     fn declare(
         &mut self,
@@ -821,6 +909,8 @@ impl storages::Host for State {
                 tanks,
                 menu_data: old.menu_data,
                 slot_rules: old.slot_rules,
+                sides: old.sides,
+                filter: old.filter,
             },
         );
         Ok(())
@@ -918,6 +1008,9 @@ impl storages::Host for State {
             return 0;
         }
         if let Some(n) = self.with_storage(&dimension, (x, y, z), |s| {
+            if !s.filter.is_empty() && !s.filter.contains(&stack.item) {
+                return 0;
+            }
             insert_into(&mut s.slots, &stack, max, simulate)
         }) {
             return n;
@@ -1365,6 +1458,217 @@ impl storages::Host for State {
             return 0;
         };
         storages::Host::insert_fluid(self, d, to.0, to.1, to.2, taken, false)
+    }
+    fn set_side_config(
+        &mut self,
+        dimension: String,
+        x: i32,
+        y: i32,
+        z: i32,
+        side: String,
+        mode: String,
+    ) -> Result<(), String> {
+        if !SIDES.iter().any(|(n, _)| *n == side) {
+            return Err(format!("{side}: not a side"));
+        }
+        if !["none", "in", "out", "both"].contains(&mode.as_str()) {
+            return Err(format!("{mode}: none, in, out or both"));
+        }
+        self.own_storage(&dimension, (x, y, z), |s| {
+            s.sides.insert(side, mode);
+        })
+    }
+    fn side_config(
+        &mut self,
+        dimension: String,
+        x: i32,
+        y: i32,
+        z: i32,
+        side: String,
+    ) -> Option<String> {
+        self.with_storage(&dimension, (x, y, z), |s| {
+            s.sides
+                .get(&side)
+                .cloned()
+                .unwrap_or_else(|| "both".to_owned())
+        })
+    }
+    fn set_filter(
+        &mut self,
+        dimension: String,
+        x: i32,
+        y: i32,
+        z: i32,
+        items: Vec<String>,
+    ) -> Result<(), String> {
+        if items.len() > 1024 {
+            return Err("at most 1024 items".into());
+        }
+        self.own_storage(&dimension, (x, y, z), |s| s.filter = items)
+    }
+    fn filter(&mut self, dimension: String, x: i32, y: i32, z: i32) -> Vec<String> {
+        self.with_storage(&dimension, (x, y, z), |s| s.filter.clone())
+            .unwrap_or_default()
+    }
+    fn save_to_stack(
+        &mut self,
+        dimension: String,
+        x: i32,
+        y: i32,
+        z: i32,
+        stack: players::ItemStack,
+    ) -> Result<players::ItemStack, String> {
+        let saved = self
+            .with_storage(&dimension, (x, y, z), |s| {
+                serde_json::to_vec(&(&s.slots, s.energy, &s.tanks))
+            })
+            .ok_or("no storage there")?
+            .map_err(|e| e.to_string())?;
+        if saved.len() > STACK_DATA_BYTES {
+            return Err(format!(
+                "{} bytes: a stack's data holds {STACK_DATA_BYTES}",
+                saved.len()
+            ));
+        }
+        let mut stack = stack;
+        stack.data = saved;
+        Ok(stack)
+    }
+    fn load_from_stack(
+        &mut self,
+        dimension: String,
+        x: i32,
+        y: i32,
+        z: i32,
+        stack: players::ItemStack,
+    ) -> Result<(), String> {
+        let (slots, energy, tanks): (Vec<Option<HostStack>>, u64, Vec<Tank>) =
+            serde_json::from_slice(&stack.data).map_err(|_| "no storage saved on this stack")?;
+        let mut outcome = Ok(());
+        self.own_storage(&dimension, (x, y, z), |s| {
+            if s.slots.len() != slots.len()
+                || s.tanks.len() != tanks.len()
+                || energy > s.energy_capacity
+                || s.tanks
+                    .iter()
+                    .zip(&tanks)
+                    .any(|(a, b)| a.capacity != b.capacity)
+            {
+                outcome = Err("a storage of another shape".to_owned());
+                return;
+            }
+            s.slots = slots;
+            s.energy = energy;
+            s.tanks = tanks;
+        })?;
+        outcome
+    }
+    fn transfer_all(
+        &mut self,
+        dimension: String,
+        from: (i32, i32, i32),
+        to: (i32, i32, i32),
+    ) -> u32 {
+        let step = (
+            to.0.wrapping_sub(from.0),
+            to.1.wrapping_sub(from.1),
+            to.2.wrapping_sub(from.2),
+        );
+        if let Some(i) = SIDES.iter().position(|(_, d)| *d == step) {
+            let opposite = SIDES[i ^ 1].0.to_owned();
+            let side = SIDES[i].0.to_owned();
+            let out =
+                storages::Host::side_config(self, dimension.clone(), from.0, from.1, from.2, side);
+            let takes =
+                storages::Host::side_config(self, dimension.clone(), to.0, to.1, to.2, opposite);
+            if out.is_some_and(|m| m == "none" || m == "in")
+                || takes.is_some_and(|m| m == "none" || m == "out")
+            {
+                return 0;
+            }
+        }
+        let slots = storages::Host::items(self, dimension.clone(), from.0, from.1, from.2);
+        let mut moved = 0;
+        for stack in slots.unwrap_or_default().into_iter().flatten() {
+            moved += storages::Host::transfer_item(
+                self,
+                dimension.clone(),
+                from,
+                to,
+                Some(stack.item),
+                stack.count,
+            );
+        }
+        moved
+    }
+    fn neighbors(&mut self, dimension: String, x: i32, y: i32, z: i32) -> Vec<String> {
+        let mut out = Vec::new();
+        for (name, d) in SIDES {
+            let at = (x.wrapping_add(d.0), y.wrapping_add(d.1), z.wrapping_add(d.2));
+            if self.with_storage(&dimension, at, |_| ()).is_some()
+                || self.container(&dimension, at).is_some()
+            {
+                out.push(name.to_owned());
+            }
+        }
+        out
+    }
+    fn total_energy(&mut self, dimension: String, positions: Vec<(i32, i32, i32)>) -> u64 {
+        positions
+            .into_iter()
+            .take(STORAGES_PER_MOD)
+            .filter_map(|p| self.with_storage(&dimension, p, |s| s.energy))
+            .fold(0, u64::saturating_add)
+    }
+    fn sort(&mut self, dimension: String, x: i32, y: i32, z: i32) -> Result<(), String> {
+        self.edit_slots(&dimension, (x, y, z), |slots| {
+            slots.sort_by(|a, b| match (a, b) {
+                (Some(a), Some(b)) => a.item.cmp(&b.item),
+                (a, b) => b.is_some().cmp(&a.is_some()),
+            });
+        })
+    }
+    fn compact(&mut self, dimension: String, x: i32, y: i32, z: i32) -> Result<(), String> {
+        let items = storages::Host::items(self, dimension.clone(), x, y, z).unwrap_or_default();
+        let mut limits = std::collections::BTreeMap::new();
+        for s in items.iter().flatten() {
+            limits.insert(s.item.clone(), self.max_stack(&s.item).unwrap_or(1));
+        }
+        self.edit_slots(&dimension, (x, y, z), |slots| {
+            let stacks: Vec<HostStack> = slots.iter_mut().filter_map(Option::take).collect();
+            let mut out: Vec<HostStack> = Vec::new();
+            for mut s in stacks {
+                let max = limits.get(&s.item).copied().unwrap_or(1);
+                for o in out
+                    .iter_mut()
+                    .filter(|o| o.item == s.item && o.data == s.data && o.components == s.components)
+                {
+                    let n = max.saturating_sub(o.count).min(s.count);
+                    o.count += n;
+                    s.count -= n;
+                }
+                if s.count > 0 {
+                    out.push(s);
+                }
+            }
+            for (slot, s) in slots.iter_mut().zip(out) {
+                *slot = Some(s);
+            }
+        })
+    }
+    fn drop_all(&mut self, dimension: String, x: i32, y: i32, z: i32) -> Result<(), String> {
+        let mut held = Vec::new();
+        self.edit_slots(&dimension, (x, y, z), |slots| {
+            held = slots.iter_mut().filter_map(Option::take).collect();
+        })?;
+        for stack in held {
+            self.act(ServerAction::DropItem {
+                dimension: dimension.clone(),
+                pos: (x, y, z),
+                stack,
+            })?;
+        }
+        Ok(())
     }
 }
 

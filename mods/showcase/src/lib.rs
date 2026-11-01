@@ -12,6 +12,7 @@ mod tour19;
 mod tour20;
 mod tour21;
 mod tour22;
+mod tour24;
 
 use horizon_mod_sdk::server::{
     Args, Argument, BlockChange, BlockPos, Entity, ItemStack, Player, Registration, ServerMod,
@@ -505,6 +506,10 @@ impl Showcase {
             "api" if arg == "extra" => tour22::set(player).map(Some),
             "api" if arg == "extracheck" => tour22::check(player).map(Some),
             "api" if arg == "extraafter" => tour22::after(player).map(Some),
+            // Level 24 (players' bodies, blocks, chunks, storages): `l24`, `l24check`, then `l24after`.
+            "api" if arg == "l24" => tour24::set(player).map(Some),
+            "api" if arg == "l24check" => tour24::check(player).map(Some),
+            "api" if arg == "l24after" => tour24::after(player).map(Some),
             "api" => api_tour(player, arg, (fx + 8, fy + 5, fz)).map(Some),
             // `before-events`: `on` turns each hook's rule on, `check` says how often each was asked.
             "before" => match arg {

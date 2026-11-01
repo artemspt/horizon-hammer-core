@@ -471,6 +471,42 @@ impl Lent {
         s.tidy();
         Ok(host_stack(&s))
     }
+    pub(super) fn block_facts(
+        &self,
+        id: horizon_world::registry::BlockStateId,
+    ) -> Option<horizon_mods::BlockFacts> {
+        use horizon_world::level::data::state_flags as flag;
+        let behaviours = self.res()?.behaviours();
+        let f = behaviours.facts(id);
+        let fluid = (f.fluid.amount() > 0).then(|| {
+            let family = f.fluid.family();
+            let name = horizon_world::fluid::mod_fluid(family)
+                .map_or_else(|| f.fluid.kind().name().to_owned(), |m| m.block.clone());
+            (name, f.fluid.amount())
+        });
+        Some(horizon_mods::BlockFacts {
+            hardness: f.hardness,
+            emission: f.emission,
+            solid: f.flags & flag::SOLID != 0,
+            replaceable: f.flags & flag::REPLACEABLE != 0,
+            opaque: f.flags & flag::SOLID_RENDER != 0,
+            collision: f.flags & flag::COLLISION_EMPTY == 0,
+            requires_tool: f.flags & flag::REQUIRES_TOOL != 0,
+            fluid,
+        })
+    }
+    pub(super) fn block_entity_nbt(
+        &self,
+        dimension: &str,
+        at: (i32, i32, i32),
+        block: &str,
+    ) -> Option<String> {
+        let (_, entities) = self.containers.iter().find(|(d, _)| *d == dimension)?;
+        let entity = entities.get(&at)?;
+        let name = block.split('[').next().unwrap_or(block);
+        let tag = horizon_client::save::encode_block_entity(at, entity, name);
+        Some(horizon_client::snbt::pretty(&tag).plain())
+    }
     pub(super) fn tool(&self, tool: &HostStack, block: &str) -> Option<(f32, bool)> {
         let s = game_stack(tool)?;
         let items = self.res()?.items();
@@ -901,6 +937,179 @@ impl Game<'_> {
         out
     }
 
+    /// What `players` reads of the bodies, while a mod reads them.
+    pub(super) fn mod_player_states(
+        &mut self,
+        host: Option<&super::lan::LanHost>,
+    ) -> Vec<horizon_mods::PlayerState> {
+        if !self.mods_now(|m| m.reads_players()) {
+            return Vec::new();
+        }
+        let tree = &self.adv.tree;
+        host.or(self.lan.as_ref())
+            .into_iter()
+            .flat_map(|h| &h.hub.guests)
+            .filter(|g| g.placed)
+            .map(|g| {
+                let m = g.motion.as_deref();
+                horizon_mods::PlayerState {
+                    id: uuid_string(g.uuid),
+                    food: m.map_or(g.food, |m| m.health.food.food).max(0) as u32,
+                    saturation: m.map_or(g.saturation, |m| m.health.food.saturation),
+                    air: m.map_or(300, |m| m.air),
+                    max_health: g.mod_max_health,
+                    xp_level: g.xp_level.max(0) as u32,
+                    xp_progress: g.xp_progress,
+                    xp_total: g.xp_total.max(0) as u32,
+                    velocity: (
+                        g.position[0] - g.previous_position[0],
+                        g.position[1] - g.previous_position[1],
+                        g.position[2] - g.previous_position[2],
+                    ),
+                    sprinting: g.sprinting,
+                    flying: g.flying,
+                    on_ground: g.on_ground,
+                    sleeping: g.sleeping,
+                    swimming: m.is_some_and(|m| m.swimming),
+                    gliding: g.fall_flying,
+                    using: g.living_flags & 1 != 0,
+                    permission: g.permission,
+                    ping: g.latency.load(std::sync::atomic::Ordering::Relaxed),
+                    ender: g
+                        .ender_items
+                        .iter()
+                        .map(|s| s.as_ref().map(host_stack))
+                        .collect(),
+                    spawn: match (&g.respawn_elsewhere, g.spawn) {
+                        (Some((d, p, ..)), _) => Some((d.clone(), (p[0], p[1], p[2]))),
+                        (None, Some(p)) => Some((
+                            "minecraft:overworld".to_owned(),
+                            (p[0].floor() as i32, p[1].floor() as i32, p[2].floor() as i32),
+                        )),
+                        (None, None) => None,
+                    },
+                    advancements: g
+                        .advancements
+                        .criteria
+                        .keys()
+                        .filter(|id| tree.get(id).is_some_and(|a| g.advancements.done(a)))
+                        .cloned()
+                        .collect(),
+                }
+            })
+            .collect()
+    }
+    /// `players`' changes (`ServerAction::Player`).
+    fn mod_change_player(&mut self, id: &str, change: horizon_mods::PlayerChange) {
+        use horizon_mods::PlayerChange as C;
+        match change {
+            C::Food(food, saturation) => self.on_mod_player(id, |g| {
+                if let Some(p) = &mut g.player {
+                    p.health.food.food = food as i32;
+                    p.health.food.saturation = saturation;
+                }
+            }),
+            C::Exhaustion(amount) => self.on_mod_player(id, |g| {
+                if let Some(p) = &mut g.player {
+                    p.cause_food_exhaustion(amount);
+                }
+            }),
+            C::Air(air) => self.on_mod_player(id, |g| {
+                if let Some(p) = &mut g.player {
+                    p.air = air;
+                }
+            }),
+            C::Heal(amount) => self.on_mod_player(id, |g| {
+                if let Some(p) = &mut g.player {
+                    let max = horizon_world::living_health::HealthWorld::max_health_attribute(p);
+                    let max = max.map_or(20.0, |m| m as f32);
+                    let _ = p.set_health((p.health.health() + amount).min(max), false);
+                }
+            }),
+            C::Health(health) => self.on_mod_player(id, |g| {
+                if let Some(p) = &mut g.player {
+                    let max = horizon_world::living_health::HealthWorld::max_health_attribute(p);
+                    let _ = p.set_health(health.min(max.map_or(20.0, |m| m as f32)), false);
+                }
+            }),
+            C::SelectedSlot(slot) => self.on_mod_guest(id, |_, host, i| {
+                let g = &mut host.hub.guests[i];
+                g.selected = slot as usize;
+                g.sent_selected = g.selected;
+                g.send(&horizon_protocol::packets::play::Clientbound::SetHeldSlot(
+                    horizon_protocol::packets::play::SetHeldSlot { slot: slot as i32 },
+                ));
+            }),
+            C::Velocity(x, y, z) => self.on_mod_guest(id, |_, host, i| {
+                let g = &host.hub.guests[i];
+                let (entity, conn) = (g.entity_id, g.conn);
+                host.hub.send_to(
+                    conn,
+                    &horizon_protocol::packets::play::Clientbound::SetEntityMotion(
+                        horizon_protocol::packets::play::SetEntityMotion {
+                            id: entity,
+                            velocity: [x, y, z],
+                        },
+                    ),
+                );
+            }),
+            C::MayFly(on) => self.on_mod_guest(id, |_, host, i| {
+                let g = &mut host.hub.guests[i];
+                g.mod_may_fly = on;
+                g.flying &= on || g.creative() || g.spectator();
+                let flags = g.ability_flags();
+                g.send(
+                    &horizon_protocol::packets::play::Clientbound::PlayerAbilities(
+                        horizon_protocol::packets::play::PlayerAbilities {
+                            flags,
+                            flying_speed: 0.05,
+                            walking_speed: 0.1,
+                        },
+                    ),
+                );
+            }),
+            C::CloseWindow => self.on_mod_guest(id, |game, host, i| {
+                let conn = host.hub.guests[i].conn;
+                let Some(window) = host.hub.guests[i].menu.as_ref().map(|m| m.window) else {
+                    return;
+                };
+                game.guest_container_closed(host, conn);
+                host.hub.container_closed(conn, window);
+                host.hub.send_to(
+                    conn,
+                    &horizon_protocol::packets::play::Clientbound::ContainerClose(
+                        horizon_protocol::packets::play::ContainerClose { container: window },
+                    ),
+                );
+                game.guest_carried_back(host, i);
+            }),
+            C::EnderSlot(slot, stack) => self.on_mod_guest(id, |_, host, i| {
+                if let Some(at) = host.hub.guests[i].ender_items.get_mut(slot as usize) {
+                    *at = stack.as_ref().and_then(game_stack);
+                }
+            }),
+        }
+    }
+    /// `f` with the hub out of the game and the guest's index.
+    fn on_mod_guest(
+        &mut self,
+        id: &str,
+        f: impl FnOnce(&mut Self, &mut super::lan::LanHost, usize),
+    ) {
+        let Some(mut host) = self.lan.take() else {
+            return;
+        };
+        if let Some(i) = host
+            .hub
+            .guests
+            .iter()
+            .position(|g| g.placed && uuid_string(g.uuid) == id)
+        {
+            f(self, &mut host, i);
+        }
+        self.lan = Some(host);
+    }
+
     /// Before the world is lent: the redstone power at the mods' blocks of
     /// the level in place, the items' stack sizes, the levels' block
     /// entities and mobs. [`Game::return_lent`] puts them back.
@@ -1172,6 +1381,9 @@ impl Game<'_> {
                     if let Err(e) = self.explode([pos.0, pos.1, pos.2], power) {
                         log::warn!("Horizon: a mod's explosion: {e}");
                     }
+                }
+                ServerAction::Player { player, change } => {
+                    self.mod_change_player(&player, change);
                 }
                 ServerAction::Undying { player, on } => {
                     if on {
