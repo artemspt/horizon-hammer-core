@@ -107,6 +107,9 @@ pub(super) struct ModsState {
     /// `item-events` waiting for the tick's end: player, stack, what.
     #[cfg(feature = "mods")]
     pub(super) item_events: Vec<(String, horizon_mods::HostStack, horizon_mods::ItemEvent)>,
+    /// `mob-ai.boss-bar`: mob → bar's id, the mob's level, the health shown.
+    #[cfg(feature = "mods")]
+    pub(super) mob_bars: std::collections::HashMap<String, (String, String, f32)>,
     /// `block-hooks` waiting: where, the state, what.
     #[cfg(feature = "mods")]
     pub(super) block_hooks: Vec<((i32, i32, i32), String, horizon_mods::BlockHook)>,

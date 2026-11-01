@@ -25,6 +25,16 @@ The project has a working WASM mod system in `crates/horizon-mods/` with:
 
 ## Changelog
 
+### 2026-11-01 - Item behaviour, block hooks, mob control (API levels 25, 26)
+
+#### Added
+- **WIT `item-events`** (`use-tick`, `use-finished`, `use-stopped`, `inventory-tick`, `held-tick`, `mine-block`, `hit-entity`, `crafted`) and
+  **`block-hooks`** (`random-tick`, `entity-inside`, `stepped-on`, `fell-on`, `exploded`), for what the manifest names in `hook_items`
+  and `hook_blocks`; they only tell, queued as they happen and handed over at the tick's end (`runtime/play.rs`)
+- **WIT `players.start-using`, `stop-using`, `render.set-item-tooltip`**
+- **WIT `mob-ai`**: `navigate`, `stop-navigation`, `is-navigating`, `look-at`, `jump`, `attack`, `set-speed`, `boss-bar`, `remove-boss-bar`
+  (`mobs/ai.rs` `mod_control`). `/showcase api l25`, `l25check`, `l26`, `l26check`, `l26stop`
+
 ### 2026-11-01 - Players' bodies, blocks, chunks, storages (API level 24)
 
 #### Added

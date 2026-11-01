@@ -1754,6 +1754,11 @@ impl Mods {
                 |s| s,
             )
             .map_err(|e| e.to_string())?;
+            server_bindings::horizon::mods::mob_ai::add_to_linker::<State, HasSelf<State>>(
+                &mut linker,
+                |s| s,
+            )
+            .map_err(|e| e.to_string())?;
             server_bindings::horizon::mods::blocks::add_to_linker::<State, HasSelf<State>>(
                 &mut linker,
                 |s| s,

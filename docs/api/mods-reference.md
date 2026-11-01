@@ -91,14 +91,14 @@ A server mod (manifest `side = "server"`, `api = "0.3"`, experimental): runs whe
 
 ## World `horizon-server-mod`
 
-- Imports (what the game offers): `log`, `storage`, `players`, `world`, `storages`, `entities`, `worldgen`, `items`, `dimensions`, `blocks`, `chunks`, `loot`, `recipes-server`, `boards`, `shapes`, `patterns`, `noise`, `timers`, `crowd`, `fx`, `stock`, `admin`, `server-net`
+- Imports (what the game offers): `log`, `storage`, `players`, `world`, `storages`, `entities`, `worldgen`, `items`, `dimensions`, `blocks`, `chunks`, `mob-ai`, `loot`, `recipes-server`, `boards`, `shapes`, `patterns`, `noise`, `timers`, `crowd`, `fx`, `stock`, `admin`, `server-net`
 - Exports (what the mod provides): `server-events`
 
 ## World `horizon-server-block-mod`
 
 What the SDK builds a server mod as: `horizon-server-mod` and the block hooks.
 
-- Imports (what the game offers): `log`, `storage`, `players`, `world`, `storages`, `entities`, `worldgen`, `items`, `dimensions`, `blocks`, `chunks`, `loot`, `recipes-server`, `boards`, `shapes`, `patterns`, `noise`, `timers`, `crowd`, `fx`, `stock`, `admin`, `server-net`
+- Imports (what the game offers): `log`, `storage`, `players`, `world`, `storages`, `entities`, `worldgen`, `items`, `dimensions`, `blocks`, `chunks`, `mob-ai`, `loot`, `recipes-server`, `boards`, `shapes`, `patterns`, `noise`, `timers`, `crowd`, `fx`, `stock`, `admin`, `server-net`
 - Exports (what the mod provides): `block-events`, `game-events`, `before-events`, `item-events`, `block-hooks`, `entity-events`, `logic-events`, `server-net-events`, `server-events`
 
 ## World `horizon-ui-mod`
@@ -1486,6 +1486,24 @@ Capability `world` for a server mod: whole chunks at once.
 | `get-data` | `func(dimension: string, chunk-x: s32, chunk-z: s32) -> option<list<u8>>` | This mod's bytes on a chunk, saved with the world. |
 | `set-data` | `func(dimension: string, chunk-x: s32, chunk-z: s32, data: list<u8>) -> result<_, string>` | Sets them, up to 4096 bytes; empty removes them. |
 | `data-chunks` | `func(dimension: string) -> list<tuple<s32, s32>>` | The chunks of a dimension where this mod keeps data. |
+
+## `mob-ai`
+
+Access: not granted by any capability.
+
+Capability `entities` for a server mod: making a mob do things, whatever its goals want. `mob` is its id; a mob not in the level in place takes a change when its level next runs.
+
+| Function | Signature | What it does |
+| --- | --- | --- |
+| `navigate` | `func(mob: string, x: f64, y: f64, z: f64, speed: f64) -> result<_, string>` | Walks to a position by a path, until it arrives or `stop-navigation`. Unlike `entities.move-to` it asks again when its goals took it elsewhere. |
+| `stop-navigation` | `func(mob: string) -> result<_, string>` | Stops walking. |
+| `is-navigating` | `func(mob: string) -> bool` | Whether it walks a path, or has a `navigate` left to finish; level in place. |
+| `look-at` | `func(mob: string, x: f64, y: f64, z: f64, ticks: u32) -> result<_, string>` | Turns its head to a position for `ticks`. |
+| `jump` | `func(mob: string) -> result<_, string>` | Makes it jump once, if it can. |
+| `attack` | `func(mob: string, target: string) -> result<_, string>` | Makes it attack now: `target` is a mob's id, or a player's. With its own attack damage, none for a mob with none. |
+| `set-speed` | `func(mob: string, multiplier: f64, ticks: u32) -> result<_, string>` | Multiplies its speed for `ticks`. |
+| `boss-bar` | `func(mob: string, title: string, color: string) -> result<_, string>` | A boss bar over everyone's screen following its health, until it dies: `color` is `pink`, `blue`, `red`, `green`, `yellow`, `purple` or `white`. |
+| `remove-boss-bar` | `func(mob: string) -> result<_, string>` | Takes the bar away. |
 
 ## `dimensions`
 

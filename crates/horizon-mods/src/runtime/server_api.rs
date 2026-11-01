@@ -99,6 +99,13 @@ pub enum MobChange {
     /// `entities.remove`: gone with no death.
     Remove,
     AddVelocity(f64, f64, f64),
+    /// `mob-ai`.
+    Navigate(f64, f64, f64, f64),
+    StopNavigation,
+    LookFor(f64, f64, f64, u32),
+    Jump,
+    Attack(String),
+    Speed(f64, u32),
     /// Strength, then the x and z it is pushed from.
     Knockback(f64, f64, f64),
 }
@@ -208,6 +215,11 @@ pub enum ServerAction {
     PickupDelay {
         id: String,
         ticks: i32,
+    },
+    /// `mob-ai.boss-bar`: none takes it away.
+    MobBar {
+        id: String,
+        bar: Option<(String, String)>,
     },
     /// `players.set-food`, `set-velocity` and the like.
     Player {
@@ -479,7 +491,7 @@ fn check_id(kind: &str, id: &str) -> Result<(), String> {
         Err(format!("{kind} {id:?}: not an id"))
     }
 }
-fn check_uuid(id: &str) -> Result<(), String> {
+pub(super) fn check_uuid(id: &str) -> Result<(), String> {
     let ok = id.len() == 36 && id.chars().all(|c| c.is_ascii_hexdigit() || c == '-');
     if ok {
         Ok(())

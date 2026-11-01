@@ -1880,6 +1880,33 @@ interface chunks {
     data-chunks: func(dimension: string) -> list<tuple<s32, s32>>;
 }
 
+/// Capability `entities` for a server mod: making a mob do things, whatever
+/// its goals want. `mob` is its id; a mob not in the level in place takes a
+/// change when its level next runs.
+interface mob-ai {
+    /// Walks to a position by a path, until it arrives or `stop-navigation`.
+    /// Unlike `entities.move-to` it asks again when its goals took it elsewhere.
+    navigate: func(mob: string, x: f64, y: f64, z: f64, speed: f64) -> result<_, string>;
+    /// Stops walking.
+    stop-navigation: func(mob: string) -> result<_, string>;
+    /// Whether it walks a path, or has a `navigate` left to finish; level in place.
+    is-navigating: func(mob: string) -> bool;
+    /// Turns its head to a position for `ticks`.
+    look-at: func(mob: string, x: f64, y: f64, z: f64, ticks: u32) -> result<_, string>;
+    /// Makes it jump once, if it can.
+    jump: func(mob: string) -> result<_, string>;
+    /// Makes it attack now: `target` is a mob's id, or a player's. With its own
+    /// attack damage, none for a mob with none.
+    attack: func(mob: string, target: string) -> result<_, string>;
+    /// Multiplies its speed for `ticks`.
+    set-speed: func(mob: string, multiplier: f64, ticks: u32) -> result<_, string>;
+    /// A boss bar over everyone's screen following its health, until it dies:
+    /// `color` is `pink`, `blue`, `red`, `green`, `yellow`, `purple` or `white`.
+    boss-bar: func(mob: string, title: string, color: string) -> result<_, string>;
+    /// Takes the bar away.
+    remove-boss-bar: func(mob: string) -> result<_, string>;
+}
+
 /// Capability `world` for a server mod: the dimensions the server has.
 interface dimensions {
     use players.{player};
@@ -2527,6 +2554,7 @@ world horizon-server-mod {
     import dimensions;
     import blocks;
     import chunks;
+    import mob-ai;
     import loot;
     import recipes-server;
     import boards;

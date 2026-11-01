@@ -161,25 +161,25 @@ Every mod with items needs this. `style-stack` covers only the look; components 
 
 Custom tools, guns, staffs and tooltips: the core of tech and magic mods.
 
-- [ ] `item-events.use-tick`: each tick while an item is held in use
-- [ ] `item-events.use-finished`: use ran its whole time
-- [ ] `item-events.use-stopped`: use let go early, with time held
-- [ ] `item-events.use-on-entity`: an item used on an entity
-- [ ] `item-events.use-on-block`: an item used on a block, before the block is asked
+- [x] `item-events.use-tick`: each tick while an item is held in use
+- [x] `item-events.use-finished`: use ran its whole time
+- [x] `item-events.use-stopped`: use let go early, with time held
+- [x] `item-events.use-on-entity`: an item used on an entity (already `entity-events.use-entity`, with the item)
+- [x] `item-events.use-on-block`: an item used on a block, before the block is asked (already `block-events.use-block`, with the item)
 - [ ] `item-events.left-click-air`: a left click on nothing
-- [ ] `item-events.inventory-tick`: each tick an item is in an inventory, for chosen items
-- [ ] `item-events.held-tick`: each tick an item is in hand, for chosen items
-- [ ] `item-events.mine-block`: a tool broke a block
-- [ ] `item-events.hit-entity`: a weapon hit an entity
-- [ ] `item-events.tooltip`: lines a mod adds under a stack's tooltip
-- [ ] `item-events.crafted`: an item was made
+- [x] `item-events.inventory-tick`: each tick an item is in an inventory, for chosen items (`hook_items` in the manifest)
+- [x] `item-events.held-tick`: each tick an item is in hand, for chosen items
+- [x] `item-events.mine-block`: a tool broke a block (survival: creative breaks no tool)
+- [x] `item-events.hit-entity`: a weapon hit an entity
+- [x] `item-events.tooltip`: lines a mod adds under a stack's tooltip (as `render.set-item-tooltip`: lines per item from a client mod; a stack's own lines are `players.style-stack`'s lore)
+- [x] `item-events.crafted`: an item was made
 - [ ] `item-events.durability-used`: durability is about to drop: may change it
 - [ ] `item-events.bar`: the durability bar's width and colour, for a charge bar
 - [ ] `item-events.dropped`: an item left a player's hand
 - [ ] `item-events.entity-tick`: each tick for a thrown item entity, for chosen items
-- [ ] `players.start-using`: makes a player begin using the held item
-- [ ] `players.stop-using`: ends it
-- [x] `players.is-using`: whether a player is using an item, and which
+- [x] `players.start-using`: makes a player begin using the held item
+- [x] `players.stop-using`: ends it
+- [x] `players.is-using`: whether a player is using an item, and which (level 24)
 - [ ] `players.use-time`: ticks of use so far
 
 ## 5. Loot, recipes and drops (31, kind A/C)
@@ -368,29 +368,29 @@ Code goals exist; goals from vanilla and pathing don't. See section 12 of the co
 - [ ] `mob-ai.add-target-goal`: a vanilla targeting goal
 - [ ] `mob-ai.clear-target-goals`: takes them out
 - [ ] `mob-ai.set-goal-flags`: a code goal holds move, look or jump only
-- [ ] `mob-ai.navigate`: a path to a position, with its result
-- [ ] `mob-ai.stop-navigation`: stops walking
-- [ ] `mob-ai.is-navigating`: whether it walks
+- [x] `mob-ai.navigate`: a path to a position, with its result
+- [x] `mob-ai.stop-navigation`: stops walking
+- [x] `mob-ai.is-navigating`: whether it walks
 - [ ] `mob-ai.path-exists`: whether a path exists, before walking
-- [ ] `mob-ai.look-at`: turns the head for a time
-- [ ] `mob-ai.jump`: makes it jump
-- [ ] `mob-ai.attack`: makes it attack now
+- [x] `mob-ai.look-at`: turns the head for a time
+- [x] `mob-ai.jump`: makes it jump
+- [x] `mob-ai.attack`: makes it attack now
 - [ ] `mob-ai.shoot`: makes a ranged mob shoot at a target
 - [ ] `mob-ai.set-aggressive`: the aggressive pose
-- [ ] `mob-ai.set-speed`: its speed for a time
+- [x] `mob-ai.set-speed`: its speed for a time
 - [ ] `mob-ai.flee-from`: runs from an entity kind
 - [ ] `mob-ai.set-home`: stays near a position
 - [ ] `mob-ai.memory-get`: a brain memory by name
 - [ ] `mob-ai.memory-set`: sets one
-- [ ] `mob-ai.play-animation`: a named animation from the mod's model
+- [ ] `mob-ai.play-animation`: a named animation from the mod's model (waits: a mod model turns parts by speed only, named animations are client work)
 - [ ] `mob-ai.stop-animation`: stops it
 - [ ] `mob-ai.set-model`: changes a mob's model
 - [ ] `mob-ai.set-texture`: changes a mob's texture
-- [ ] `mob-ai.set-scale`: its size
+- [ ] `mob-ai.set-scale`: its size (waits: mobs are drawn from the client's own model with no scale; needs the client told, as `horizon_mods:mob_type` tells it the type)
 - [ ] `mob-ai.set-hitbox`: its width and height
 - [ ] `mob-ai.add-part`: a linked part with its own hitbox, for bosses
 - [ ] `mob-ai.remove-part`: takes it off
-- [ ] `mob-ai.boss-bar`: a mob's boss bar, tied to its health
+- [x] `mob-ai.boss-bar`: a mob's boss bar, tied to its health (and `remove-boss-bar`)
 
 ## 10. Blocks: state and behaviour (42, kind A/C)
 
@@ -423,20 +423,20 @@ Reads every machine and worldgen mod needs, and hooks on what happens to a block
 - [ ] `blocks.tick-now`: asks a block's random tick now
 - [ ] `blocks.neighbor-update`: tells neighbours of a change
 - [ ] `blocks.drop-contents`: drops a container's contents
-- [ ] `blocks.drops`: what it would drop with a tool
+- [x] `blocks.drops`: what it would drop with a tool (already `loot.block-drops`)
 - [ ] `blocks.can-place`: whether a state survives at a position
 - [ ] `blocks.place-as-player`: places as a player would, with sounds and rules
 - [ ] `blocks.break-as-player`: breaks as a player would, with tool wear
 - [ ] `blocks.destroy-progress`: shows cracks at a position
 - [ ] `blocks.fall`: makes a block fall as sand does
 - [ ] `blocks.set-falling`: makes a mod's block fall by itself
-- [ ] `blocks.random-tick`: a hook: random ticks for chosen blocks
-- [ ] `blocks.entity-inside`: a hook: an entity stands in or on chosen blocks
-- [ ] `blocks.stepped-on`: a hook: an entity steps on chosen blocks
-- [ ] `blocks.fell-on`: a hook: an entity lands on chosen blocks
+- [x] `blocks.random-tick`: a hook: random ticks for chosen blocks (`block-hooks`, with `hook_blocks`; rolled apart from the game's dice)
+- [x] `blocks.entity-inside`: a hook: an entity stands in or on chosen blocks
+- [x] `blocks.stepped-on`: a hook: an entity steps on chosen blocks
+- [x] `blocks.fell-on`: a hook: an entity lands on chosen blocks
 - [ ] `blocks.projectile-hit`: a hook: a projectile hits chosen blocks
 - [ ] `blocks.piston-pushed`: a hook: a piston moves chosen blocks
-- [ ] `blocks.exploded`: a hook: an explosion takes chosen blocks
+- [x] `blocks.exploded`: a hook: an explosion takes chosen blocks
 - [ ] `blocks.block-attack`: a hook: a player left-clicks chosen blocks
 
 ## 11. Chunks and batch world access (20, kind B/C)

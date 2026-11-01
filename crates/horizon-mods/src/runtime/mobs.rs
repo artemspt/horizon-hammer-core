@@ -2,7 +2,7 @@
 //! the call. Every level's mobs answer where they are; the level in place's
 //! answer the rest ([`MobState`]), made only while a running mod imports one
 //! of those reads ([`Mods::reads_mobs`](super::Mods::reads_mobs)).
-use super::server_api::{EntityInfo, HostStack};
+use super::server_api::{EntityInfo, HostStack, MobChange, ServerAction, check_uuid};
 use super::{ServerPlayer, State};
 
 /// A mob of the level in place, as the game has it.
@@ -31,6 +31,7 @@ pub struct MobState {
     pub passengers: Vec<String>,
     pub vehicle: Option<String>,
     pub tags: Vec<String>,
+    pub navigating: bool,
 }
 
 /// An item on the ground, for `entities.items-near`.
@@ -43,7 +44,8 @@ pub struct DroppedItem {
 
 /// The reads only a [`MobState`] answers: a mod importing one makes the
 /// game build them for each call.
-pub const MOB_STATE_READS: [&str; 22] = [
+pub const MOB_STATE_READS: [&str; 23] = [
+    "mob-ai.is-navigating",
     "entities.rotation",
     "entities.velocity",
     "entities.max-health",
@@ -142,5 +144,66 @@ impl State {
         }
         let (dim, e) = self.find_mob(id)?;
         Some((dim, e.pos))
+    }
+}
+
+impl super::server_bindings::horizon::mods::mob_ai::Host for State {
+    fn navigate(&mut self, mob: String, x: f64, y: f64, z: f64, speed: f64) -> Result<(), String> {
+        if ![x, y, z, speed].iter().all(|v| v.is_finite()) || !(0.0..=8.0).contains(&speed) {
+            return Err("a finite position, and a speed of 0 to 8".into());
+        }
+        self.mob_change(mob, MobChange::Navigate(x, y, z, speed))
+    }
+    fn stop_navigation(&mut self, mob: String) -> Result<(), String> {
+        self.mob_change(mob, MobChange::StopNavigation)
+    }
+    fn is_navigating(&mut self, mob: String) -> bool {
+        let Ok(view) = self.world.lock() else {
+            return false;
+        };
+        view.as_ref()
+            .and_then(|v| v.mob_state(&mob))
+            .is_some_and(|m| m.navigating)
+    }
+    fn look_at(&mut self, mob: String, x: f64, y: f64, z: f64, ticks: u32) -> Result<(), String> {
+        if ![x, y, z].iter().all(|v| v.is_finite()) || ticks > 72_000 {
+            return Err("a finite position, at most 72000 ticks".into());
+        }
+        self.mob_change(mob, MobChange::LookFor(x, y, z, ticks))
+    }
+    fn jump(&mut self, mob: String) -> Result<(), String> {
+        self.mob_change(mob, MobChange::Jump)
+    }
+    fn attack(&mut self, mob: String, target: String) -> Result<(), String> {
+        check_uuid(&target)?;
+        self.mob_change(mob, MobChange::Attack(target))
+    }
+    fn set_speed(&mut self, mob: String, multiplier: f64, ticks: u32) -> Result<(), String> {
+        if !multiplier.is_finite() || !(0.0..=16.0).contains(&multiplier) || ticks > 72_000 {
+            return Err("a multiplier of 0 to 16, at most 72000 ticks".into());
+        }
+        self.mob_change(mob, MobChange::Speed(multiplier, ticks))
+    }
+    fn boss_bar(&mut self, mob: String, title: String, color: String) -> Result<(), String> {
+        check_uuid(&mob)?;
+        if !["pink", "blue", "red", "green", "yellow", "purple", "white"].contains(&color.as_str())
+        {
+            return Err(format!("{color}: not a boss bar's colour"));
+        }
+        self.act(ServerAction::MobBar {
+            id: mob,
+            bar: Some((title, color)),
+        })
+    }
+    fn remove_boss_bar(&mut self, mob: String) -> Result<(), String> {
+        check_uuid(&mob)?;
+        self.act(ServerAction::MobBar { id: mob, bar: None })
+    }
+}
+
+impl State {
+    fn mob_change(&mut self, id: String, change: MobChange) -> Result<(), String> {
+        check_uuid(&id)?;
+        self.act(ServerAction::Mob { id, change })
     }
 }

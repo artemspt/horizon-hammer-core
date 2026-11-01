@@ -306,6 +306,9 @@ impl Capability {
         if matches!(interface, "log" | "noise" | "timers" | "boards") {
             return Ok(None);
         }
+        if interface == "mob-ai" {
+            return Ok(Some(Capability::Entities));
+        }
         // A recipe viewer's panel is part of capability `ui`.
         if interface == "browser" {
             return Ok(Some(Capability::Ui));

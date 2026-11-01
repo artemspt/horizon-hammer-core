@@ -1103,6 +1103,66 @@ impl Game<'_> {
         }
     }
 
+    /// `mob-ai.boss-bar`: a bar of `/bossbar` under an id of the mob's.
+    fn mod_mob_bar(&mut self, id: String, bar: Option<(String, String)>) {
+        let name = format!("horizon_mods:mob_{}", &id[..8]);
+        match bar {
+            Some((title, color)) => {
+                let title = serde_json::json!({ "text": title }).to_string();
+                self.mod_console(&format!("bossbar add {name} {title}"));
+                self.mod_console(&format!("bossbar set {name} color {color}"));
+                self.mod_console(&format!("bossbar set {name} players @a"));
+                self.mods
+                    .mob_bars
+                    .insert(id, (name, self.dim.id().to_owned(), -1.0));
+            }
+            None => {
+                if self.mods.mob_bars.remove(&id).is_some() {
+                    self.mod_console(&format!("bossbar remove {name}"));
+                }
+            }
+        }
+    }
+    /// The bars follow their mobs' health; a mob gone from its level ends its.
+    fn mod_tick_mob_bars(&mut self) {
+        if self.mods.mob_bars.is_empty() {
+            return;
+        }
+        let dim = self.dim.id();
+        let mut bars = std::mem::take(&mut self.mods.mob_bars);
+        let mut lines = Vec::new();
+        bars.retain(|id, (name, of, last)| {
+            if *of != dim {
+                return true;
+            }
+            let mob = self.mobs.iter().find(|m| {
+                self.persist
+                    .uuids
+                    .get(&m.id)
+                    .is_some_and(|u| uuid_string(uuid_words(*u)) == *id)
+            });
+            match mob.filter(|m| m.alive() && !m.removed) {
+                Some(m) => {
+                    if m.health != *last {
+                        *last = m.health;
+                        let max = m.kind.max_health.ceil().max(1.0) as i32;
+                        lines.push(format!("bossbar set {name} max {max}"));
+                        lines.push(format!("bossbar set {name} value {}", m.health.ceil() as i32));
+                    }
+                    true
+                }
+                None => {
+                    lines.push(format!("bossbar remove {name}"));
+                    false
+                }
+            }
+        });
+        self.mods.mob_bars = bars;
+        for line in lines {
+            self.mod_console(&line);
+        }
+    }
+
     /// `players.set-undying` on the acting player.
     pub(super) fn mod_undying(&self) -> bool {
         !self.mods.undying.is_empty() && self.mods.undying.contains(&self.mod_acting_id())
@@ -1671,6 +1731,7 @@ impl Game<'_> {
                         log::warn!("Horizon: a mod's explosion: {e}");
                     }
                 }
+                ServerAction::MobBar { id, bar } => self.mod_mob_bar(id, bar),
                 ServerAction::Player { player, change } => {
                     self.mod_change_player(&player, change);
                 }
@@ -1720,7 +1781,7 @@ impl Game<'_> {
         let uuids = &self.persist.uuids;
         // A target that names no mob here is a player.
         let other: HashMap<String, u32> = match change {
-            MobChange::Target(_) => uuids
+            MobChange::Target(_) | MobChange::Attack(_) => uuids
                 .iter()
                 .map(|(mob, u)| (uuid_string(uuid_words(*u)), *mob))
                 .collect(),
@@ -1737,6 +1798,23 @@ impl Game<'_> {
             MobChange::Ai(on) => m.no_ai = !on,
             MobChange::Name(name) => m.custom_name = name.clone(),
             MobChange::MoveTo(x, y, z, speed) => m.mod_move = Some(([*x, *y, *z], *speed)),
+            MobChange::Navigate(x, y, z, speed) => {
+                m.mod_nav = Some(([*x, *y, *z], *speed));
+                m.ai.nav.path = None;
+            }
+            MobChange::StopNavigation => {
+                m.mod_nav = None;
+                m.ai.nav.path = None;
+            }
+            MobChange::LookFor(x, y, z, ticks) => m.mod_look = Some(([*x, *y, *z], *ticks)),
+            MobChange::Jump => m.mod_jump = true,
+            MobChange::Speed(multiplier, ticks) => m.mod_speed = Some((*multiplier, *ticks)),
+            MobChange::Attack(target) => {
+                m.mod_attack = Some(other.get(target).map_or(
+                    horizon_client::mobs::Who::Player,
+                    |id| horizon_client::mobs::Who::Mob(*id),
+                ));
+            }
             MobChange::Target(target) => {
                 let who = target.as_ref().map(|t| {
                     other
@@ -1859,6 +1937,7 @@ impl Game<'_> {
                     ("feet", &m.extra.feet),
                 ];
                 let state = horizon_mods::MobState {
+                    navigating: m.mod_nav.is_some() || !m.ai.nav.is_done(),
                     id: uuid[&m.id].clone(),
                     yaw: m.yaw,
                     pitch: m.head_pitch,
@@ -2741,6 +2820,7 @@ impl Game<'_> {
     pub(super) fn mod_game_events(&mut self, players: &[horizon_mods::ServerPlayer]) {
         self.mod_deliver_item_events(players);
         self.mod_deliver_block_hooks();
+        self.mod_tick_mob_bars();
         self.mod_logic(players);
         self.mod_mob_events();
         self.mod_player_hurt_events(players);

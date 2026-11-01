@@ -1,7 +1,7 @@
 //! `/showcase api l25`, then `l25check`: `item-events`. A stick in the main hand
 //! goes into a short use, then an iron pickaxe and a sword are for breaking and
 //! hitting by hand (or by `horizon-ctl`); the hooks count what they hear.
-use horizon_mod_sdk::server::{Entity, ItemStack, Player, players};
+use horizon_mod_sdk::server::{Entity, ItemStack, Player, entities, mob_ai, players};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
@@ -53,4 +53,38 @@ pub fn use_tick(_: &Player, item: &ItemStack, _: u32) {
 }
 pub fn hit(_: &Player, item: &ItemStack, target: &Entity) {
     heard(&format!("hit:{}:{}", item.item, target.kind));
+}
+
+/// `/summon` a zombie first: `l26`, `l26walk`, `l26check`, `l26hit`.
+fn zombie(player: &Player) -> Result<Entity, String> {
+    entities::near(&player.dimension, player.x, player.y, player.z, 64.0)
+        .into_iter()
+        .find(|e| e.kind == "minecraft:zombie")
+        .ok_or_else(|| "no zombie near".to_owned())
+}
+pub fn mob_start(player: &Player) -> Result<String, String> {
+    let z = zombie(player)?;
+    mob_ai::boss_bar(&z.id, "Showcase zombie", "purple")?;
+    entities::set_target(&z.id, None)?;
+    mob_ai::set_speed(&z.id, 2.0, 200)?;
+    mob_ai::look_at(&z.id, player.x, player.y + 1.0, player.z, 100)?;
+    mob_ai::navigate(&z.id, z.x + 7.0, z.y, z.z, 1.0)?;
+    Ok(format!("zombie at {:.1} {:.1}, walking 7 east", z.x, z.z))
+}
+pub fn mob_check(player: &Player) -> Result<String, String> {
+    let z = zombie(player)?;
+    Ok(format!(
+        "zombie at {:.1} {:.1}, navigating {}",
+        z.x,
+        z.z,
+        mob_ai::is_navigating(&z.id)
+    ))
+}
+pub fn mob_stop(player: &Player) -> Result<String, String> {
+    let z = zombie(player)?;
+    mob_ai::jump(&z.id)?;
+    mob_ai::stop_navigation(&z.id)?;
+    mob_ai::attack(&z.id, &player.id)?;
+    entities::hurt(&z.id, 5.0)?;
+    Ok(format!("health was {}", player.health))
 }

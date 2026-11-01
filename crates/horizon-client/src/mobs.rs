@@ -1129,6 +1129,16 @@ pub struct Mob {
     pub no_ai: bool,
     /// `entities.move-to`: where a mod sends this mob, and how fast.
     pub mod_move: Option<([f64; 3], f64)>,
+    /// `mob-ai.navigate`: where, how fast, until it arrives.
+    pub mod_nav: Option<([f64; 3], f64)>,
+    /// `mob-ai.look-at`: where, for how many more ticks.
+    pub mod_look: Option<([f64; 3], u32)>,
+    /// `mob-ai.attack`: at its next step.
+    pub mod_attack: Option<Who>,
+    /// `mob-ai.jump`: at its next step.
+    pub mod_jump: bool,
+    /// `mob-ai.set-speed`: the multiplier, for how many more ticks.
+    pub mod_speed: Option<(f64, u32)>,
     /// `Silent`.
     pub silent: bool,
     /// `Invulnerable`: immune to damage (but not to `/kill`).
@@ -2111,6 +2121,11 @@ impl Mob {
             supporting: None,
             no_ai: kind.display,
             mod_move: None,
+            mod_nav: None,
+            mod_look: None,
+            mod_attack: None,
+            mod_jump: false,
+            mod_speed: None,
             silent: false,
             invulnerable_flag: kind.display,
             climbing: false,
@@ -2486,7 +2501,8 @@ impl Mob {
         let mut v = strider::movement_speed(
             self,
             witch::speed(self, self.attrs.speed) + enderman::attacking_speed(self),
-        ) * self.speed_bonus();
+        ) * self.speed_bonus()
+            * self.mod_speed.map_or(1.0, |(multiplier, _)| multiplier);
         for (e, _, amp) in &self.extra.effects {
             match *e {
                 "minecraft:speed" => v *= 1.0 + 0.2 * f64::from(amp + 1),

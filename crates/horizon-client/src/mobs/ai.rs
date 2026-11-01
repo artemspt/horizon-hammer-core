@@ -945,6 +945,7 @@ fn ai_step(m: &mut Mob, w: &MobWorld, level_random: &mut LegacyRandom, events: &
     if let Some((at, speed)) = m.mod_move.take() {
         m.nav_move_to(w, at, speed);
     }
+    mod_control(m, w, events);
     m.handle_jumping(w);
     let input = Vec3::new(
         f64::from(m.ai.xxa),
@@ -1725,6 +1726,32 @@ pub fn after_hurt(m: &mut Mob, source: &Damage) {
             m.extra.anger = 400 + m.random.next_int_bound(380).unwrap_or(0);
         }
         _ => {}
+    }
+}
+/// What `mob-ai` asked of the mob, over whatever its goals did this step.
+fn mod_control(m: &mut Mob, w: &MobWorld, events: &mut Vec<MobEvent>) {
+    if let Some((at, speed)) = m.mod_nav {
+        let (dx, dz) = (at[0] - m.position.x, at[2] - m.position.z);
+        if dx * dx + dz * dz < 1.0 && (at[1] - m.position.y).abs() < 2.0 {
+            m.mod_nav = None;
+            m.ai.nav.path = None;
+        } else if m.ai.nav.is_done() || m.ai.nav.speed_modifier != speed {
+            m.nav_move_to(w, at, speed);
+        }
+    }
+    if let Some((at, ticks)) = m.mod_look {
+        m.look_at(at);
+        m.mod_look = (ticks > 1).then_some((at, ticks - 1));
+    }
+    if let Some((multiplier, ticks)) = m.mod_speed {
+        m.mod_speed = (ticks > 1).then_some((multiplier, ticks - 1));
+    }
+    if std::mem::take(&mut m.mod_jump) && m.on_ground {
+        m.ai.jumping = true;
+    }
+    if let Some(who) = m.mod_attack.take() {
+        let mut cx = Cx { w, events };
+        do_hurt_target(m, who, &mut cx);
     }
 }
 /// Mob.doHurtTarget: attack damage (+ species extras) to the target.

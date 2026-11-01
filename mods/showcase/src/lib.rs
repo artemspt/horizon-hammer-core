@@ -516,6 +516,10 @@ impl Showcase {
             "api" if arg == "l25stop" => tour25::stop(player).map(Some),
             "api" if arg == "l25stop2" => tour25::stop2(player).map(Some),
             "api" if arg == "l25check" => tour25::check().map(Some),
+            // Level 26: mob-ai on the nearest zombie. `l26`, `l26check`, `l26stop`.
+            "api" if arg == "l26" => tour25::mob_start(player).map(Some),
+            "api" if arg == "l26check" => tour25::mob_check(player).map(Some),
+            "api" if arg == "l26stop" => tour25::mob_stop(player).map(Some),
             "api" => api_tour(player, arg, (fx + 8, fy + 5, fz)).map(Some),
             // `before-events`: `on` turns each hook's rule on, `check` says how often each was asked.
             "before" => match arg {

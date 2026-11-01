@@ -1001,3 +1001,17 @@ every function of the level against vanilla 26.3.
 Conveniences over `players`, `world`, `entities` and `storages`, so a mod needn't write them: `world.get-blocks`, `find-blocks`
 and `count-blocks` read many blocks in one call, and `storages.transfer-item`, `transfer-energy` and `transfer-fluid` move only what
 fits. `/showcase api` calls them all. The list is in [api/mods-reference.md](api/mods-reference.md).
+
+## Hearing of items and blocks
+
+List the events and name what they are about in `horizon-mod.toml`. Nothing is asked for anything else, so a mod that names a few
+blocks costs little:
+
+```toml
+hook_items = ["mymod:wand"]
+hook_blocks = ["mymod:trap"]
+events = ["item-use-tick", "item-hit-entity", "block-stepped-on"]
+```
+
+Then implement `item_use_tick`, `item_hit_entity`, `block_stepped_on` on `ServerMod`. These hooks only tell: they arrive at the tick's end,
+so they can't refuse what happened. To refuse, use `before-events` and `block-events`.

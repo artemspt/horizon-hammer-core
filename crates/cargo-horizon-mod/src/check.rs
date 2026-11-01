@@ -305,6 +305,7 @@ fn play(path: &Path, report: &mut Report) -> Result<(), String> {
                 }
                 ServerAction::Mob { id, .. } => format!("changed mob {id}"),
                 ServerAction::SpawnMob { kind, .. } => format!("spawned {kind}"),
+                ServerAction::MobBar { id, bar } => format!("boss bar of {id}: {bar:?}"),
                 ServerAction::Player { player, change } => {
                     format!("player {player}: {change:?}")
                 }
