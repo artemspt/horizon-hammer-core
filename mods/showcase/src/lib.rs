@@ -668,6 +668,21 @@ impl ServerMod for Showcase {
     ) {
         tour25::hit(player, item, target);
     }
+    fn block_random_tick(&mut self, _: &str, _: (i32, i32, i32), _: &str) {
+        tour25::heard("block-random");
+    }
+    fn block_entity_inside(&mut self, _: &str, _: (i32, i32, i32), _: &str, _: &str) {
+        tour25::heard("block-inside");
+    }
+    fn block_stepped_on(&mut self, _: &str, _: (i32, i32, i32), _: &str, _: &str) {
+        tour25::heard("block-stepped");
+    }
+    fn block_fell_on(&mut self, _: &str, _: (i32, i32, i32), _: &str, _: &str, distance: f32) {
+        tour25::heard(&format!("block-fell:{}", distance.round()));
+    }
+    fn block_exploded(&mut self, _: &str, _: (i32, i32, i32), state: &str) {
+        tour25::heard(&format!("block-exploded:{state}"));
+    }
     fn item_crafted(&mut self, _: &Player, recipe: &str) {
         tour25::heard(&format!("crafted:{recipe}"));
     }

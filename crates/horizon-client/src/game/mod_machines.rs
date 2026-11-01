@@ -948,6 +948,161 @@ impl Game<'_> {
         }
     }
 
+    fn block_state_text(&self, id: horizon_world::registry::BlockStateId) -> String {
+        self.pack
+            .assets
+            .registry
+            .state(id)
+            .map_or_else(|| "minecraft:air".to_owned(), |s| {
+                if s.properties.is_empty() {
+                    return s.name.to_string();
+                }
+                let props: Vec<String> = s
+                    .properties
+                    .iter()
+                    .map(|(k, v)| format!("{k}={v}"))
+                    .collect();
+                format!("{}[{}]", s.name, props.join(","))
+            })
+    }
+    /// An explosion takes these blocks.
+    pub(super) fn mod_blocks_exploded(&mut self, targets: &[[i32; 3]]) {
+        if !self.mods.server || !self.mods_now(|m| m.has_block_hooks("block-exploded")) {
+            return;
+        }
+        for p in targets {
+            let state = self.block_state_text(self.world.block(p[0], p[1], p[2]));
+            if self.mods_now(|m| m.hooks_block("block-exploded", &state)) {
+                let hook = horizon_mods::BlockHook::Exploded;
+                self.mods.block_hooks.push(((p[0], p[1], p[2]), state, hook));
+            }
+        }
+    }
+    /// Hands over what `mod_collect_block_hooks` and explosions found.
+    fn mod_deliver_block_hooks(&mut self) {
+        let dim = self.dim.id();
+        for (at, state, hook) in std::mem::take(&mut self.mods.block_hooks) {
+            self.mods.mods.block_hook(dim, at, &state, &hook);
+        }
+    }
+    /// A hook when a mod names the block.
+    fn queue_block_hook(&mut self, at: (i32, i32, i32), hook: horizon_mods::BlockHook) {
+        let id = self.world.block(at.0, at.1, at.2);
+        let state = self.block_state_text(id);
+        if self.mods.mods.hooks_block(hook.name(), &state) {
+            self.mods.block_hooks.push((at, state, hook));
+        }
+    }
+    /// The tick's `block-hooks` of the level in place, read before the world
+    /// is lent to the mods' calls, and heard during them.
+    pub(in crate::game) fn mod_collect_block_hooks(
+        &mut self,
+        players: &[horizon_mods::ServerPlayer],
+    ) {
+        use horizon_mods::BlockHook;
+        let dim = self.dim.id();
+        self.mod_random_tick_hooks(players);
+        let wanted = ["block-entity-inside", "block-stepped-on", "block-fell-on"]
+            .iter()
+            .any(|e| self.mods.mods.has_block_hooks(e));
+        if !wanted {
+            return;
+        }
+        // Everyone of this level: id, position, on the ground.
+        let mut bodies: Vec<(String, [f64; 3], bool)> = self
+            .lan
+            .iter()
+            .flat_map(|h| &h.hub.guests)
+            .filter(|g| g.placed && g.dimension == dim)
+            .map(|g| (uuid_string(g.uuid), g.position, g.on_ground))
+            .collect();
+        let mobs: Vec<(u32, [f64; 3], bool)> = self
+            .mobs
+            .iter()
+            .filter(|m| m.alive() && !m.removed)
+            .map(|m| (m.id, [m.position.x, m.position.y, m.position.z], m.on_ground))
+            .collect();
+        for (id, at, ground) in mobs {
+            bodies.push((uuid_string(uuid_words(self.uuid_for(id))), at, ground));
+        }
+        let feet = std::mem::take(&mut self.mods.feet);
+        let mut seen = std::collections::HashMap::with_capacity(bodies.len());
+        for (id, at, ground) in bodies {
+            let cell = (at[0].floor() as i32, at[1].floor() as i32, at[2].floor() as i32);
+            let below = (cell.0, (at[1] - 0.2).floor() as i32, cell.2);
+            let (old_cell, old_ground, old_peak) = feet
+                .get(&id)
+                .copied()
+                .unwrap_or((cell, ground, at[1]));
+            self.queue_block_hook(cell, BlockHook::EntityInside(id.clone()));
+            if ground {
+                if !old_ground {
+                    let fell = (old_peak - at[1]).max(0.0) as f32;
+                    self.queue_block_hook(below, BlockHook::FellOn(id.clone(), fell));
+                }
+                if cell != old_cell || !old_ground {
+                    self.queue_block_hook(below, BlockHook::SteppedOn(id.clone()));
+                }
+            }
+            let peak = if ground { at[1] } else { old_peak.max(at[1]) };
+            seen.insert(id, (cell, ground, peak));
+        }
+        self.mods.feet = seen;
+    }
+    /// `random-tick` for the blocks mods name, in the chunks around players,
+    /// as many tries a section as vanilla's game rule: rolled apart from the
+    /// game's dice, so the world goes on as it would with no mod.
+    fn mod_random_tick_hooks(&mut self, players: &[horizon_mods::ServerPlayer]) {
+        use horizon_mods::BlockHook;
+        if !self.mods.mods.has_block_hooks("block-random-tick") {
+            return;
+        }
+        let dim = self.dim.id();
+        let speed = self.level_rules().random_tick_speed.max(0);
+        let keys: Vec<(i32, i32)> = self
+            .world
+            .chunks
+            .keys()
+            .copied()
+            .filter(|(cx, cz)| {
+                players.iter().any(|p| {
+                    p.dimension == dim
+                        && (i64::from(*cx) - (p.x.floor() as i64 >> 4)).abs() <= 8
+                        && (i64::from(*cz) - (p.z.floor() as i64 >> 4)).abs() <= 8
+                })
+            })
+            .collect();
+        let (min_y, max_y) = (self.dim.min_y(), self.dim.max_y());
+        let mut dice = self.mods.hook_dice | 1;
+        let mut hits = Vec::new();
+        for (cx, cz) in keys {
+            let Some(chunk) = self.world.chunks.get(&(cx, cz)) else {
+                continue;
+            };
+            let mut base = min_y;
+            while base <= max_y {
+                for _ in 0..speed {
+                    // xorshift64*: only where a mod's block might be, nothing depends on it.
+                    dice ^= dice >> 12;
+                    dice ^= dice << 25;
+                    dice ^= dice >> 27;
+                    let r = dice.wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 32;
+                    let (x, y, z) = ((r & 15) as i32, ((r >> 4) & 15) as i32, ((r >> 8) & 15) as i32);
+                    hits.push(((cx * 16 + x, base + y, cz * 16 + z), chunk.block(x, base + y, z)));
+                }
+                base += 16;
+            }
+        }
+        self.mods.hook_dice = dice;
+        for (at, id) in hits {
+            let name = self.pack.assets.registry.state(id).map(|s| s.name.to_string());
+            if name.is_some_and(|n| self.mods.mods.hooks_block("block-random-tick", &n)) {
+                let state = self.block_state_text(id);
+                self.mods.block_hooks.push((at, state, BlockHook::RandomTick));
+            }
+        }
+    }
+
     /// `players.set-undying` on the acting player.
     pub(super) fn mod_undying(&self) -> bool {
         !self.mods.undying.is_empty() && self.mods.undying.contains(&self.mod_acting_id())
@@ -2585,6 +2740,7 @@ impl Game<'_> {
 
     pub(super) fn mod_game_events(&mut self, players: &[horizon_mods::ServerPlayer]) {
         self.mod_deliver_item_events(players);
+        self.mod_deliver_block_hooks();
         self.mod_logic(players);
         self.mod_mob_events();
         self.mod_player_hurt_events(players);

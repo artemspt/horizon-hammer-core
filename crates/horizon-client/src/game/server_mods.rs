@@ -126,6 +126,7 @@ impl Game<'_> {
     ) {
     }
     pub(super) fn mod_hit(&mut self, _index: usize) {}
+    pub(super) fn mod_blocks_exploded(&mut self, _targets: &[[i32; 3]]) {}
     pub(super) fn mod_tooltip_lines(&self, _item: &str) -> Vec<String> {
         Vec::new()
     }
@@ -609,6 +610,7 @@ mod run {
             self.mods.mods.set_snapshot(snapshot);
             // Before the world is lent: a flight reads the blocks in its way.
             self.tick_mod_projectiles(&players);
+            self.mod_collect_block_hooks(&players);
             self.lend_world();
             let before = std::mem::take(&mut self.mods.players);
             for p in before

@@ -107,6 +107,16 @@ pub(super) struct ModsState {
     /// `item-events` waiting for the tick's end: player, stack, what.
     #[cfg(feature = "mods")]
     pub(super) item_events: Vec<(String, horizon_mods::HostStack, horizon_mods::ItemEvent)>,
+    /// `block-hooks` waiting: where, the state, what.
+    #[cfg(feature = "mods")]
+    pub(super) block_hooks: Vec<((i32, i32, i32), String, horizon_mods::BlockHook)>,
+    /// Each entity's cell, whether on the ground and its highest y since it
+    /// was, for `block-hooks`.
+    #[cfg(feature = "mods")]
+    pub(super) feet: std::collections::HashMap<String, ((i32, i32, i32), bool, f64)>,
+    /// `block-hooks.random-tick`'s own dice, so vanilla's rolls stay as they are.
+    #[cfg(feature = "mods")]
+    pub(super) hook_dice: u64,
     /// `item-events.crafted` waiting: player, recipe.
     #[cfg(feature = "mods")]
     pub(super) crafted_events: Vec<(String, String)>,

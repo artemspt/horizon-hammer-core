@@ -8,7 +8,9 @@ side = "both"
 capabilities = ["players", "world", "entities", "storage", "registries", "net", "worldgen", "hud", "chat", "ui", "render", "game-read", "command", "input", "recipes"]
 experimental = ["worldgen", "ui", "render", "game-read", "command", "input", "recipes"]
 hook_items = ["minecraft:stick", "minecraft:iron_pickaxe", "minecraft:iron_sword"]
-events = ["item-use-tick", "item-use-finished", "item-use-stopped", "item-inventory-tick", "item-held-tick",
+hook_blocks = ["minecraft:emerald_block", "minecraft:cobweb", "minecraft:tnt"]
+events = ["block-random-tick", "block-entity-inside", "block-stepped-on", "block-fell-on", "block-exploded",
+    "item-use-tick", "item-use-finished", "item-use-stopped", "item-inventory-tick", "item-held-tick",
     "item-mine-block", "item-hit-entity", "item-crafted",
     "entity-spawned", "entity-hurt", "entity-died", "player-hurt", "item-picked-up", "explosion", "entity-dying",
     "before-entity-spawn", "before-entity-hurt", "before-player-hurt", "before-player-death", "before-explosion-blocks",
