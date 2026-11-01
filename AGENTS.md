@@ -25,6 +25,25 @@ The project has a working WASM mod system in `crates/horizon-mods/` with:
 
 ## Changelog
 
+### 2026-11-01 - 100 functions outside the plan (API level 22)
+
+#### Added
+- **WIT `shapes`** (24, capability `world`): lines, balls, cylinders, boxes, `replace-in-*`, `stamp`, `copy-box`, `flood`,
+  `flood-diagonal`, `raycast`, `clear-between`, `nearest-block`, `histogram` and other reads of many blocks in one call
+- **WIT `patterns`** (10, capability `world`): multiblocks by pattern, `match-at` in four facings, `missing`, `build`
+- **WIT `noise`** (10, no capability): seeded Perlin, fbm, ridged, Voronoi, whole grids in one call, position and chunk seeds
+- **WIT `timers`** (12, no capability): timers and cooldowns with no block, saved with the world
+- **WIT `crowd`** (20, capability `players`): players by place or item, and messages, titles, sounds, effects and stacks for
+  all of them; `has-many`, `take-many`
+- **WIT `fx`** (6, capability `entities`): particles in lines, circles, spheres, helixes, box edges, cones
+- **WIT `stock`** (12, capability `world`): `take-many`, `insert-many`, `transfer-matching`, `comparator-level` and more, on a
+  mod's storage or a vanilla container
+- **WIT `admin`** (6, capability `world`): `clone-box`, `default-game-mode`, `spectate`, `spread-players`, `run-function`,
+  `enchant-held`
+- **Runtime** - `runtime/extra.rs`, all of it: no game code. `BlockData.clocks`, `patterns`
+- **`/showcase api extra`, `extracheck`, `extraafter`** - run in the game: all 80 checks right. Not read back, only sent:
+  `fx`, titles, action bars, sounds, effects, `spectate`, `spread-players`, `run-function`, `enchant-held`, `default-game-mode`
+
 ### 2026-11-01 - A mob's state (API level 21)
 
 #### Added

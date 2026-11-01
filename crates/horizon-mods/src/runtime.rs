@@ -32,6 +32,7 @@ use wasmtime::{
 
 mod before;
 mod events;
+mod extra;
 mod items;
 pub use items::{DimensionFacts, ItemFacts, ModifierFacts, StackEdit, StackFacts};
 mod loot;
@@ -748,6 +749,13 @@ pub struct BlockData {
     /// `world.set-saved`: mod id → key → bytes in hex.
     #[serde(default)]
     pub saved: std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>>,
+    /// `timers`: mod id → its timers and cooldowns.
+    #[serde(default)]
+    pub clocks: std::collections::BTreeMap<String, extra::ModClocks>,
+    /// `patterns.define`: mod id → name → pattern. Not saved: `init` defines them.
+    #[serde(skip)]
+    pub patterns:
+        std::collections::BTreeMap<String, std::collections::BTreeMap<String, extra::Pattern>>,
     /// The server tick of the last [`Mods::server_tick`], which `ticks` count from.
     #[serde(default)]
     pub now: u64,
@@ -1612,6 +1620,46 @@ impl Mods {
             worldgen::add_to_linker::<State, HasSelf<State>>(&mut linker, |s| s)
                 .map_err(|e| e.to_string())?;
             server_bindings::horizon::mods::items::add_to_linker::<State, HasSelf<State>>(
+                &mut linker,
+                |s| s,
+            )
+            .map_err(|e| e.to_string())?;
+            server_bindings::horizon::mods::shapes::add_to_linker::<State, HasSelf<State>>(
+                &mut linker,
+                |s| s,
+            )
+            .map_err(|e| e.to_string())?;
+            server_bindings::horizon::mods::patterns::add_to_linker::<State, HasSelf<State>>(
+                &mut linker,
+                |s| s,
+            )
+            .map_err(|e| e.to_string())?;
+            server_bindings::horizon::mods::noise::add_to_linker::<State, HasSelf<State>>(
+                &mut linker,
+                |s| s,
+            )
+            .map_err(|e| e.to_string())?;
+            server_bindings::horizon::mods::timers::add_to_linker::<State, HasSelf<State>>(
+                &mut linker,
+                |s| s,
+            )
+            .map_err(|e| e.to_string())?;
+            server_bindings::horizon::mods::crowd::add_to_linker::<State, HasSelf<State>>(
+                &mut linker,
+                |s| s,
+            )
+            .map_err(|e| e.to_string())?;
+            server_bindings::horizon::mods::fx::add_to_linker::<State, HasSelf<State>>(
+                &mut linker,
+                |s| s,
+            )
+            .map_err(|e| e.to_string())?;
+            server_bindings::horizon::mods::stock::add_to_linker::<State, HasSelf<State>>(
+                &mut linker,
+                |s| s,
+            )
+            .map_err(|e| e.to_string())?;
+            server_bindings::horizon::mods::admin::add_to_linker::<State, HasSelf<State>>(
                 &mut linker,
                 |s| s,
             )

@@ -1772,6 +1772,298 @@ interface game-events {
     explosion: func(dimension: string, x: f64, y: f64, z: f64, power: f32) -> bool;
 }
 
+/// Shapes of blocks, written and read in one call (capability `world`, server
+/// mods). Writes wait for the tick's end, like `world.set-blocks`, and stop at
+/// 4096 blocks a call: Err, and nothing is written. Reads see loaded chunks of
+/// any level; a radius is at most 20.
+interface shapes {
+    use %world.{block-change};
+    type pos = tuple<s32, s32, s32>;
+    /// A straight line of blocks from `a` to `b`, both included.
+    line: func(dimension: string, a: pos, b: pos, state: string) -> result<_, string>;
+    /// A solid ball.
+    sphere: func(dimension: string, center: pos, radius: u32, state: string) -> result<_, string>;
+    /// A ball's shell, one block thick.
+    hollow-sphere: func(dimension: string, center: pos, radius: u32, state: string) -> result<_, string>;
+    /// An upright solid cylinder, `base` the middle of its lowest layer.
+    cylinder: func(dimension: string, base: pos, radius: u32, height: u32, state: string) -> result<_, string>;
+    /// A flat solid circle.
+    disc: func(dimension: string, center: pos, radius: u32, state: string) -> result<_, string>;
+    /// A box's six faces; the inside stays as it is.
+    hollow-box: func(dimension: string, a: pos, b: pos, state: string) -> result<_, string>;
+    /// A box's four sides, without floor and ceiling.
+    walls: func(dimension: string, a: pos, b: pos, state: string) -> result<_, string>;
+    /// Blocks of `block` (an id takes any properties) in a box become `state`.
+    /// How many did.
+    replace-in-box: func(dimension: string, a: pos, b: pos, block: string, state: string) -> result<u32, string>;
+    /// `replace-in-box` in a ball.
+    replace-in-sphere: func(dimension: string, center: pos, radius: u32, block: string, state: string) -> result<u32, string>;
+    /// Places `cells`, each relative to `origin`, turned `turns` quarters
+    /// clockwise about the vertical (their states too) and, first, mirrored
+    /// along x when `mirror`. `copy-box` gives such cells.
+    stamp: func(dimension: string, origin: pos, turns: u8, mirror: bool, cells: list<block-change>) -> result<_, string>;
+    /// A state turned as `stamp` turns it: `facing`, `axis`, `rotation` and the
+    /// sides of a fence or a wall.
+    rotated-state: func(state: string, turns: u8, mirror: bool) -> string;
+    /// A box's blocks that aren't air, relative to its lowest corner. Err past
+    /// 4096 of them or 65536 cells.
+    copy-box: func(dimension: string, a: pos, b: pos) -> result<list<block-change>, string>;
+    /// The blocks joined to `start` through their faces, each one of `blocks`
+    /// (ids), `start` first and nearest first, up to `limit` (at most 4096).
+    flood: func(dimension: string, start: pos, blocks: list<string>, limit: u32) -> list<pos>;
+    /// `flood` through edges and corners too: a tree, an ore vein.
+    flood-diagonal: func(dimension: string, start: pos, blocks: list<string>, limit: u32) -> list<pos>;
+    /// Where a ray meets a block.
+    record ray-hit {
+        pos: pos,
+        /// The cell it came from, beside `pos`: where a block would go.
+        before: pos,
+        state: string,
+        distance: f64,
+    }
+    /// The first block that isn't air along a ray, within `reach` (at most
+    /// 256). None when it meets nothing or an unloaded chunk.
+    raycast: func(dimension: string, x: f64, y: f64, z: f64, dx: f64, dy: f64, dz: f64, reach: f64) -> option<ray-hit>;
+    /// Only air on the straight line between two points, ends left out, at most
+    /// 256 blocks long.
+    clear-between: func(dimension: string, ax: f64, ay: f64, az: f64, bx: f64, by: f64, bz: f64) -> bool;
+    /// The block of `block` nearest to `center`, within `radius`.
+    nearest-block: func(dimension: string, center: pos, radius: u32, block: string) -> option<pos>;
+    /// The first height under `y`, `y` included, with a block that isn't air.
+    surface-below: func(dimension: string, x: s32, y: s32, z: s32) -> option<s32>;
+    /// The first height over `y`, `y` included, with a block that isn't air.
+    ceiling-above: func(dimension: string, x: s32, y: s32, z: s32) -> option<s32>;
+    /// The states from `y1` to `y2` upwards, at most 4096; none past an
+    /// unloaded chunk.
+    column: func(dimension: string, x: s32, z: s32, y1: s32, y2: s32) -> option<list<string>>;
+    /// The six states around a block: down, up, north, south, west, east.
+    neighbors: func(dimension: string, x: s32, y: s32, z: s32) -> list<option<string>>;
+    /// Each block id in a box of at most 65536 cells and how many, most first.
+    histogram: func(dimension: string, a: pos, b: pos) -> result<list<tuple<string, u32>>, string>;
+    /// Only air in a box of at most 65536 cells, and every chunk loaded.
+    is-box-clear: func(dimension: string, a: pos, b: pos) -> result<bool, string>;
+    /// Blocks of any of `blocks` in a box of at most 65536 cells, up to `limit`.
+    find-any: func(dimension: string, a: pos, b: pos, blocks: list<string>, limit: u32) -> result<list<pos>, string>;
+}
+
+/// Multiblock structures by pattern (capability `world`, server mods): the
+/// shape a mod's machine must be built in. Patterns stay until the mod removes
+/// them or the game closes; `init` defines them.
+interface patterns {
+    use %world.{block-change};
+    type pos = tuple<s32, s32, s32>;
+    /// Which way a pattern looks: the layers as written face north.
+    enum facing { north, east, south, west }
+    /// What a symbol stands for: any of `blocks` (ids, or full states).
+    record pattern-key {
+        symbol: string,
+        blocks: list<string>,
+    }
+    /// Defines or replaces a pattern. `layers` go bottom up, each a list of rows
+    /// going south, each row's characters going east. A space is any block, `@`
+    /// is the anchor: exactly once, and with a key of its own like the others.
+    /// Err for a symbol with no key or past 4096 cells; at most 256 patterns.
+    define: func(name: string, layers: list<list<string>>, keys: list<pattern-key>) -> result<_, string>;
+    /// False when there was none.
+    remove: func(name: string) -> bool;
+    /// Names of everything of this kind.
+    names: func() -> list<string>;
+    /// Width (x), height and depth (z) as written.
+    size: func(name: string) -> option<tuple<u32, u32, u32>>;
+    /// The way the structure faces with its anchor at `pos`, if it is complete.
+    match-at: func(dimension: string, pos: pos, name: string) -> option<facing>;
+    /// The structure is complete, facing this way.
+    match-facing: func(dimension: string, pos: pos, name: string, facing: facing) -> bool;
+    /// Complete structures whose anchor is in a box of at most 65536 cells, up
+    /// to `limit`.
+    find-in-box: func(dimension: string, a: pos, b: pos, name: string, limit: u32) -> result<list<tuple<pos, facing>>, string>;
+    /// Where a symbol's cells are, with the anchor at `pos`: a machine's hatches.
+    cells-of: func(pos: pos, name: string, facing: facing, symbol: string) -> list<pos>;
+    /// The cells still wrong, each with the first block its key takes: what to
+    /// tell a builder.
+    missing: func(dimension: string, pos: pos, name: string, facing: facing) -> list<block-change>;
+    /// Places the wrong cells with the first block of each key. How many. Err
+    /// for no such pattern.
+    build: func(dimension: string, pos: pos, name: string, facing: facing) -> result<u32, string>;
+}
+
+/// Noise and seeds that are the same every time (no capability, server mods):
+/// terrain for `generate-chunk`, ore veins, weather. Host code is faster than
+/// a mod's, a grid in one call faster still. Values are about -1 to 1.
+interface noise {
+    /// Smooth noise over a plane.
+    perlin2: func(seed: u64, x: f64, z: f64) -> f64;
+    /// Smooth noise in space.
+    perlin3: func(seed: u64, x: f64, y: f64, z: f64) -> f64;
+    /// `perlin2` over `octaves` (1 to 16), each twice as fine and half as strong.
+    fbm2: func(seed: u64, x: f64, z: f64, octaves: u8) -> f64;
+    /// `perlin3` over `octaves`, as `fbm2`.
+    fbm3: func(seed: u64, x: f64, y: f64, z: f64, octaves: u8) -> f64;
+    /// Sharp ridges, about 0 to 1: mountain chains, caves.
+    ridged2: func(seed: u64, x: f64, z: f64, octaves: u8) -> f64;
+    /// The distance to the nearest of scattered points and that point's own
+    /// number: regions, biomes of a mod's.
+    voronoi2: func(seed: u64, x: f64, z: f64) -> tuple<f64, u64>;
+    /// `fbm2` on a grid from (`x`, `z`), `step` apart: `width` by `depth`,
+    /// x first and z outer. At most 65536 values, or empty.
+    fill2: func(seed: u64, x: f64, z: f64, step: f64, width: u32, depth: u32, octaves: u8) -> list<f32>;
+    /// `fbm3` on a grid, index `(y * depth + z) * width + x`. At most 131072
+    /// values, or empty: a chunk's whole column fits.
+    fill3: func(seed: u64, x: f64, y: f64, z: f64, step: f64, width: u32, height: u32, depth: u32, octaves: u8) -> list<f32>;
+    /// A block position's own number under a seed.
+    hash-pos: func(seed: u64, x: s32, y: s32, z: s32) -> u64;
+    /// A chunk's own seed, for what it decides once.
+    chunk-seed: func(seed: u64, chunk-x: s32, chunk-z: s32) -> u64;
+}
+
+/// Timers and cooldowns not tied to a block (no capability, server mods): in
+/// server ticks, saved with the world, and kept over `/hmod reload`.
+interface timers {
+    /// Due once, `ticks` from now. Replaces a timer of this name. At most 4096
+    /// timers and cooldowns a mod, a name of at most 256 bytes.
+    after: func(name: string, ticks: u64) -> result<_, string>;
+    /// Due every `ticks` (at least 1), the first time `ticks` from now.
+    every: func(name: string, ticks: u64) -> result<_, string>;
+    /// False when there was none.
+    cancel: func(name: string) -> bool;
+    /// Cancels every timer of this mod.
+    cancel-all: func();
+    /// The names of this mod's timers.
+    pending: func() -> list<string>;
+    /// Ticks until it is due.
+    remaining: func(name: string) -> option<u64>;
+    /// The timers now due, soonest first: call it from `tick`. Each comes once;
+    /// one due many times while nobody asked comes once.
+    poll: func() -> list<string>;
+    /// `owner` (a player's id, a mob's, anything) can't `key` for `ticks`.
+    cooldown-set: func(owner: string, key: string, ticks: u64) -> result<_, string>;
+    /// No cooldown running.
+    cooldown-ready: func(owner: string, key: string) -> bool;
+    /// Ticks left, 0 when ready.
+    cooldown-left: func(owner: string, key: string) -> u64;
+    /// Ends one cooldown.
+    cooldown-clear: func(owner: string, key: string);
+    /// Every cooldown of `owner`, when a player leaves.
+    cooldown-clear-owner: func(owner: string);
+}
+
+/// Players as a group (capability `players`, server mods): who, then all of
+/// them at once. Distances are from a point in a dimension; what changes
+/// waits for the tick's end. Calls that tell or show say to how many.
+interface crowd {
+    use players.{player, item-stack};
+    type pos = tuple<s32, s32, s32>;
+    /// Names of everything of this kind.
+    names: func() -> list<string>;
+    /// The players in a dimension.
+    in-dimension: func(dimension: string) -> list<player>;
+    /// Feet inside a box.
+    in-box: func(dimension: string, a: pos, b: pos) -> list<player>;
+    /// The nearest player in a dimension, if any.
+    nearest: func(dimension: string, x: f64, y: f64, z: f64) -> option<player>;
+    /// The players holding sneak.
+    sneaking: func() -> list<player>;
+    /// Holding this item in the main hand.
+    holding: func(item: string) -> list<player>;
+    /// With at least `least` of this item in the inventory.
+    having: func(item: string, least: u32) -> list<player>;
+    /// A message to each player within `radius`.
+    tell-near: func(dimension: string, x: f64, y: f64, z: f64, radius: f64, text: string) -> u32;
+    /// A message to each player in a dimension.
+    tell-dimension: func(dimension: string, text: string) -> u32;
+    /// Everyone but `player`.
+    tell-others: func(player: string, text: string) -> u32;
+    /// A title on every screen.
+    title-all: func(title: string, subtitle: option<string>) -> result<u32, string>;
+    /// A title for each player within `radius`.
+    title-near: func(dimension: string, x: f64, y: f64, z: f64, radius: f64, title: string, subtitle: option<string>) -> result<u32, string>;
+    /// Text over every hotbar.
+    action-bar-all: func(text: string) -> result<u32, string>;
+    /// Text over the hotbars within `radius`.
+    action-bar-near: func(dimension: string, x: f64, y: f64, z: f64, radius: f64, text: string) -> result<u32, string>;
+    /// To each player around, from where the player stands.
+    sound-near: func(dimension: string, x: f64, y: f64, z: f64, radius: f64, sound: string, volume: f32, pitch: f32) -> result<u32, string>;
+    /// An effect on each player within `radius`.
+    effect-near: func(dimension: string, x: f64, y: f64, z: f64, radius: f64, effect: string, seconds: u32, amplifier: u8) -> result<u32, string>;
+    /// A stack to each player within `radius`.
+    give-near: func(dimension: string, x: f64, y: f64, z: f64, radius: f64, stack: item-stack) -> result<u32, string>;
+    /// The inventory holds all of these (item, count).
+    has-many: func(player: string, items: list<tuple<string, u32>>) -> bool;
+    /// Takes all of these, or none and false: paying for something.
+    take-many: func(player: string, items: list<tuple<string, u32>>) -> bool;
+    /// Which inventory slots hold this item.
+    slots-of: func(player: string, item: string) -> list<u32>;
+}
+
+/// Particles in shapes (capability `entities`, server mods): `count` points of
+/// `particle`, at most 256 a call.
+interface fx {
+    /// A straight line of points.
+    line: func(dimension: string, particle: string, ax: f64, ay: f64, az: f64, bx: f64, by: f64, bz: f64, count: u32) -> result<_, string>;
+    /// A flat circle.
+    circle: func(dimension: string, particle: string, x: f64, y: f64, z: f64, radius: f64, count: u32) -> result<_, string>;
+    /// Points spread evenly over a ball's surface.
+    sphere: func(dimension: string, particle: string, x: f64, y: f64, z: f64, radius: f64, count: u32) -> result<_, string>;
+    /// A spiral going up from (`x`, `y`, `z`).
+    helix: func(dimension: string, particle: string, x: f64, y: f64, z: f64, radius: f64, height: f64, turns: f64, count: u32) -> result<_, string>;
+    /// A box's twelve edges: a selection, a machine's area.
+    box-edges: func(dimension: string, particle: string, ax: f64, ay: f64, az: f64, bx: f64, by: f64, bz: f64, count: u32) -> result<_, string>;
+    /// A cone's sides, the tip at (`x`, `y`, `z`), opening upwards.
+    cone: func(dimension: string, particle: string, x: f64, y: f64, z: f64, radius: f64, height: f64, count: u32) -> result<_, string>;
+}
+
+/// More on what a block holds (capability `world`, server mods): built on
+/// `storages`, for a mod's storage and a vanilla container alike.
+interface stock {
+    use players.{item-stack};
+    type pos = tuple<s32, s32, s32>;
+    /// Which slots hold this item.
+    slots-of: func(dimension: string, pos: pos, item: string) -> list<u32>;
+    /// Items in all slots.
+    total-items: func(dimension: string, pos: pos) -> u32;
+    /// What a comparator reads from these slots, 0 to 15, by vanilla's rule.
+    comparator-level: func(dimension: string, pos: pos) -> u8;
+    /// Stored energy over its capacity, 0 to 1; none without a capacity.
+    energy-fraction: func(dimension: string, pos: pos) -> option<f64>;
+    /// One tank's amount over its capacity, 0 to 1.
+    fluid-fraction: func(dimension: string, pos: pos, tank: u32) -> option<f64>;
+    /// Two slots trade what they hold.
+    swap-slots: func(dimension: string, pos: pos, a: u32, b: u32) -> result<_, string>;
+    /// Moves what fits from one slot to another. How many moved.
+    move-slot: func(dimension: string, pos: pos, a: u32, b: u32) -> result<u32, string>;
+    /// All of these (item, count) are there.
+    has-many: func(dimension: string, pos: pos, items: list<tuple<string, u32>>) -> bool;
+    /// Takes all of these, or none and false: a machine's recipe.
+    take-many: func(dimension: string, pos: pos, items: list<tuple<string, u32>>) -> bool;
+    /// Puts in what fits; gives back what didn't: a machine's output.
+    insert-many: func(dimension: string, pos: pos, stacks: list<item-stack>) -> list<item-stack>;
+    /// Takes every stack of this item.
+    extract-all: func(dimension: string, pos: pos, item: string) -> list<item-stack>;
+    /// Moves up to `max` items, of `items` only (empty: any), from one block to
+    /// another. How many moved: a filtered pipe.
+    transfer-matching: func(dimension: string, a: pos, b: pos, items: list<string>, max: u32) -> u32;
+}
+
+/// Server commands with no interface of their own (capability `world`, server
+/// mods). They wait for the tick's end, and a mod doesn't hear if one failed.
+interface admin {
+    type pos = tuple<s32, s32, s32>;
+    /// Copies a box so its lowest corner lands on `to`, block entities too,
+    /// without its air when `masked`; takes it away from `a`..`b` when `moved`.
+    clone-box: func(dimension: string, a: pos, b: pos, to: pos, masked: bool, moved: bool) -> result<_, string>;
+    /// What new players start in: `survival`, `creative`, `adventure`, `spectator`.
+    default-game-mode: func(mode: string) -> result<_, string>;
+    /// A spectating player's camera follows an entity; none: back to itself.
+    spectate: func(player: string, target: option<string>) -> result<_, string>;
+    /// Scatters these players around a point, at least `spacing` apart and at
+    /// most `range` away: the start of a game.
+    spread-players: func(x: f64, z: f64, spacing: f32, range: f32, players: list<string>) -> result<_, string>;
+    /// Runs a data pack's function.
+    run-function: func(id: string) -> result<_, string>;
+    /// Enchants what a player holds, as `/enchant` would allow.
+    enchant-held: func(player: string, enchantment: string, level: u8) -> result<_, string>;
+}
+
 /// The game's side of `game-events`.
 world events-host {
     export game-events;
@@ -1974,6 +2266,14 @@ world horizon-server-mod {
     import dimensions;
     import loot;
     import recipes-server;
+    import shapes;
+    import patterns;
+    import noise;
+    import timers;
+    import crowd;
+    import fx;
+    import stock;
+    import admin;
     import server-net;
     export server-events;
 }

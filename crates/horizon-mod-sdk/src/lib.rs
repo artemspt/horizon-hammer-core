@@ -218,7 +218,10 @@ pub mod server {
     pub use horizon::mods::storages::{self, FluidStack, StorageShape};
     pub use horizon::mods::world::{self, BlockChange};
     pub use horizon::mods::worldgen::{self};
-    pub use horizon::mods::{dimensions, items, loot, recipes_server};
+    pub use horizon::mods::{
+        admin, crowd, dimensions, fx, items, loot, noise, patterns, recipes_server, shapes, stock,
+        timers,
+    };
 
     /// The blocks joined to `start` through its six sides for which `member`
     /// says yes, `start` first, up to `limit`: a cable network, a pipe run, a

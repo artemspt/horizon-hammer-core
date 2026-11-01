@@ -2287,6 +2287,9 @@ impl Mods {
                 for t in &mut all.ticks {
                     t.due = (t.due as i128 + shift).max(0) as u64;
                 }
+                for c in all.clocks.values_mut() {
+                    c.shift(shift);
+                }
                 all.synced = true;
             }
             all.now = tick;

@@ -688,3 +688,8 @@ Things that make a mod comfortable to write and keep.
 - [ ] `log.debug`: a line only with a dev mod
 - [ ] `profiler.span`: times a piece of the mod for `/hmod profile`
 - [ ] `profiler.report`: what the mod's calls cost
+
+## 18. Outside this list: API level 22 (100, kind A/B)
+
+Added on top of the list above, nothing here repeats it. See `shapes`, `patterns`, `noise`, `timers`, `crowd`, `fx`, `stock` and
+`admin` in `docs/api/mods-reference.md`. Don't add these again under other names.

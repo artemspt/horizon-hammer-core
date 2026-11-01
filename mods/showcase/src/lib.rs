@@ -11,6 +11,7 @@ mod client;
 mod tour19;
 mod tour20;
 mod tour21;
+mod tour22;
 
 use horizon_mod_sdk::server::{
     Args, Argument, BlockChange, BlockPos, Entity, ItemStack, Player, Registration, ServerMod,
@@ -500,6 +501,10 @@ impl Showcase {
             "api" if arg == "mobs" => tour21::set(player).map(Some),
             "api" if arg == "mobscheck" => tour21::check(player).map(Some),
             "api" if arg == "mobsafter" => tour21::after(player).map(Some),
+            // Level 22 (shapes, patterns, noise and the rest): `extra`, `extracheck`, then `extraafter`.
+            "api" if arg == "extra" => tour22::set(player).map(Some),
+            "api" if arg == "extracheck" => tour22::check(player).map(Some),
+            "api" if arg == "extraafter" => tour22::after(player).map(Some),
             "api" => api_tour(player, arg, (fx + 8, fy + 5, fz)).map(Some),
             // `before-events`: `on` turns each hook's rule on, `check` says how often each was asked.
             "before" => match arg {

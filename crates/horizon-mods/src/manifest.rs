@@ -278,7 +278,8 @@ impl Capability {
         if !version.starts_with("0.1.") {
             return Err(format!("needs API {version}; this Horizon runs {API}"));
         }
-        if interface == "log" {
+        // Pure sums and a mod's own clocks reach nothing of the game's.
+        if matches!(interface, "log" | "noise" | "timers") {
             return Ok(None);
         }
         // A recipe viewer's panel is part of capability `ui`.
@@ -290,9 +291,23 @@ impl Capability {
         // capability `world`.
         if matches!(
             interface,
-            "storages" | "items" | "dimensions" | "loot" | "recipes-server"
+            "storages"
+                | "items"
+                | "dimensions"
+                | "loot"
+                | "recipes-server"
+                | "shapes"
+                | "patterns"
+                | "stock"
+                | "admin"
         ) {
             return Ok(Some(Capability::World));
+        }
+        if interface == "crowd" {
+            return Ok(Some(Capability::Players));
+        }
+        if interface == "fx" {
+            return Ok(Some(Capability::Entities));
         }
         if interface == "client-net" || interface == "server-net" {
             return Ok(Some(Capability::Net));
