@@ -176,7 +176,8 @@ footer { padding: 56px 0 24px; color: var(--muted); font-size: 14px; }
       <a class="opt" href="#why">Зачем</a>
       <a class="opt" href="#code">Код</a>
       <a class="opt" href="#start">Начать</a>
-      <a href="https://github.com/artemspt/horizon-hammer-core">GitHub</a>
+      <a href="#download">Скачать</a>
+      <a class="opt" href="https://github.com/artemspt/horizon-hammer-core">GitHub</a>
     </nav>
   </header>
 
@@ -188,7 +189,8 @@ footer { padding: 56px 0 24px; color: var(--muted); font-size: 14px; }
         <p class="lead">Ядро модов для <a href="https://github.com/horizon-rust/horizon">Horizon</a> — Minecraft: Java Edition,
           переписанного на Rust. Каждый мод живёт в песочнице WebAssembly, ставится одним файлом
           и перезагружается за секунду, не выходя из мира.</p>
-        <a class="btn main" href="#start">Сделать первый мод →</a>
+        <a class="btn main" href="#download">Скачать лаунчер ↓</a>
+        <a class="btn quiet" href="#start">Сделать первый мод →</a>
         <a class="btn quiet" href="https://github.com/artemspt/horizon-hammer-core/blob/main/docs/mods.md">Документация</a>
       </div>
 
@@ -300,6 +302,21 @@ capabilities = [<span class="s">"players"</span>]</pre>
         <div class="reveal"><b>Создайте</b><p><code>cargo horizon-mod new my-mod</code> — манифест, код и пример теста.</p></div>
         <div class="reveal"><b>Запустите</b><p><code>cargo horizon-mod run</code>. После каждой правки — <code>build</code>, игра перезагрузит мод сама.</p></div>
       </div>
+    </section>
+
+    <section id="download">
+      <p class="eyebrow">Скачать</p>
+      <h2>Prism Launcher Horizon</h2>
+      <p class="sub">Prism Launcher, который сам ставит и запускает Horizon. Ваши сборки, модпаки и аккаунты — как в обычной Prism.</p>
+      <div class="steps">
+        <div class="reveal"><b>Скачайте</b><p>AppImage для Linux (x86_64 и aarch64), установщик для Windows, dmg для macOS — на странице релиза.</p></div>
+        <div class="reveal"><b>Войдите</b><p>Аккаунт Microsoft с купленным Minecraft. Файлы игры готовятся из вашей копии.</p></div>
+        <div class="reveal"><b>Создайте сборку</b><p>«Добавить сборку» → <b style="display:inline;font-size:inherit">Horizon</b>, выберите версию и запускайте.</p></div>
+      </div>
+      <p style="margin-top:24px">
+        <a class="btn main" href="https://github.com/artemspt/PrismLauncher-Horizon/releases/latest">Скачать последнюю версию</a>
+        <a class="btn quiet" href="https://github.com/artemspt/PrismLauncher-Horizon">Исходный код лаунчера</a>
+      </p>
     </section>
 
     <div class="cta reveal">
