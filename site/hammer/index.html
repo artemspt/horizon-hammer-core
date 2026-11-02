@@ -9,31 +9,15 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
+/* One dark palette with a green accent, whatever the system theme. */
 :root {
-  --page: #f6f5f2; --plate: #ecebe6; --card: #ffffff; --rule: #dedcd5;
-  --ink: #17151a; --ink-soft: #3d3a42; --muted: #6a6670;
-  --accent: #c2410c; --accent-2: #d97706; --on-accent: #ffffff;
-  --ok: #15803d; --bad: #b91c1c;
-  --code: #1b1a20; --code-ink: #e8e6ef; --code-muted: #8d8a99;
-  --glow: rgba(234, 88, 12, .18);
-  color-scheme: light;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --page: #0c0b0f; --plate: #17151c; --card: #131117; --rule: #26232d;
-    --ink: #f1eff5; --ink-soft: #c9c5d2; --muted: #8f8a9b;
-    --accent: #fb923c; --accent-2: #fbbf24; --on-accent: #120d08;
-    --ok: #4ade80; --bad: #f87171;
-    --code: #131117; --glow: rgba(251, 146, 60, .16);
-    color-scheme: dark;
-  }
-}
-:root[data-theme="dark"] {
-  --page: #0c0b0f; --plate: #17151c; --card: #131117; --rule: #26232d;
-  --ink: #f1eff5; --ink-soft: #c9c5d2; --muted: #8f8a9b;
-  --accent: #fb923c; --accent-2: #fbbf24; --on-accent: #120d08;
+  --page: #070b09; --plate: #111a15; --card: #0c1410; --rule: #1c2a22;
+  --ink: #e9f3ed; --ink-soft: #b7c9be; --muted: #7d9286;
+  --accent: #34d399; --accent-2: #a3e635; --on-accent: #04130b;
   --ok: #4ade80; --bad: #f87171;
-  --code: #131117; --glow: rgba(251, 146, 60, .16);
+  --code: #0a120e; --code-ink: #e3efe8; --code-muted: #7d9286;
+  --glow: rgba(52, 211, 153, .16);
+  --syn-key: #34d399; --syn-str: #fde68a;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -92,17 +76,17 @@ h1 em {
 .btn.quiet:hover { border-color: var(--muted); }
 
 /* the reload demo */
-.demo { background: var(--code); color: var(--code-ink); border-radius: 14px; border: 1px solid var(--rule); overflow: hidden; box-shadow: 0 30px 60px -30px rgba(0,0,0,.45); }
+.demo { background: var(--code); color: var(--code-ink); border-radius: 14px; border: 1px solid var(--rule); overflow: hidden; box-shadow: 0 30px 60px -30px rgba(0,0,0,.6); }
 .demo .bar { display: flex; gap: 7px; padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,.07); align-items: center; }
 .demo .bar i { width: 11px; height: 11px; border-radius: 50%; background: #3a3742; }
 .demo .bar span { margin-left: 8px; font: 12px "Geist Mono", monospace; color: var(--code-muted); }
 .demo pre { margin: 0; padding: 18px 18px 6px; font-size: 13.5px; line-height: 1.75; min-height: 150px; white-space: pre-wrap; }
-.demo .k { color: #fb923c; } .demo .s { color: #a3e635; } .demo .c { color: var(--code-muted); } .demo .f { color: #7dd3fc; }
+:is(.demo, .codebox) .k { color: var(--syn-key); } :is(.demo, .codebox) .s { color: var(--syn-str); } :is(.demo, .codebox) .c { color: var(--code-muted); } :is(.demo, .codebox) .f { color: #7dd3fc; }
 .demo .chat { margin: 6px 14px 16px; padding: 10px 12px; background: rgba(0,0,0,.35); border-radius: 8px; font: 13px "Geist Mono", monospace; min-height: 66px; }
 .demo .chat div { opacity: 0; transform: translateY(6px); transition: all .35s ease; }
 .demo .chat div.on { opacity: 1; transform: none; }
 .y { color: #fde047; } .g { color: #86efac; } .w { color: #f5f5f5; }
-.caret { display: inline-block; width: 8px; height: 1.1em; background: #fb923c; vertical-align: -2px; animation: blink 1s steps(1) infinite; }
+.caret { display: inline-block; width: 8px; height: 1.1em; background: var(--accent); vertical-align: -2px; animation: blink 1s steps(1) infinite; }
 @keyframes blink { 50% { opacity: 0; } }
 
 /* numbers strip */
@@ -133,7 +117,7 @@ h2 { font-weight: 600; letter-spacing: -.03em; font-size: clamp(30px, 4vw, 44px)
 /* the mods screen mock */
 .split { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center; }
 @media (max-width: 920px) { .split { grid-template-columns: 1fr; } }
-.menu { background: #1d1b22; border-radius: 12px; padding: 14px; font: 14px "Geist Mono", monospace; color: #e7e5ee; border: 1px solid var(--rule); }
+.menu { background: var(--card); border-radius: 12px; padding: 14px; font: 14px "Geist Mono", monospace; color: #e7e5ee; border: 1px solid var(--rule); }
 .menu h4 { margin: 2px 4px 12px; font: 600 14px Geist, sans-serif; color: #f5f5f5; text-align: center; }
 .row { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 10px 12px; border-radius: 8px; background: rgba(255,255,255,.04); margin-bottom: 8px; align-items: center; }
 .row small { grid-column: 1; color: #a19dab; font-size: 12px; line-height: 1.45; }
@@ -152,7 +136,7 @@ h2 { font-weight: 600; letter-spacing: -.03em; font-size: clamp(30px, 4vw, 44px)
 .codebox { background: var(--code); color: var(--code-ink); border-radius: 14px; border: 1px solid var(--rule); overflow: hidden; }
 .tabs { display: flex; border-bottom: 1px solid rgba(255,255,255,.07); }
 .tabs button { background: none; border: 0; color: var(--code-muted); font: 13px "Geist Mono", monospace; padding: 12px 16px; cursor: pointer; border-bottom: 2px solid transparent; }
-.tabs button[aria-selected="true"] { color: #fff; border-bottom-color: #fb923c; }
+.tabs button[aria-selected="true"] { color: #fff; border-bottom-color: var(--accent); }
 .codebox pre { margin: 0; padding: 18px 20px; overflow-x: auto; font-size: 13.5px; line-height: 1.7; }
 .codebox pre[hidden] { display: none; }
 
@@ -184,7 +168,7 @@ footer { padding: 56px 0 24px; color: var(--muted); font-size: 14px; }
 <div class="wrap">
   <header>
     <a class="logo" href="/">
-      <svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ea580c"/><stop offset="1" stop-color="#f59e0b"/></linearGradient></defs>
+      <svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#10b981"/><stop offset="1" stop-color="#a3e635"/></linearGradient></defs>
         <rect x="5" y="4" width="22" height="10" rx="2" fill="url(#lg)"/><rect x="14" y="14" width="5" height="15" rx="1.5" fill="currentColor"/></svg>
       Horizon Hammer
     </a>
