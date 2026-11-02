@@ -20,9 +20,9 @@ tag=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | jq -r .t
 if [ "${1:-}" != --force ] && [ "$(cat "$WWW/.tag" 2>/dev/null)" = "$tag" ]; then
     exit 0
 fi
-# v11.1.1-horizon -> 11.1.1+horizon-2: an upstream version must start with a digit;
+# v11.1.1-horizon -> 11.1.1+horizon-3: an upstream version must start with a digit;
 # the revision goes up when the packaging changes
-ver=$(echo "$tag" | sed 's/^v//; s/-horizon$//')+horizon-2
+ver=$(echo "$tag" | sed 's/^v//; s/-horizon$//')+horizon-3
 
 work=$(mktemp -d -p /var/tmp) # same disk as $WWW: the swap below is a rename
 trap 'rm -rf "$work"' EXIT
