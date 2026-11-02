@@ -8,204 +8,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
-<style>
-/* One dark palette with a green accent, whatever the system theme. */
-:root {
-  --page: #070b09; --plate: #111a15; --card: #0c1410; --rule: #1c2a22;
-  --ink: #e9f3ed; --ink-soft: #b7c9be; --muted: #7d9286;
-  --accent: #34d399; --accent-2: #a3e635; --on-accent: #04130b;
-  --ok: #4ade80; --bad: #f87171;
-  --code: #0a120e; --code-ink: #e3efe8; --code-muted: #7d9286;
-  --glow: rgba(52, 211, 153, .16);
-  --syn-key: #34d399; --syn-str: #fde68a;
-  color-scheme: dark;
-}
-* { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
-body {
-  margin: 0; background: var(--page); color: var(--ink);
-  font: 400 17px/1.6 Geist, system-ui, sans-serif; overflow-x: hidden;
-}
-.wrap { max-width: 1120px; margin: 0 auto; padding: 0 48px; position: relative; }
-@media (max-width: 720px) { .wrap { padding: 0 16px; } }
-a { color: var(--accent); text-underline-offset: 3px; }
-a:focus-visible, .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
-code, pre, .mono { font-family: "Geist Mono", ui-monospace, monospace; }
-code { font-size: .88em; background: var(--plate); padding: 1px 6px; border-radius: 5px; }
+<link rel="stylesheet" href="/style.css">
 
-/* backdrop: a soft glow and a faint block grid */
-.backdrop { position: absolute; inset: 0 0 auto 0; height: 900px; pointer-events: none; overflow: hidden; z-index: 0; }
-.backdrop::before {
-  content: ""; position: absolute; left: 50%; top: -260px; width: 1100px; height: 800px; transform: translateX(-50%);
-  background: radial-gradient(closest-side, var(--glow), transparent);
-}
-.backdrop::after {
-  content: ""; position: absolute; inset: 0;
-  background-image: linear-gradient(var(--rule) 1px, transparent 1px), linear-gradient(90deg, var(--rule) 1px, transparent 1px);
-  background-size: 48px 48px; opacity: .45;
-  mask-image: radial-gradient(ellipse at 50% 0%, #000 0%, transparent 70%);
-  -webkit-mask-image: radial-gradient(ellipse at 50% 0%, #000 0%, transparent 70%);
-}
-main, header, footer { position: relative; z-index: 1; }
-
-header { display: flex; justify-content: space-between; align-items: center; padding: 24px 0; }
-.logo { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: -.02em; color: var(--ink); text-decoration: none; }
-.logo svg { width: 26px; height: 26px; }
-nav a { color: var(--muted); text-decoration: none; margin-left: 22px; font-size: 15px; }
-nav a:hover { color: var(--ink); }
-@media (max-width: 560px) { nav a.opt { display: none; } }
-
-/* hero */
-.hero { display: grid; grid-template-columns: 1.05fr 1fr; gap: 48px; align-items: center; padding: 56px 0 72px; }
-@media (max-width: 920px) { .hero { grid-template-columns: 1fr; padding-top: 32px; } }
-.badge {
-  display: inline-flex; gap: 8px; align-items: center; font-size: 13px; color: var(--ink-soft);
-  border: 1px solid var(--rule); background: var(--card); padding: 5px 12px; border-radius: 999px; margin-bottom: 22px;
-}
-.badge i { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 20%, transparent); }
-h1 { font-weight: 600; letter-spacing: -.035em; line-height: 1.02; font-size: clamp(42px, 6.4vw, 74px); margin: 0 0 22px; }
-h1 em {
-  font-style: normal; background: linear-gradient(90deg, var(--accent), var(--accent-2));
-  -webkit-background-clip: text; background-clip: text; color: transparent;
-}
-.lead { font-size: clamp(17px, 2vw, 20px); color: var(--ink-soft); max-width: 34em; margin: 0 0 30px; }
-.btn { display: inline-flex; align-items: center; gap: 8px; padding: 13px 22px; border-radius: 10px; font-weight: 500; text-decoration: none; margin: 0 10px 10px 0; transition: transform .15s ease, box-shadow .15s ease; }
-.btn.main { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: var(--on-accent); box-shadow: 0 8px 24px -8px var(--accent); }
-.btn.main:hover { transform: translateY(-2px); }
-.btn.quiet { color: var(--ink); background: var(--card); border: 1px solid var(--rule); }
-.btn.quiet:hover { border-color: var(--muted); }
-
-/* the reload demo */
-.demo { background: var(--code); color: var(--code-ink); border-radius: 14px; border: 1px solid var(--rule); overflow: hidden; box-shadow: 0 30px 60px -30px rgba(0,0,0,.6); }
-.demo .bar { display: flex; gap: 7px; padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,.07); align-items: center; }
-.demo .bar i { width: 11px; height: 11px; border-radius: 50%; background: #3a3742; }
-.demo .bar span { margin-left: 8px; font: 12px "Geist Mono", monospace; color: var(--code-muted); }
-.demo pre { margin: 0; padding: 18px 18px 6px; font-size: 13.5px; line-height: 1.75; min-height: 150px; white-space: pre-wrap; }
-:is(.demo, .codebox) .k { color: var(--syn-key); } :is(.demo, .codebox) .s { color: var(--syn-str); } :is(.demo, .codebox) .c { color: var(--code-muted); } :is(.demo, .codebox) .f { color: #7dd3fc; }
-.demo .chat { margin: 6px 14px 16px; padding: 10px 12px; background: rgba(0,0,0,.35); border-radius: 8px; font: 13px "Geist Mono", monospace; min-height: 66px; }
-.demo .chat div { opacity: 0; transform: translateY(6px); transition: all .35s ease; }
-.demo .chat div.on { opacity: 1; transform: none; }
-.y { color: #fde047; } .g { color: #86efac; } .w { color: #f5f5f5; }
-.caret { display: inline-block; width: 8px; height: 1.1em; background: var(--accent); vertical-align: -2px; animation: blink 1s steps(1) infinite; }
-@keyframes blink { 50% { opacity: 0; } }
-
-/* numbers strip */
-.strip { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--rule); border-radius: 14px; background: var(--card); overflow: hidden; }
-.strip div { padding: 22px 24px; border-left: 1px solid var(--rule); }
-.strip div:first-child { border-left: 0; }
-.strip b { display: block; font-size: 30px; font-weight: 600; letter-spacing: -.03em; }
-.strip span { color: var(--muted); font-size: 14px; }
-@media (max-width: 720px) { .strip { grid-template-columns: 1fr 1fr; } .strip div:nth-child(3) { border-left: 0; } .strip div:nth-child(n+3) { border-top: 1px solid var(--rule); } }
-
-section { padding: 88px 0 0; }
-.eyebrow { font: 500 13px "Geist Mono", monospace; color: var(--accent); text-transform: uppercase; letter-spacing: .08em; margin: 0 0 10px; }
-h2 { font-weight: 600; letter-spacing: -.03em; font-size: clamp(30px, 4vw, 44px); line-height: 1.08; margin: 0 0 14px; max-width: 18ch; }
-.sub { color: var(--ink-soft); margin: 0 0 36px; max-width: 40em; }
-
-/* feature cards */
-.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-@media (max-width: 920px) { .grid { grid-template-columns: 1fr 1fr; } }
-@media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
-.card { background: var(--card); border: 1px solid var(--rule); border-radius: 14px; padding: 24px; transition: transform .2s ease, border-color .2s ease; }
-.card:hover { transform: translateY(-3px); border-color: color-mix(in srgb, var(--accent) 45%, var(--rule)); }
-.card .ic { width: 42px; height: 42px; border-radius: 10px; display: grid; place-items: center; margin-bottom: 16px;
-  background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
-.card .ic svg { width: 22px; height: 22px; }
-.card b { display: block; font-size: 18px; font-weight: 600; margin-bottom: 6px; letter-spacing: -.01em; }
-.card p { margin: 0; color: var(--ink-soft); font-size: 15.5px; }
-
-/* the mods screen mock */
-.split { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center; }
-@media (max-width: 920px) { .split { grid-template-columns: 1fr; } }
-.menu { background: var(--card); border-radius: 12px; padding: 14px; font: 14px "Geist Mono", monospace; color: #e7e5ee; border: 1px solid var(--rule); }
-.menu h4 { margin: 2px 4px 12px; font: 600 14px Geist, sans-serif; color: #f5f5f5; text-align: center; }
-.row { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 10px 12px; border-radius: 8px; background: rgba(255,255,255,.04); margin-bottom: 8px; align-items: center; }
-.row small { grid-column: 1; color: #a19dab; font-size: 12px; line-height: 1.45; }
-.row.unsafe { background: rgba(185, 28, 28, .18); }
-.row.unsafe .name { color: #fca5a5; }
-.sw { grid-row: 1 / span 2; grid-column: 2; width: 40px; height: 22px; border-radius: 999px; background: #3b3844; position: relative; cursor: pointer; border: 0; padding: 0; }
-.sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #e7e5ee; transition: left .2s ease; }
-.sw[aria-checked="true"] { background: #16a34a; }
-.sw[aria-checked="true"]::after { left: 21px; }
-.points { list-style: none; padding: 0; margin: 0; }
-.points li { padding: 14px 0 14px 34px; border-top: 1px solid var(--rule); position: relative; color: var(--ink-soft); }
-.points li::before { content: ""; position: absolute; left: 4px; top: 21px; width: 12px; height: 12px; border-radius: 3px; background: linear-gradient(135deg, var(--accent), var(--accent-2)); transform: rotate(45deg); }
-.points b { color: var(--ink); font-weight: 600; }
-
-/* code */
-.codebox { background: var(--code); color: var(--code-ink); border-radius: 14px; border: 1px solid var(--rule); overflow: hidden; }
-.tabs { display: flex; border-bottom: 1px solid rgba(255,255,255,.07); }
-.tabs button { background: none; border: 0; color: var(--code-muted); font: 13px "Geist Mono", monospace; padding: 12px 16px; cursor: pointer; border-bottom: 2px solid transparent; }
-.tabs button[aria-selected="true"] { color: #fff; border-bottom-color: var(--accent); }
-.codebox pre { margin: 0; padding: 18px 20px; overflow-x: auto; font-size: 13.5px; line-height: 1.7; }
-.codebox pre[hidden] { display: none; }
-
-/* steps */
-.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; counter-reset: s; }
-@media (max-width: 800px) { .steps { grid-template-columns: 1fr; } }
-.steps div { counter-increment: s; padding: 24px; border-radius: 14px; background: var(--card); border: 1px solid var(--rule); }
-.steps div::before { content: counter(s, decimal-leading-zero); display: block; font: 600 34px Geist, sans-serif; letter-spacing: -.04em; margin-bottom: 8px;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.steps b { display: block; font-size: 18px; margin-bottom: 4px; }
-.docs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; align-items: start; }
-@media (max-width: 920px) { .docs { grid-template-columns: 1fr; } }
-.panel { background: linear-gradient(180deg, var(--plate), var(--card)); border: 1px solid var(--rule); border-radius: 16px; padding: 10px; }
-.panel h3 { display: flex; align-items: center; gap: 10px; margin: 6px 10px 8px; font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
-.panel h3 svg { width: 18px; height: 18px; }
-.panel a { display: block; padding: 11px 12px; border-radius: 10px; color: var(--ink); text-decoration: none; transition: background .15s ease; }
-.panel a + a { border-top: 1px solid var(--rule); }
-.panel a:hover { background: var(--glow); }
-.panel a:hover + a { border-top-color: transparent; }
-.panel b { display: block; font-size: 15.5px; font-weight: 600; }
-.panel b::after { content: " →"; color: var(--accent); opacity: 0; transition: opacity .15s ease; }
-.panel a:hover b::after { opacity: 1; }
-.panel span { color: var(--muted); font-size: 14px; }
-.ex { display: grid; grid-template-columns: 1fr 1fr; column-gap: 10px; }
-@media (max-width: 700px) { .ex { grid-template-columns: 1fr; } }
-.ex a + a { border-top: 0; }
-.ex a { border-bottom: 1px solid var(--rule); }
-.ex b { font-family: "Geist Mono", monospace; font-weight: 500; color: var(--accent); }
-.dl { margin-top: 28px; }
-.dl-row { display: flex; flex-wrap: wrap; }
-.dl-row .btn { margin: 0 10px 10px 0; font: inherit; font-weight: 500; cursor: pointer; }
-#dl-btn { font-size: 17px; padding: 15px 26px; }
-.dl-note { color: var(--muted); margin: 2px 0 0; font-size: 14.5px; }
-.dl-all { margin-top: 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
-.dl-all div { background: var(--card); border: 1px solid var(--rule); border-radius: 14px; padding: 14px 16px; }
-.dl-all h4 { margin: 0 0 6px; font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); }
-.dl-all a { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; color: var(--ink); text-decoration: none; font-size: 14.5px; }
-.dl-all a + a { border-top: 1px solid var(--rule); }
-.dl-all a:hover { color: var(--accent); }
-.dl-all small { color: var(--muted); white-space: nowrap; }
-.apt { margin-top: 24px; border: 1px solid var(--rule); border-radius: 14px; overflow: hidden; background: var(--code); }
-.apt-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; padding: 14px 16px; border-bottom: 1px solid var(--rule); background: var(--card); }
-.apt-head span { color: var(--muted); font-size: 14px; flex: 1; }
-.apt-head .copy { margin: 0; padding: 7px 14px; font: inherit; font-size: 14px; cursor: pointer; }
-.apt pre { margin: 0; padding: 16px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13.5px; line-height: 1.7; color: var(--code-ink); }
-.apt .c { color: var(--code-muted); }
-.dl-src { margin-top: 14px; color: var(--muted); font-size: 14px; }
-.dl-src a { color: var(--ink-soft); }
-details { border-bottom: 1px solid var(--rule); padding: 16px 0; }
-details summary { cursor: pointer; font-weight: 600; font-size: 17px; list-style: none; }
-details summary::-webkit-details-marker { display: none; }
-details summary::before { content: "+"; display: inline-block; width: 22px; color: var(--accent); }
-details[open] summary::before { content: "−"; }
-details p { margin: 10px 0 0 22px; color: var(--ink-soft); }
-.steps p { margin: 0; color: var(--ink-soft); font-size: 15.5px; }
-
-.cta { margin-top: 96px; padding: 48px; border-radius: 20px; text-align: center; position: relative; overflow: hidden;
-  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 16%, var(--card)), var(--card)); border: 1px solid var(--rule); }
-.cta h2 { margin: 0 auto 12px; }
-.cta p { color: var(--ink-soft); margin: 0 auto 26px; max-width: 32em; }
-@media (max-width: 600px) { .cta { padding: 32px 18px; } }
-
-footer { padding: 56px 0 24px; color: var(--muted); font-size: 14px; }
-.mark { font-weight: 700; letter-spacing: -.05em; font-size: clamp(64px, 18vw, 230px); line-height: .85; color: var(--plate); margin: 24px 0 0; user-select: none; white-space: nowrap; }
-
-.reveal { opacity: 0; transform: translateY(14px); transition: opacity .6s ease, transform .6s ease; }
-.reveal.in { opacity: 1; transform: none; }
-@media (prefers-reduced-motion: reduce) { .reveal { opacity: 1; transform: none; transition: none; } .caret { animation: none; } }
-</style>
 </head>
 <body>
 <div class="backdrop" aria-hidden="true"></div>
@@ -217,17 +21,15 @@ footer { padding: 56px 0 24px; color: var(--muted); font-size: 14px; }
       Horizon Hammer
     </a>
     <nav>
-      <a class="opt" href="#why">Зачем</a>
-      <a class="opt" href="#code">Код</a>
-      <a class="opt" href="#start">Начать</a>
-      <a class="opt" href="#docs">Документация</a>
-      <a class="opt" href="#faq">Вопросы</a>
-      <a href="#download">Скачать</a>
+      <a class="opt" href="/#why">Зачем</a>
+      <a class="opt" href="/#code">Код</a>
+      <a href="/docs/">Документация</a>
+      <a href="/download/">Скачать</a>
       <a class="opt" href="https://github.com/artemspt/horizon-hammer-core">GitHub</a>
     </nav>
   </header>
 
-  <main>
+  <main><main>
     <div class="hero">
       <div class="reveal">
         <span class="badge"><i></i>Открытый код · ядро 0.1 в разработке</span>
@@ -237,7 +39,7 @@ footer { padding: 56px 0 24px; color: var(--muted); font-size: 14px; }
           и перезагружается за секунду, не выходя из мира.</p>
         <a class="btn main" href="#download">Скачать лаунчер ↓</a>
         <a class="btn quiet" href="#start">Сделать первый мод →</a>
-        <a class="btn quiet" href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/mods.md">Документация</a>
+        <a class="btn quiet" href="/docs/">Документация</a>
       </div>
 
       <div class="demo reveal" aria-label="Пример: правка мода и перезагрузка в игре">
@@ -362,85 +164,9 @@ capabilities = [<span class="s">"players"</span>]</pre>
       <div class="dl reveal">
         <div class="dl-row">
           <a class="btn main" id="dl-btn" href="https://github.com/artemspt/PrismLauncher-Horizon/releases/latest">Скачать последнюю версию</a>
-          <button class="btn quiet" id="dl-more" type="button" aria-expanded="false" aria-controls="dl-all">Другие версии</button>
-          <a class="btn quiet" href="https://github.com/artemspt/PrismLauncher-Horizon/releases/latest">Открыть на GitHub ↗</a>
+          <a class="btn quiet" href="/download/">Все версии и apt →</a>
         </div>
         <p class="dl-note" id="dl-note">Сборки для Linux, Windows и macOS — на странице релиза.</p>
-        <div class="dl-all" id="dl-all" hidden></div>
-        <div class="apt" id="apt">
-          <div class="apt-head"><b>Debian, Ubuntu, Mint — через apt</b><span>Лаунчер обновится вместе с системой. amd64 и arm64.</span>
-            <button class="btn quiet copy" type="button" data-copy="apt-cmd">Копировать</button></div>
-<pre id="apt-cmd"><span class="c"># ключ репозитория</span>
-curl -fsSL https://hammer.veyron.online/apt/horizon-hammer.gpg | sudo tee /usr/share/keyrings/horizon-hammer.gpg &gt;/dev/null
-<span class="c"># сам репозиторий</span>
-echo "deb [signed-by=/usr/share/keyrings/horizon-hammer.gpg] https://hammer.veyron.online/apt stable main" | sudo tee /etc/apt/sources.list.d/horizon-hammer.list
-sudo apt update &amp;&amp; sudo apt install prismlauncher-horizon</pre>
-        </div>
-        <p class="dl-src"><a href="https://github.com/artemspt/PrismLauncher-Horizon">Исходный код лаунчера</a> · GPL-3.0</p>
-      </div>
-    </section>
-
-    <section id="docs">
-      <p class="eyebrow">Документация</p>
-      <h2>Всё, что нужно под рукой</h2>
-      <p class="sub">Руководства, справочник и планы лежат в репозитории рядом с кодом и обновляются вместе с ним.</p>
-      <div class="docs reveal">
-        <div class="panel"><h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 18l6-6-6-6"/><path d="M8 6l-6 6 6 6"/></svg>Писать моды</h3>
-          <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/mods.md"><b>Руководство по модам</b><span>Как устроены моды, манифест, стороны, разрешения</span></a>
-          <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/api/mods-reference.md"><b>Справочник API</b><span>Каждая функция: что делает и когда отказывает</span></a>
-          <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/api/stability.md"><b>Стабильность API</b><span>Уровни API, что меняется, что останется</span></a>
-          <a href="https://github.com/artemspt/horizon-hammer-core/tree/api/extra-100/crates/horizon-mod-sdk"><b>SDK</b><span>Крейт horizon-mod-sdk и контракт WIT</span></a>
-          <a href="https://github.com/artemspt/horizon-hammer-core/tree/api/extra-100/crates/cargo-horizon-mod"><b>cargo horizon-mod</b><span>new, build, run, test, check</span></a>
-          <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/crates/horizon-mods/AGENTS.md"><b>Расширять ядро</b><span>Как добавить функцию в API: от контракта до проверки в игре</span></a>
-        </div>
-        <div class="panel"><h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 4 20 12 6 20 6 4"/></svg>Играть</h3>
-          <a href="https://github.com/artemspt/PrismLauncher-Horizon/releases/latest"><b>Лаунчер</b><span>Prism Launcher Horizon для Linux, Windows и macOS</span></a>
-          <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/play-with-friends.md"><b>Игра с друзьями</b><span>LAN и подключение по сети</span></a>
-          <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/server.md"><b>Свой сервер</b><span>Выделенный сервер Horizon и серверные моды</span></a>
-          <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/security.md"><b>Безопасность</b><span>Что песочница закрывает и чего не обещает</span></a>
-          <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/modpacks.md"><b>Модпаки и ресурсы</b><span>Что переносится из модов Java: данные, текстуры, модели</span></a>
-        </div>
-        <div class="panel"><h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Проект</h3>
-          <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/mod-api-plan.md"><b>План API</b><span>Что сделано и что дальше</span></a>
-          <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/mod-core-known-issues.md"><b>Известные проблемы</b><span>Что найдено и отложено</span></a>
-          <a href="https://github.com/artemspt/horizon-hammer-core/commits/api/extra-100"><b>Что нового</b><span>Последние изменения ядра</span></a>
-          <a href="https://github.com/horizon-rust/horizon"><b>Horizon</b><span>Исходный проект: Minecraft на Rust</span></a>
-          <a href="https://www.rust-lang.org/learn"><b>Учить Rust</b><span>Если Rust ещё не знаком</span></a>
-          <a href="https://component-model.bytecodealliance.org/"><b>Компонентная модель</b><span>Как устроены WebAssembly-компоненты и WIT</span></a>
-        </div>
-      </div>
-    </section>
-
-    <section id="examples">
-      <p class="eyebrow">Примеры</p>
-      <h2>Учитесь на готовых модах</h2>
-      <p class="sub">Каждый пример собирается одной командой и проверяется тестами ядра.</p>
-      <div class="panel ex reveal">
-        <a href="https://github.com/artemspt/horizon-hammer-core/tree/api/extra-100/crates/horizon-mod-sdk/examples/block-guard"><b>block-guard</b><span>Хуки блоков: запретить ломать, прочитать блок палкой</span></a>
-        <a href="https://github.com/artemspt/horizon-hammer-core/tree/api/extra-100/crates/horizon-mod-sdk/examples/iron-press"><b>iron-press</b><span>Механизм: энергия, окно печи, редстоун, сеть</span></a>
-        <a href="https://github.com/artemspt/horizon-hammer-core/tree/api/extra-100/crates/horizon-mod-sdk/examples/worldgen"><b>worldgen</b><span>Поверхность биома и своя руда, с настройками</span></a>
-        <a href="https://github.com/artemspt/horizon-hammer-core/tree/api/extra-100/crates/horizon-mod-sdk/examples/coords-hud"><b>coords-hud</b><span>Клиентский мод: координаты и время на экране</span></a>
-        <a href="https://github.com/artemspt/horizon-hammer-core/tree/api/extra-100/crates/horizon-mod-sdk/examples/core-tour"><b>core-tour</b><span>Данные игрока, ресурсы, сообщения между модами</span></a>
-        <a href="https://github.com/artemspt/horizon-hammer-core/tree/api/extra-100/mods/showcase"><b>showcase</b><span>Всё ядро в одном моде: мобы, модели, измерения, /showcase demo</span></a>
-      </div>
-    </section>
-
-    <section id="faq">
-      <p class="eyebrow">Вопросы</p>
-      <h2>Часто спрашивают</h2>
-      <div class="reveal">
-        <details><summary>Запустятся ли моды для Forge, Fabric или NeoForge?</summary>
-          <p>Нет: их код вызывает Java-классы Minecraft, которых в Horizon нет. Переносятся данные и ресурсы из jar — рецепты, теги, текстуры, модели.</p></details>
-        <details><summary>Нужен ли купленный Minecraft?</summary>
-          <p>Да. Horizon не содержит файлов Minecraft и готовит их из вашей копии игры при первом запуске.</p></details>
-        <details><summary>Может ли мод навредить компьютеру?</summary>
-          <p>Обычный мод — нет: он работает в песочнице и получает только то, что указано в манифесте и что вы разрешили. Исключение — нативные платы с пометкой [UNSAFE], у них полный доступ.</p></details>
-        <details><summary>Чем это отличается от Horizon?</summary>
-          <p>Horizon перешёл на нативные моды, которые правят исходники и требуют пересборки игры. Этот форк сохраняет песочницу: мод — один файл, который ставится без компиляции и перезагружается на лету.</p></details>
-        <details><summary>Работают ли моды в мультиплеере?</summary>
-          <p>Да. Серверные моды работают в одиночной игре, по LAN и на выделенном сервере; клиентские — в окне игрока. Мод может состоять из двух половин, которые общаются по своему каналу.</p></details>
-        <details><summary>На каком языке писать моды?</summary>
-          <p>Сейчас SDK есть для Rust. Мод собирается в WebAssembly-компонент, так что другие языки возможны, но готового SDK для них пока нет.</p></details>
       </div>
     </section>
 
@@ -450,6 +176,7 @@ sudo apt update &amp;&amp; sudo apt install prismlauncher-horizon</pre>
       <a class="btn main" href="https://github.com/artemspt/horizon-hammer-core">Открыть на GitHub</a>
       <a class="btn quiet" href="https://github.com/artemspt/horizon-hammer-core/issues">Предложить идею</a>
     </div>
+  
   </main>
 
   <footer>
@@ -496,97 +223,19 @@ sudo apt update &amp;&amp; sudo apt install prismlauncher-horizon</pre>
   play();
 })();
 
+
 // Code tabs.
 document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => {
   document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x === b));
   document.querySelectorAll('.codebox pre').forEach(p => p.hidden = p.dataset.pane !== b.dataset.tab);
 }));
 
+
 // The mock switches flip.
 document.querySelectorAll('.sw').forEach(s => s.addEventListener('click', () =>
   s.setAttribute('aria-checked', s.getAttribute('aria-checked') !== 'true')));
 
-// Sections fade in as they scroll into view.
-const io = 'IntersectionObserver' in window && new IntersectionObserver(es => es.forEach(e => {
-  if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
-}), { threshold: .12 });
-document.querySelectorAll('.reveal').forEach(el => io ? io.observe(el) : el.classList.add('in'));
-// The download button names the visitor's system and links its file straight from the latest release.
-(async () => {
-  const API = 'https://api.github.com/repos/artemspt/PrismLauncher-Horizon/releases/latest';
-  const ua = navigator.userAgent, plat = (navigator.userAgentData?.platform || navigator.platform || '') + ' ' + ua;
-  const os = /Win/i.test(plat) ? 'Windows' : /Mac|iPhone|iPad/i.test(plat) ? 'macOS'
-    : /Linux|X11|CrOS/i.test(plat) && !/Android/i.test(ua) ? 'Linux' : null;
-  let arm = /aarch64|arm64/i.test(ua);
-  try { const h = await navigator.userAgentData?.getHighEntropyValues(['architecture']); if (h?.architecture) arm = h.architecture === 'arm'; } catch {}
-  const btn = document.getElementById('dl-btn'), note = document.getElementById('dl-note');
-  const all = document.getElementById('dl-all'), more = document.getElementById('dl-more');
-  more.addEventListener('click', () => { all.hidden = !all.hidden; more.setAttribute('aria-expanded', !all.hidden); });
-  if (os === 'Linux') {  // these names carry no version, so they work without asking GitHub
-    btn.href = 'https://github.com/artemspt/PrismLauncher-Horizon/releases/latest/download/PrismLauncher-Linux-' + (arm ? 'aarch64' : 'x86_64') + '.AppImage';
-  }
-  if (os) btn.textContent = 'Скачать для ' + os + (arm ? ' (ARM)' : '');
-  let rel = null;
-  try { const r = await fetch(API); if (r.ok) rel = await r.json(); } catch {}
-  if (!rel) return;
-  // Prism also ships each Windows build as a plain zip beside the portable one: list the portable only
-  const files = rel.assets.filter(a => !a.name.endsWith('.zsync') && !(/Windows/.test(a.name) && !/Portable|Setup/.test(a.name)));
-  // MSVC before MinGW, x64 before ARM: the usual pick first
-  const rank = n => (/MinGW/.test(n) ? 2 : 0) + (/arm64|aarch64/.test(n) ? 1 : 0);
-  files.sort((a, b) => rank(a.name) - rank(b.name));
-  const pick = {
-    Linux: arm ? /Linux-aarch64\.AppImage$/ : /Linux-x86_64\.AppImage$/,
-    Windows: arm ? /Windows-MSVC-arm64-Setup.*\.exe$/ : /Windows-MSVC-Setup.*\.exe$/,
-    macOS: /macOS.*\.(dmg|zip)$/,
-  };
-  const mb = n => (n / 1048576).toFixed(0) + ' МБ';
-  const group = n => /Linux/.test(n) ? 'Linux' : /Windows/.test(n) ? 'Windows' : /macOS/.test(n) ? 'macOS' : 'Исходники';
-  const label = n => {
-    const ext = (n.match(/\.(AppImage|exe|zip|tar\.gz|dmg)$/) || [, ''])[1];
-    let parts = n.replace(/^PrismLauncher-/, '').replace(/-?v[\d.]+-horizon/, '').replace('.' + ext, '')
-      .split('-').filter(p => p && !['Linux', 'Windows', 'macOS', 'Qt6', 'Setup', 'w64'].includes(p));
-    const g = group(n);
-    if (g === 'Linux' && !parts.some(p => /aarch64|x86_64/.test(p))) parts.unshift('x86_64');
-    if (g === 'Windows' && !parts.includes('arm64')) parts.unshift('x64');
-    parts.sort((x, y) => /arm64|aarch64|x86_64|x64/.test(y) - /arm64|aarch64|x86_64|x64/.test(x));  // arch first
-    if (g === 'Исходники') parts = ['исходный код'];
-    return [...parts, ext === 'exe' ? 'установщик' : ext].join(' · ');
-  };
-  const mine = os && files.find(a => pick[os].test(a.name));
-  if (mine) {
-    btn.href = mine.browser_download_url;
-    note.textContent = `${rel.tag_name} · ${label(mine.name)} · ${mb(mine.size)}`;
-  } else if (os === 'macOS') {
-    btn.href = rel.html_url;
-    note.textContent = 'Сборка для macOS ещё не готова — она появится на странице релиза.';
-  } else note.textContent = rel.tag_name;
-  const groups = {};
-  for (const a of files) (groups[group(a.name)] ||= []).push(a);
-  all.innerHTML = '';
-  for (const g of ['Linux', 'Windows', 'macOS', 'Исходники']) {
-    if (!groups[g]) continue;
-    const box = document.createElement('div');
-    box.innerHTML = `<h4>${g}</h4>`;
-    for (const a of groups[g]) {
-      const l = document.createElement('a');
-      l.href = a.browser_download_url;
-      l.textContent = label(a.name);
-      l.title = a.name;
-      l.insertAdjacentHTML('beforeend', `<small>${mb(a.size)}</small>`);
-      box.append(l);
-    }
-    all.append(box);
-  }
-})();
-
-// Copy buttons.
-document.querySelectorAll('[data-copy]').forEach(b => b.addEventListener('click', async () => {
-  try {
-    await navigator.clipboard.writeText(document.getElementById(b.dataset.copy).innerText.split('\n').filter(l => !l.startsWith('#')).join('\n'));
-    b.textContent = 'Скопировано';
-  } catch { b.textContent = 'Не вышло'; }
-  setTimeout(() => b.textContent = 'Копировать', 1600);
-}));
 </script>
+<script src="/site.js"></script>
 </body>
 </html>

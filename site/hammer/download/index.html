@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Скачать — Horizon Hammer</title>
+<meta name="description" content="Prism Launcher Horizon для Linux, Windows и macOS, и apt-репозиторий для Debian и Ubuntu.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+
+</head>
+<body>
+<div class="backdrop" aria-hidden="true"></div>
+<div class="wrap">
+  <header>
+    <a class="logo" href="/">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#10b981"/><stop offset="1" stop-color="#a3e635"/></linearGradient></defs>
+        <rect x="5" y="4" width="22" height="10" rx="2" fill="url(#lg)"/><rect x="14" y="14" width="5" height="15" rx="1.5" fill="currentColor"/></svg>
+      Horizon Hammer
+    </a>
+    <nav>
+      <a class="opt" href="/#why">Зачем</a>
+      <a class="opt" href="/#code">Код</a>
+      <a href="/docs/">Документация</a>
+      <a href="/download/" aria-current="page">Скачать</a>
+      <a class="opt" href="https://github.com/artemspt/horizon-hammer-core">GitHub</a>
+    </nav>
+  </header>
+
+  <main><main>
+    <section class="top">
+      <p class="eyebrow">Скачать</p>
+      <h1 class="title">Prism Launcher Horizon</h1>
+      <p class="sub">Prism Launcher, который сам ставит и запускает Horizon. Ваши сборки, модпаки и аккаунты — как в обычной Prism.</p>
+      <div class="dl">
+        <div class="dl-row">
+          <a class="btn main" id="dl-btn" href="https://github.com/artemspt/PrismLauncher-Horizon/releases/latest">Скачать последнюю версию</a>
+          <a class="btn quiet" href="https://github.com/artemspt/PrismLauncher-Horizon/releases/latest">Открыть на GitHub ↗</a>
+        </div>
+        <p class="dl-note" id="dl-note">Сборки для Linux, Windows и macOS — на странице релиза.</p>
+      </div>
+    </section>
+
+    <section id="files">
+      <p class="eyebrow">Все файлы</p>
+      <h2>Любая система и сборка</h2>
+      <p class="sub">x64 и MSVC подойдут почти всем. ARM — для ноутбуков на Snapdragon и плат вроде Raspberry Pi. Portable не нужно устанавливать: распакуйте и запускайте.</p>
+      <div class="dl-all reveal" id="dl-all"><div><a href="https://github.com/artemspt/PrismLauncher-Horizon/releases/latest">Список файлов — на странице релиза<small>GitHub ↗</small></a></div></div>
+    </section>
+
+    <section id="apt">
+      <p class="eyebrow">apt</p>
+      <h2>Debian, Ubuntu и Mint</h2>
+      <p class="sub">Подключите репозиторий один раз — дальше лаунчер обновляется вместе с системой. Пакеты для amd64 и arm64.</p>
+      <div class="apt reveal">
+          <div class="apt-head"><span>Терминал</span>
+            <button class="btn quiet copy" type="button" data-copy="apt-cmd">Копировать</button></div>
+<pre id="apt-cmd"><span class="c"># ключ репозитория</span>
+curl -fsSL https://hammer.veyron.online/apt/horizon-hammer.gpg | sudo tee /usr/share/keyrings/horizon-hammer.gpg &gt;/dev/null
+<span class="c"># сам репозиторий</span>
+echo "deb [signed-by=/usr/share/keyrings/horizon-hammer.gpg] https://hammer.veyron.online/apt stable main" | sudo tee /etc/apt/sources.list.d/horizon-hammer.list
+sudo apt update &amp;&amp; sudo apt install prismlauncher-horizon</pre>
+        </div>
+    </section>
+
+    <section id="first">
+      <p class="eyebrow">Первый запуск</p>
+      <h2>Три шага до игры</h2>
+      <div class="steps">
+        <div class="reveal"><b>Скачайте</b><p>Файл для вашей системы — кнопкой вверху страницы, или любой из списка.</p></div>
+        <div class="reveal"><b>Войдите</b><p>Аккаунт Microsoft с купленным Minecraft. Файлы игры готовятся из вашей копии.</p></div>
+        <div class="reveal"><b>Создайте сборку</b><p>«Добавить сборку» → <b style="display:inline;font-size:inherit">Horizon</b>, выберите версию и запускайте.</p></div>
+      </div>
+      <p class="fine">Сборки пока не подписаны: при первом запуске Windows SmartScreen и macOS Gatekeeper спросят подтверждение.
+        <a href="https://github.com/artemspt/PrismLauncher-Horizon">Исходный код лаунчера</a> · GPL-3.0</p>
+    </section>
+  </main>
+
+  <footer>
+    <p>Неофициальный форк <a href="https://github.com/horizon-rust/horizon">Horizon</a>, не связан с его авторами,
+      Mojang или Microsoft. Файлы Minecraft не распространяются: игра готовит их из вашей лицензионной копии.</p>
+    <div class="mark" aria-hidden="true">hammer</div>
+  </footer>
+</div>
+
+<script src="/site.js"></script>
+</body>
+</html>
