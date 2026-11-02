@@ -20,8 +20,9 @@ tag=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | jq -r .t
 if [ "${1:-}" != --force ] && [ "$(cat "$WWW/.tag" 2>/dev/null)" = "$tag" ]; then
     exit 0
 fi
-# v11.1.1-horizon -> 11.1.1+horizon-1: an upstream version must start with a digit
-ver=$(echo "$tag" | sed 's/^v//; s/-horizon$//')+horizon-1
+# v11.1.1-horizon -> 11.1.1+horizon-2: an upstream version must start with a digit;
+# the revision goes up when the packaging changes
+ver=$(echo "$tag" | sed 's/^v//; s/-horizon$//')+horizon-2
 
 work=$(mktemp -d -p /var/tmp) # same disk as $WWW: the swap below is a rename
 trap 'rm -rf "$work"' EXIT
@@ -43,7 +44,8 @@ print(struct.unpack_from("<Q",b,0x28)[0]+struct.unpack_from("<H",b,0x3A)[0]*stru
     mkdir -p "$pkg/DEBIAN" "$pkg/opt" "$pkg/usr/bin" "$pkg/usr/share/applications" \
         "$pkg/usr/share/icons/hicolor/scalable/apps"
     unsquashfs -q -n -o "$off" -d "$opt" "$work/a.AppImage" >/dev/null
-    rm -f "$work/a.AppImage" "$opt/bin/AppImageUpdate.AppImage" # apt updates it instead
+    # apt updates it: without its updater binary the launcher neither checks GitHub nor offers to update
+    rm -f "$work/a.AppImage" "$opt/bin/AppImageUpdate.AppImage" "$opt/bin/prismlauncher_updater"
     ln -s /opt/prismlauncher-horizon/AppRun "$pkg/usr/bin/prismlauncher-horizon"
     # Own names, so it installs beside Debian's prismlauncher
     sed -e '/^Name\[/d' -e 's/^Name=.*/Name=Prism Launcher Horizon/' \
