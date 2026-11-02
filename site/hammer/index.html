@@ -147,16 +147,44 @@ h2 { font-weight: 600; letter-spacing: -.03em; font-size: clamp(30px, 4vw, 44px)
 .steps div::before { content: counter(s, decimal-leading-zero); display: block; font: 600 34px Geist, sans-serif; letter-spacing: -.04em; margin-bottom: 8px;
   background: linear-gradient(135deg, var(--accent), var(--accent-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .steps b { display: block; font-size: 18px; margin-bottom: 4px; }
-.links { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-@media (max-width: 920px) { .links { grid-template-columns: 1fr 1fr; } }
-@media (max-width: 600px) { .links { grid-template-columns: 1fr; } }
-.links a { display: block; padding: 18px 20px; border-radius: 12px; background: var(--card); border: 1px solid var(--rule); color: var(--ink); text-decoration: none; transition: border-color .2s ease, transform .2s ease; }
-.links a:hover { border-color: var(--accent); transform: translateY(-2px); }
-.links b { display: block; font-size: 16px; margin-bottom: 2px; }
-.links b::after { content: " ↗"; color: var(--accent); font-weight: 400; }
-.links span { color: var(--muted); font-size: 14.5px; }
-.links h3 { grid-column: 1 / -1; margin: 18px 0 2px; font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
-.links h3:first-child { margin-top: 0; }
+.docs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 920px) { .docs { grid-template-columns: 1fr; } }
+.panel { background: linear-gradient(180deg, var(--plate), var(--card)); border: 1px solid var(--rule); border-radius: 16px; padding: 10px; }
+.panel h3 { display: flex; align-items: center; gap: 10px; margin: 6px 10px 8px; font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
+.panel h3 svg { width: 18px; height: 18px; }
+.panel a { display: block; padding: 11px 12px; border-radius: 10px; color: var(--ink); text-decoration: none; transition: background .15s ease; }
+.panel a + a { border-top: 1px solid var(--rule); }
+.panel a:hover { background: var(--glow); }
+.panel a:hover + a { border-top-color: transparent; }
+.panel b { display: block; font-size: 15.5px; font-weight: 600; }
+.panel b::after { content: " →"; color: var(--accent); opacity: 0; transition: opacity .15s ease; }
+.panel a:hover b::after { opacity: 1; }
+.panel span { color: var(--muted); font-size: 14px; }
+.ex { display: grid; grid-template-columns: 1fr 1fr; column-gap: 10px; }
+@media (max-width: 700px) { .ex { grid-template-columns: 1fr; } }
+.ex a + a { border-top: 0; }
+.ex a { border-bottom: 1px solid var(--rule); }
+.ex b { font-family: "Geist Mono", monospace; font-weight: 500; color: var(--accent); }
+.dl { margin-top: 28px; }
+.dl-row { display: flex; flex-wrap: wrap; }
+.dl-row .btn { margin: 0 10px 10px 0; font: inherit; font-weight: 500; cursor: pointer; }
+#dl-btn { font-size: 17px; padding: 15px 26px; }
+.dl-note { color: var(--muted); margin: 2px 0 0; font-size: 14.5px; }
+.dl-all { margin-top: 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+.dl-all div { background: var(--card); border: 1px solid var(--rule); border-radius: 14px; padding: 14px 16px; }
+.dl-all h4 { margin: 0 0 6px; font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); }
+.dl-all a { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; color: var(--ink); text-decoration: none; font-size: 14.5px; }
+.dl-all a + a { border-top: 1px solid var(--rule); }
+.dl-all a:hover { color: var(--accent); }
+.dl-all small { color: var(--muted); white-space: nowrap; }
+.apt { margin-top: 24px; border: 1px solid var(--rule); border-radius: 14px; overflow: hidden; background: var(--code); }
+.apt-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; padding: 14px 16px; border-bottom: 1px solid var(--rule); background: var(--card); }
+.apt-head span { color: var(--muted); font-size: 14px; flex: 1; }
+.apt-head .copy { margin: 0; padding: 7px 14px; font: inherit; font-size: 14px; cursor: pointer; }
+.apt pre { margin: 0; padding: 16px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13.5px; line-height: 1.7; color: var(--code-ink); }
+.apt .c { color: var(--code-muted); }
+.dl-src { margin-top: 14px; color: var(--muted); font-size: 14px; }
+.dl-src a { color: var(--ink-soft); }
 details { border-bottom: 1px solid var(--rule); padding: 16px 0; }
 details summary { cursor: pointer; font-weight: 600; font-size: 17px; list-style: none; }
 details summary::-webkit-details-marker { display: none; }
@@ -327,41 +355,59 @@ capabilities = [<span class="s">"players"</span>]</pre>
       <h2>Prism Launcher Horizon</h2>
       <p class="sub">Prism Launcher, который сам ставит и запускает Horizon. Ваши сборки, модпаки и аккаунты — как в обычной Prism.</p>
       <div class="steps">
-        <div class="reveal"><b>Скачайте</b><p>AppImage для Linux (x86_64 и aarch64), установщик для Windows, dmg для macOS — на странице релиза.</p></div>
+        <div class="reveal"><b>Скачайте</b><p>Кнопка ниже сама выберет файл для вашей системы. На Debian и Ubuntu удобнее apt — лаунчер будет обновляться с системой.</p></div>
         <div class="reveal"><b>Войдите</b><p>Аккаунт Microsoft с купленным Minecraft. Файлы игры готовятся из вашей копии.</p></div>
         <div class="reveal"><b>Создайте сборку</b><p>«Добавить сборку» → <b style="display:inline;font-size:inherit">Horizon</b>, выберите версию и запускайте.</p></div>
       </div>
-      <p style="margin-top:24px">
-        <a class="btn main" href="https://github.com/artemspt/PrismLauncher-Horizon/releases/latest">Скачать последнюю версию</a>
-        <a class="btn quiet" href="https://github.com/artemspt/PrismLauncher-Horizon">Исходный код лаунчера</a>
-      </p>
+      <div class="dl reveal">
+        <div class="dl-row">
+          <a class="btn main" id="dl-btn" href="https://github.com/artemspt/PrismLauncher-Horizon/releases/latest">Скачать последнюю версию</a>
+          <button class="btn quiet" id="dl-more" type="button" aria-expanded="false" aria-controls="dl-all">Другие версии</button>
+          <a class="btn quiet" href="https://github.com/artemspt/PrismLauncher-Horizon/releases/latest">Открыть на GitHub ↗</a>
+        </div>
+        <p class="dl-note" id="dl-note">Сборки для Linux, Windows и macOS — на странице релиза.</p>
+        <div class="dl-all" id="dl-all" hidden></div>
+        <div class="apt" id="apt">
+          <div class="apt-head"><b>Debian, Ubuntu, Mint — через apt</b><span>Лаунчер обновится вместе с системой. amd64 и arm64.</span>
+            <button class="btn quiet copy" type="button" data-copy="apt-cmd">Копировать</button></div>
+<pre id="apt-cmd"><span class="c"># ключ репозитория</span>
+curl -fsSL https://hammer.veyron.online/apt/horizon-hammer.gpg | sudo tee /usr/share/keyrings/horizon-hammer.gpg &gt;/dev/null
+<span class="c"># сам репозиторий</span>
+echo "deb [signed-by=/usr/share/keyrings/horizon-hammer.gpg] https://hammer.veyron.online/apt stable main" | sudo tee /etc/apt/sources.list.d/horizon-hammer.list
+sudo apt update &amp;&amp; sudo apt install prismlauncher-horizon</pre>
+        </div>
+        <p class="dl-src"><a href="https://github.com/artemspt/PrismLauncher-Horizon">Исходный код лаунчера</a> · GPL-3.0</p>
+      </div>
     </section>
 
     <section id="docs">
       <p class="eyebrow">Документация</p>
       <h2>Всё, что нужно под рукой</h2>
       <p class="sub">Руководства, справочник и планы лежат в репозитории рядом с кодом и обновляются вместе с ним.</p>
-      <div class="links reveal">
-        <h3>Писать моды</h3>
-        <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/mods.md"><b>Руководство по модам</b><span>Как устроены моды, манифест, стороны, разрешения</span></a>
-        <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/api/mods-reference.md"><b>Справочник API</b><span>Каждая функция: что делает и когда отказывает</span></a>
-        <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/api/stability.md"><b>Стабильность API</b><span>Уровни API, что меняется, что останется</span></a>
-        <a href="https://github.com/artemspt/horizon-hammer-core/tree/api/extra-100/crates/horizon-mod-sdk"><b>SDK</b><span>Крейт horizon-mod-sdk и контракт WIT</span></a>
-        <a href="https://github.com/artemspt/horizon-hammer-core/tree/api/extra-100/crates/cargo-horizon-mod"><b>cargo horizon-mod</b><span>new, build, run, test, check</span></a>
-        <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/crates/horizon-mods/AGENTS.md"><b>Расширять ядро</b><span>Как добавить функцию в API: от контракта до проверки в игре</span></a>
-        <h3>Играть</h3>
-        <a href="https://github.com/artemspt/PrismLauncher-Horizon/releases/latest"><b>Лаунчер</b><span>Prism Launcher Horizon для Linux, Windows и macOS</span></a>
-        <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/play-with-friends.md"><b>Игра с друзьями</b><span>LAN и подключение по сети</span></a>
-        <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/server.md"><b>Свой сервер</b><span>Выделенный сервер Horizon и серверные моды</span></a>
-        <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/security.md"><b>Безопасность</b><span>Что песочница закрывает и чего не обещает</span></a>
-        <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/modpacks.md"><b>Модпаки и ресурсы</b><span>Что переносится из модов Java: данные, текстуры, модели</span></a>
-        <h3>Проект</h3>
-        <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/mod-api-plan.md"><b>План API</b><span>Что сделано и что дальше</span></a>
-        <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/mod-core-known-issues.md"><b>Известные проблемы</b><span>Что найдено и отложено</span></a>
-        <a href="https://github.com/artemspt/horizon-hammer-core/commits/api/extra-100"><b>Что нового</b><span>Последние изменения ядра</span></a>
-        <a href="https://github.com/horizon-rust/horizon"><b>Horizon</b><span>Исходный проект: Minecraft на Rust</span></a>
-        <a href="https://www.rust-lang.org/learn"><b>Учить Rust</b><span>Если Rust ещё не знаком</span></a>
-        <a href="https://component-model.bytecodealliance.org/"><b>Компонентная модель</b><span>Как устроены WebAssembly-компоненты и WIT</span></a>
+      <div class="docs reveal">
+        <div class="panel"><h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 18l6-6-6-6"/><path d="M8 6l-6 6 6 6"/></svg>Писать моды</h3>
+          <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/mods.md"><b>Руководство по модам</b><span>Как устроены моды, манифест, стороны, разрешения</span></a>
+          <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/api/mods-reference.md"><b>Справочник API</b><span>Каждая функция: что делает и когда отказывает</span></a>
+          <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/api/stability.md"><b>Стабильность API</b><span>Уровни API, что меняется, что останется</span></a>
+          <a href="https://github.com/artemspt/horizon-hammer-core/tree/api/extra-100/crates/horizon-mod-sdk"><b>SDK</b><span>Крейт horizon-mod-sdk и контракт WIT</span></a>
+          <a href="https://github.com/artemspt/horizon-hammer-core/tree/api/extra-100/crates/cargo-horizon-mod"><b>cargo horizon-mod</b><span>new, build, run, test, check</span></a>
+          <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/crates/horizon-mods/AGENTS.md"><b>Расширять ядро</b><span>Как добавить функцию в API: от контракта до проверки в игре</span></a>
+        </div>
+        <div class="panel"><h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 4 20 12 6 20 6 4"/></svg>Играть</h3>
+          <a href="https://github.com/artemspt/PrismLauncher-Horizon/releases/latest"><b>Лаунчер</b><span>Prism Launcher Horizon для Linux, Windows и macOS</span></a>
+          <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/play-with-friends.md"><b>Игра с друзьями</b><span>LAN и подключение по сети</span></a>
+          <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/server.md"><b>Свой сервер</b><span>Выделенный сервер Horizon и серверные моды</span></a>
+          <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/security.md"><b>Безопасность</b><span>Что песочница закрывает и чего не обещает</span></a>
+          <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/modpacks.md"><b>Модпаки и ресурсы</b><span>Что переносится из модов Java: данные, текстуры, модели</span></a>
+        </div>
+        <div class="panel"><h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Проект</h3>
+          <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/mod-api-plan.md"><b>План API</b><span>Что сделано и что дальше</span></a>
+          <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/mod-core-known-issues.md"><b>Известные проблемы</b><span>Что найдено и отложено</span></a>
+          <a href="https://github.com/artemspt/horizon-hammer-core/commits/api/extra-100"><b>Что нового</b><span>Последние изменения ядра</span></a>
+          <a href="https://github.com/horizon-rust/horizon"><b>Horizon</b><span>Исходный проект: Minecraft на Rust</span></a>
+          <a href="https://www.rust-lang.org/learn"><b>Учить Rust</b><span>Если Rust ещё не знаком</span></a>
+          <a href="https://component-model.bytecodealliance.org/"><b>Компонентная модель</b><span>Как устроены WebAssembly-компоненты и WIT</span></a>
+        </div>
       </div>
     </section>
 
@@ -369,7 +415,7 @@ capabilities = [<span class="s">"players"</span>]</pre>
       <p class="eyebrow">Примеры</p>
       <h2>Учитесь на готовых модах</h2>
       <p class="sub">Каждый пример собирается одной командой и проверяется тестами ядра.</p>
-      <div class="links reveal">
+      <div class="panel ex reveal">
         <a href="https://github.com/artemspt/horizon-hammer-core/tree/api/extra-100/crates/horizon-mod-sdk/examples/block-guard"><b>block-guard</b><span>Хуки блоков: запретить ломать, прочитать блок палкой</span></a>
         <a href="https://github.com/artemspt/horizon-hammer-core/tree/api/extra-100/crates/horizon-mod-sdk/examples/iron-press"><b>iron-press</b><span>Механизм: энергия, окно печи, редстоун, сеть</span></a>
         <a href="https://github.com/artemspt/horizon-hammer-core/tree/api/extra-100/crates/horizon-mod-sdk/examples/worldgen"><b>worldgen</b><span>Поверхность биома и своя руда, с настройками</span></a>
@@ -465,6 +511,82 @@ const io = 'IntersectionObserver' in window && new IntersectionObserver(es => es
   if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
 }), { threshold: .12 });
 document.querySelectorAll('.reveal').forEach(el => io ? io.observe(el) : el.classList.add('in'));
+// The download button names the visitor's system and links its file straight from the latest release.
+(async () => {
+  const API = 'https://api.github.com/repos/artemspt/PrismLauncher-Horizon/releases/latest';
+  const ua = navigator.userAgent, plat = (navigator.userAgentData?.platform || navigator.platform || '') + ' ' + ua;
+  const os = /Win/i.test(plat) ? 'Windows' : /Mac|iPhone|iPad/i.test(plat) ? 'macOS'
+    : /Linux|X11|CrOS/i.test(plat) && !/Android/i.test(ua) ? 'Linux' : null;
+  let arm = /aarch64|arm64/i.test(ua);
+  try { const h = await navigator.userAgentData?.getHighEntropyValues(['architecture']); if (h?.architecture) arm = h.architecture === 'arm'; } catch {}
+  const btn = document.getElementById('dl-btn'), note = document.getElementById('dl-note');
+  const all = document.getElementById('dl-all'), more = document.getElementById('dl-more');
+  more.addEventListener('click', () => { all.hidden = !all.hidden; more.setAttribute('aria-expanded', !all.hidden); });
+  if (os === 'Linux') {  // these names carry no version, so they work without asking GitHub
+    btn.href = 'https://github.com/artemspt/PrismLauncher-Horizon/releases/latest/download/PrismLauncher-Linux-' + (arm ? 'aarch64' : 'x86_64') + '.AppImage';
+  }
+  if (os) btn.textContent = 'Скачать для ' + os + (arm ? ' (ARM)' : '');
+  let rel = null;
+  try { const r = await fetch(API); if (r.ok) rel = await r.json(); } catch {}
+  if (!rel) return;
+  // Prism also ships each Windows build as a plain zip beside the portable one: list the portable only
+  const files = rel.assets.filter(a => !a.name.endsWith('.zsync') && !(/Windows/.test(a.name) && !/Portable|Setup/.test(a.name)));
+  // MSVC before MinGW, x64 before ARM: the usual pick first
+  const rank = n => (/MinGW/.test(n) ? 2 : 0) + (/arm64|aarch64/.test(n) ? 1 : 0);
+  files.sort((a, b) => rank(a.name) - rank(b.name));
+  const pick = {
+    Linux: arm ? /Linux-aarch64\.AppImage$/ : /Linux-x86_64\.AppImage$/,
+    Windows: arm ? /Windows-MSVC-arm64-Setup.*\.exe$/ : /Windows-MSVC-Setup.*\.exe$/,
+    macOS: /macOS.*\.(dmg|zip)$/,
+  };
+  const mb = n => (n / 1048576).toFixed(0) + ' МБ';
+  const group = n => /Linux/.test(n) ? 'Linux' : /Windows/.test(n) ? 'Windows' : /macOS/.test(n) ? 'macOS' : 'Исходники';
+  const label = n => {
+    const ext = (n.match(/\.(AppImage|exe|zip|tar\.gz|dmg)$/) || [, ''])[1];
+    let parts = n.replace(/^PrismLauncher-/, '').replace(/-?v[\d.]+-horizon/, '').replace('.' + ext, '')
+      .split('-').filter(p => p && !['Linux', 'Windows', 'macOS', 'Qt6', 'Setup', 'w64'].includes(p));
+    const g = group(n);
+    if (g === 'Linux' && !parts.some(p => /aarch64|x86_64/.test(p))) parts.unshift('x86_64');
+    if (g === 'Windows' && !parts.includes('arm64')) parts.unshift('x64');
+    parts.sort((x, y) => /arm64|aarch64|x86_64|x64/.test(y) - /arm64|aarch64|x86_64|x64/.test(x));  // arch first
+    if (g === 'Исходники') parts = ['исходный код'];
+    return [...parts, ext === 'exe' ? 'установщик' : ext].join(' · ');
+  };
+  const mine = os && files.find(a => pick[os].test(a.name));
+  if (mine) {
+    btn.href = mine.browser_download_url;
+    note.textContent = `${rel.tag_name} · ${label(mine.name)} · ${mb(mine.size)}`;
+  } else if (os === 'macOS') {
+    btn.href = rel.html_url;
+    note.textContent = 'Сборка для macOS ещё не готова — она появится на странице релиза.';
+  } else note.textContent = rel.tag_name;
+  const groups = {};
+  for (const a of files) (groups[group(a.name)] ||= []).push(a);
+  all.innerHTML = '';
+  for (const g of ['Linux', 'Windows', 'macOS', 'Исходники']) {
+    if (!groups[g]) continue;
+    const box = document.createElement('div');
+    box.innerHTML = `<h4>${g}</h4>`;
+    for (const a of groups[g]) {
+      const l = document.createElement('a');
+      l.href = a.browser_download_url;
+      l.textContent = label(a.name);
+      l.title = a.name;
+      l.insertAdjacentHTML('beforeend', `<small>${mb(a.size)}</small>`);
+      box.append(l);
+    }
+    all.append(box);
+  }
+})();
+
+// Copy buttons.
+document.querySelectorAll('[data-copy]').forEach(b => b.addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(document.getElementById(b.dataset.copy).innerText.split('\n').filter(l => !l.startsWith('#')).join('\n'));
+    b.textContent = 'Скопировано';
+  } catch { b.textContent = 'Не вышло'; }
+  setTimeout(() => b.textContent = 'Копировать', 1600);
+}));
 </script>
 </body>
 </html>

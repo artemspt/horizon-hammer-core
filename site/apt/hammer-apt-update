@@ -1,0 +1,102 @@
+#!/bin/sh
+# Turns the latest Prism Launcher Horizon release's AppImages into .deb packages and
+# publishes them as a signed apt repository under hammer.veyron.online/apt.
+# Run hourly from cron; it does nothing while the release is unchanged (--force rebuilds).
+set -eu
+
+REPO=artemspt/PrismLauncher-Horizon
+WWW=/var/www/hammer.veyron.online/apt
+KEY=apt@hammer.veyron.online
+export GNUPGHOME=/etc/hammer-apt/gnupg
+
+if [ ! -d "$GNUPGHOME" ]; then
+    mkdir -p -m 700 "$GNUPGHOME"
+    gpg --batch --pinentry-mode loopback --passphrase '' \
+        --quick-gen-key "Horizon Hammer apt <$KEY>" ed25519 sign never
+fi
+
+tag=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | jq -r .tag_name)
+[ -n "$tag" ] && [ "$tag" != null ]
+if [ "${1:-}" != --force ] && [ "$(cat "$WWW/.tag" 2>/dev/null)" = "$tag" ]; then
+    exit 0
+fi
+# v11.1.1-horizon -> 11.1.1+horizon-1: an upstream version must start with a digit
+ver=$(echo "$tag" | sed 's/^v//; s/-horizon$//')+horizon-1
+
+work=$(mktemp -d -p /var/tmp) # same disk as $WWW: the swap below is a rename
+trap 'rm -rf "$work"' EXIT
+new=$work/repo
+mkdir -p "$new/pool/main" "$new/dists/stable/main/binary-amd64" "$new/dists/stable/main/binary-arm64"
+
+for pair in amd64:x86_64 arm64:aarch64; do
+    arch=${pair%%:*}
+    curl -fsSL -o "$work/a.AppImage" \
+        "https://github.com/$REPO/releases/download/$tag/PrismLauncher-Linux-${pair#*:}.AppImage"
+    # The squashfs starts where the ELF runtime ends: e_shoff + e_shentsize * e_shnum.
+    # Read from the header, so another architecture's image needs no running.
+    off=$(python3 -c 'import struct,sys
+b=open(sys.argv[1],"rb").read(64)
+print(struct.unpack_from("<Q",b,0x28)[0]+struct.unpack_from("<H",b,0x3A)[0]*struct.unpack_from("<H",b,0x3C)[0])' "$work/a.AppImage")
+
+    pkg=$work/pkg-$arch
+    opt=$pkg/opt/prismlauncher-horizon
+    mkdir -p "$pkg/DEBIAN" "$pkg/opt" "$pkg/usr/bin" "$pkg/usr/share/applications" \
+        "$pkg/usr/share/icons/hicolor/scalable/apps"
+    unsquashfs -q -n -o "$off" -d "$opt" "$work/a.AppImage" >/dev/null
+    rm -f "$work/a.AppImage" "$opt/bin/AppImageUpdate.AppImage" # apt updates it instead
+    ln -s /opt/prismlauncher-horizon/AppRun "$pkg/usr/bin/prismlauncher-horizon"
+    # Own names, so it installs beside Debian's prismlauncher
+    sed -e '/^Name\[/d' -e 's/^Name=.*/Name=Prism Launcher Horizon/' \
+        -e 's/^Exec=prismlauncher/Exec=prismlauncher-horizon/' \
+        -e 's/^Icon=.*/Icon=prismlauncher-horizon/' \
+        "$opt/share/applications/org.prismlauncher.PrismLauncher.desktop" \
+        >"$pkg/usr/share/applications/prismlauncher-horizon.desktop"
+    cp "$opt/share/icons/hicolor/scalable/apps/org.prismlauncher.PrismLauncher.svg" \
+        "$pkg/usr/share/icons/hicolor/scalable/apps/prismlauncher-horizon.svg"
+
+    cat >"$pkg/DEBIAN/control" <<EOF
+Package: prismlauncher-horizon
+Version: $ver
+Architecture: $arch
+Maintainer: artemspt <$KEY>
+Installed-Size: $(du -sk "$pkg" | cut -f1)
+Recommends: xdg-utils
+Section: games
+Priority: optional
+Homepage: https://hammer.veyron.online
+Description: Prism Launcher that also installs and runs Horizon
+ Prism Launcher with a Horizon page in Add Instance: it downloads Horizon,
+ Minecraft: Java Edition rewritten in Rust, and prepares its files from your
+ own copy of Minecraft. Not affiliated with the Prism Launcher project.
+EOF
+    dpkg-deb --root-owner-group -Zxz -b "$pkg" "$new/pool/main/prismlauncher-horizon_${ver}_$arch.deb" >/dev/null
+    rm -rf "$pkg"
+done
+
+cd "$new"
+for arch in amd64 arm64; do
+    apt-ftparchive -a "$arch" packages pool >"dists/stable/main/binary-$arch/Packages"
+    gzip -9k "dists/stable/main/binary-$arch/Packages"
+done
+apt-ftparchive \
+    -o APT::FTPArchive::Release::Origin="Horizon Hammer" \
+    -o APT::FTPArchive::Release::Label="Horizon Hammer" \
+    -o APT::FTPArchive::Release::Suite=stable \
+    -o APT::FTPArchive::Release::Codename=stable \
+    -o APT::FTPArchive::Release::Architectures="amd64 arm64" \
+    -o APT::FTPArchive::Release::Components=main \
+    release dists/stable >"$work/Release"
+mv "$work/Release" dists/stable/Release
+gpg --batch --yes -u "$KEY" --clearsign -o dists/stable/InRelease dists/stable/Release
+gpg --batch --yes -u "$KEY" -abs -o dists/stable/Release.gpg dists/stable/Release
+gpg --export "$KEY" >horizon-hammer.gpg
+gpg --armor --export "$KEY" >horizon-hammer.asc
+echo "$tag" >.tag
+chmod -R a+rX "$new"
+
+# Swap whole, so apt never sees a half-written repository
+rm -rf "$WWW.old"
+[ -d "$WWW" ] && mv "$WWW" "$WWW.old"
+mv "$new" "$WWW"
+rm -rf "$WWW.old"
+echo "published $tag as $ver"
