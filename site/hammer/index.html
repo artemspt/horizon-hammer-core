@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Horizon Hammer</title>
+<meta name="description" content="Ядро модов для Horizon: моды в песочнице WebAssembly, одним файлом, с перезагрузкой без выхода из мира.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --page: #fafafc; --plate: #f0f0f5; --rule: #e2e3ea;
+  --ink: #16181f; --ink-soft: #3b3e49; --muted: #646875;
+  --accent: #b5530f; --on-accent: #ffffff;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page: #0d0e13; --plate: #181a22; --rule: #24262f;
+    --ink: #ecedf3; --ink-soft: #c5c7d1; --muted: #8b8f9c;
+    --accent: #f29a52; --on-accent: #0d0e13;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --page: #0d0e13; --plate: #181a22; --rule: #24262f;
+  --ink: #ecedf3; --ink-soft: #c5c7d1; --muted: #8b8f9c;
+  --accent: #f29a52; --on-accent: #0d0e13;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--page); color: var(--ink);
+  font: 400 17px/1.6 Geist, system-ui, sans-serif;
+  overflow-x: hidden;
+}
+.wrap { max-width: 1040px; margin: 0 auto; padding: 0 64px; }
+@media (max-width: 720px) { .wrap { padding: 0 16px; } }
+a { color: var(--accent); text-underline-offset: 3px; }
+a:focus-visible, .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+code, pre, .mono { font-family: "Geist Mono", ui-monospace, monospace; font-size: 0.88em; }
+
+header { display: flex; justify-content: space-between; align-items: center; padding: 28px 0; }
+.logo { font-weight: 600; letter-spacing: -0.02em; color: var(--ink); text-decoration: none; }
+nav a { color: var(--muted); text-decoration: none; margin-left: 24px; font-size: 15px; }
+nav a:hover { color: var(--ink); }
+@media (max-width: 520px) { nav a.opt { display: none; } }
+
+.hero { padding: 72px 0 56px; }
+h1 {
+  font-weight: 500; letter-spacing: -0.03em; line-height: 1.05;
+  font-size: clamp(40px, 7vw, 76px); margin: 0 0 24px; max-width: 14ch;
+}
+.lead { font-size: clamp(18px, 2.2vw, 21px); color: var(--ink-soft); max-width: 40em; margin: 0 0 32px; }
+.btn {
+  display: inline-block; padding: 12px 22px; border-radius: 8px; font-weight: 500;
+  text-decoration: none; margin: 0 12px 12px 0;
+}
+.btn.main { background: var(--accent); color: var(--on-accent); }
+.btn.quiet { color: var(--ink); background: var(--plate); }
+
+h2 { font-weight: 500; letter-spacing: -0.02em; font-size: 28px; margin: 0 0 8px; }
+section { padding: 48px 0; border-top: 1px solid var(--rule); }
+.sub { color: var(--muted); margin: 0 0 24px; }
+
+ol.rows { list-style: none; margin: 0; padding: 0; counter-reset: row; }
+ol.rows li {
+  counter-increment: row; display: grid; grid-template-columns: 48px 1fr; gap: 0 16px;
+  padding: 20px 0; border-bottom: 1px solid var(--rule);
+}
+ol.rows li::before {
+  content: counter(row, decimal-leading-zero); font-family: "Geist Mono", monospace;
+  color: var(--muted); font-size: 14px; padding-top: 4px;
+}
+ol.rows b { display: block; font-weight: 500; font-size: 20px; letter-spacing: -0.01em; }
+ol.rows span { color: var(--ink-soft); }
+
+pre {
+  background: var(--plate); border-radius: 8px; padding: 18px 20px; overflow-x: auto;
+  line-height: 1.7; margin: 0 0 16px;
+}
+pre .c { color: var(--muted); }
+
+.note { color: var(--muted); font-size: 15px; max-width: 46em; }
+footer { padding: 48px 0 24px; border-top: 1px solid var(--rule); color: var(--muted); font-size: 14px; }
+.mark {
+  font-weight: 600; letter-spacing: -0.04em; font-size: clamp(64px, 17vw, 200px); line-height: 0.9;
+  color: var(--plate); margin: 40px 0 0; user-select: none; white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .hero > * { animation: rise .5s ease-out both; }
+  .hero > *:nth-child(2) { animation-delay: .05s; }
+  .hero > *:nth-child(3) { animation-delay: .1s; }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="logo" href="/">Horizon Hammer</a>
+    <nav>
+      <a class="opt" href="#why">Зачем</a>
+      <a class="opt" href="#start">Первый мод</a>
+      <a href="https://github.com/artemspt/horizon-hammer-core">GitHub</a>
+    </nav>
+  </header>
+
+  <div class="hero">
+    <h1>Моды, которым можно доверять</h1>
+    <p class="lead">Horizon Hammer — ядро модов для <a href="https://github.com/horizon-rust/horizon">Horizon</a>,
+      Minecraft: Java Edition, переписанного на Rust. Каждый мод работает в песочнице
+      WebAssembly и делает только то, что вы ему разрешили.</p>
+    <div>
+      <a class="btn main" href="#start">Сделать первый мод</a>
+      <a class="btn quiet" href="https://github.com/artemspt/horizon-hammer-core/blob/main/docs/mods.md">Документация</a>
+    </div>
+  </div>
+
+  <section id="why">
+    <h2>Зачем</h2>
+    <p class="sub">То, чего нет у привычных загрузчиков.</p>
+    <ol class="rows">
+      <li><div><b>Песочница</b><span>Мод не видит ваши файлы и сеть, пока вы не разрешили. Что он может, написано рядом с его переключателем.</span></div></li>
+      <li><div><b>Один файл</b><span>Положите <code>.hmod</code> в папку <code>horizon-mods</code> и включите в настройках. Ничего не компилируется на вашей машине.</span></div></li>
+      <li><div><b>Перезагрузка за секунду</b><span>Пересобрали мод — игра подхватила его, не выходя из мира. <code>/hmod reload</code> делает то же для установленных модов.</span></div></li>
+      <li><div><b>Сбой — это сбой мода</b><span>Упавший мод останавливается сам, игра и остальные моды продолжают работать.</span></div></li>
+      <li><div><b>Привычные возможности</b><span>Блоки, предметы, мобы, механизмы, окна, события, генерация мира, сеть между клиентом и сервером.</span></div></li>
+    </ol>
+  </section>
+
+  <section id="start">
+    <h2>Первый мод</h2>
+    <p class="sub">Нужны Rust и собранный Horizon.</p>
+<pre><span class="c"># один раз</span>
+rustup target add wasm32-unknown-unknown
+cargo install --git https://github.com/artemspt/horizon-hammer-core cargo-horizon-mod
+
+<span class="c"># новый мод</span>
+cargo horizon-mod new my-mod
+cd my-mod
+cargo horizon-mod run     <span class="c"># собрать и запустить игру с модом</span>
+cargo horizon-mod build   <span class="c"># после правки: игра перезагрузит мод сама</span>
+cargo horizon-mod test    <span class="c"># сценарии из tests/ без игры</span></pre>
+    <p class="note">Полное руководство и справочник API — в
+      <a href="https://github.com/artemspt/horizon-hammer-core/blob/main/docs/mods.md">docs/mods.md</a>.</p>
+  </section>
+
+  <section>
+    <h2>Играть с модами</h2>
+    <ol class="rows">
+      <li><div><b>Положите файл</b><span><code>.hmod</code> в папку <code>horizon-mods</code> рядом с <code>options.txt</code>.</span></div></li>
+      <li><div><b>Посмотрите, что ему можно</b><span>Настройки → Моды показывают разрешения каждого мода. Новые моды выключены.</span></div></li>
+      <li><div><b>Включите</b><span>Если мод не загрузился, причина видна в его строке.</span></div></li>
+    </ol>
+  </section>
+
+  <footer>
+    <p>Неофициальный форк <a href="https://github.com/horizon-rust/horizon">Horizon</a>, не связан с его авторами
+      и с Mojang или Microsoft. Файлы Minecraft не распространяются: игра готовит их из вашей копии.</p>
+    <div class="mark" aria-hidden="true">hammer</div>
+  </footer>
+</div>
+</body>
+</html>
