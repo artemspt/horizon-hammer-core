@@ -1,0 +1,111 @@
+name: hammer release
+# Horizon Hammer builds: the game with this fork's mod core, which Prism Launcher Horizon installs when a player picks
+# "Horizon Hammer" under Minecraft (Rust). Pushing a tag hammer-X.Y.Z builds Linux, Windows and macOS on GitHub's runners
+# and publishes them as that tag's release, under upstream's asset names, so the launcher installs them as it does
+# Horizon's: it unpacks the archive and runs its horizon-prepare against the player's own Minecraft.
+#   git tag hammer-0.1.0 && git push origin hammer-0.1.0
+on:
+  push:
+    tags: ['hammer-*']
+permissions:
+  contents: write
+env:
+  # The upstream release this fork is based on. Its exporters are compiled from the maintainer's Minecraft jars on a
+  # runner we don't have; only Horizon's own classes are in them, and they are what this horizon-prepare expects.
+  BASE: v0.2.93
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux
+            # An older Ubuntu, as upstream: the binary runs on any recent distribution
+            os: ubuntu-22.04
+            dir: horizon-linux-x86_64
+            asset: horizon-linux-x86_64.tar.gz
+          - name: windows
+            os: windows-latest
+            dir: horizon-windows-x64
+            asset: horizon-windows-x64.zip
+            exe: .exe
+            # The C runtime linked in, so the game runs without the Visual C++ redistributable
+            rustflags: -C target-feature=+crt-static
+          - name: macos
+            os: macos-14
+            dir: horizon-macos-arm64
+            asset: horizon-macos-arm64.zip
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    env:
+      RUSTFLAGS: ${{ matrix.rustflags }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: hammer-${{ matrix.name }}
+      - name: The version built in
+        # hammer-0.1.0 on Horizon 0.2.93 -> 0.2.93+hammer.0.1.0: what the game shows and crash reports say
+        run: echo "HORIZON_VERSION=${BASE#v}+hammer.${GITHUB_REF_NAME#hammer-}" >> "$GITHUB_ENV"
+      - name: ALSA and udev headers
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libasound2-dev libudev-dev
+      - name: Build the client, horizon-ctl, horizon-prepare and horizon-server
+        run: cargo build --release --locked --features horizon-client/mods -p horizon-client --bin horizon-client --bin horizon-ctl -p horizon-prepare --bin horizon-prepare -p horizon-server --bin horizon-server
+      - name: Every program starts
+        run: |
+          set -euo pipefail
+          bin=target/release
+          "$bin/horizon-client${{ matrix.exe }}" --help | grep -q -- '--resources'
+          "$bin/horizon-prepare${{ matrix.exe }}" --help | grep -q -- '--minecraft-dir'
+          "$bin/horizon-prepare${{ matrix.exe }}" --version
+      - name: Exporters from the upstream release
+        run: |
+          set -euo pipefail
+          curl -fsSL -o base.tar.gz "https://github.com/horizon-rust/horizon/releases/download/$BASE/horizon-linux-x86_64.tar.gz"
+          mkdir base && tar xzf base.tar.gz -C base
+          mv base/horizon-linux-x86_64/exporters exporters
+          rm -rf base base.tar.gz
+          test -f exporters/manifest.json
+      - name: Package
+        run: |
+          set -euo pipefail
+          cargo run --locked -p xtask -- package "target/release/horizon-client${{ matrix.exe }}" "dist/${{ matrix.dir }}"
+          cd dist
+          case "${{ matrix.asset }}" in
+            *.tar.gz) tar czf "${{ matrix.asset }}" "${{ matrix.dir }}" ;;
+            *) if [[ "$RUNNER_OS" == Windows ]]; then 7z a -tzip "${{ matrix.asset }}" "${{ matrix.dir }}" > /dev/null
+               else ditto -c -k --norsrc --noextattr --noqtn --keepParent "${{ matrix.dir }}" "${{ matrix.asset }}"
+               fi ;;
+          esac
+          ls -l "${{ matrix.asset }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    # What built is published: a platform whose runner never came doesn't hold back the others
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ls -l assets
+          [ -n "$(ls assets)" ] || { echo "::error::nothing built"; exit 1; }
+          (cd assets && sha256sum * > SHA256SUMS)
+          notes="Horizon ${BASE} with the Horizon Hammer mod core. Install it from Prism Launcher Horizon: Add Instance, Minecraft (Rust), Horizon Hammer."
+          gh release create "$GITHUB_REF_NAME" assets/* -R "$GITHUB_REPOSITORY" --title "Horizon Hammer ${GITHUB_REF_NAME#hammer-}" --notes "$notes"
