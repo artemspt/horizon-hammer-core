@@ -147,6 +147,22 @@ h2 { font-weight: 600; letter-spacing: -.03em; font-size: clamp(30px, 4vw, 44px)
 .steps div::before { content: counter(s, decimal-leading-zero); display: block; font: 600 34px Geist, sans-serif; letter-spacing: -.04em; margin-bottom: 8px;
   background: linear-gradient(135deg, var(--accent), var(--accent-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .steps b { display: block; font-size: 18px; margin-bottom: 4px; }
+.links { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+@media (max-width: 920px) { .links { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 600px) { .links { grid-template-columns: 1fr; } }
+.links a { display: block; padding: 18px 20px; border-radius: 12px; background: var(--card); border: 1px solid var(--rule); color: var(--ink); text-decoration: none; transition: border-color .2s ease, transform .2s ease; }
+.links a:hover { border-color: var(--accent); transform: translateY(-2px); }
+.links b { display: block; font-size: 16px; margin-bottom: 2px; }
+.links b::after { content: " ↗"; color: var(--accent); font-weight: 400; }
+.links span { color: var(--muted); font-size: 14.5px; }
+.links h3 { grid-column: 1 / -1; margin: 18px 0 2px; font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.links h3:first-child { margin-top: 0; }
+details { border-bottom: 1px solid var(--rule); padding: 16px 0; }
+details summary { cursor: pointer; font-weight: 600; font-size: 17px; list-style: none; }
+details summary::-webkit-details-marker { display: none; }
+details summary::before { content: "+"; display: inline-block; width: 22px; color: var(--accent); }
+details[open] summary::before { content: "−"; }
+details p { margin: 10px 0 0 22px; color: var(--ink-soft); }
 .steps p { margin: 0; color: var(--ink-soft); font-size: 15.5px; }
 
 .cta { margin-top: 96px; padding: 48px; border-radius: 20px; text-align: center; position: relative; overflow: hidden;
@@ -176,6 +192,8 @@ footer { padding: 56px 0 24px; color: var(--muted); font-size: 14px; }
       <a class="opt" href="#why">Зачем</a>
       <a class="opt" href="#code">Код</a>
       <a class="opt" href="#start">Начать</a>
+      <a class="opt" href="#docs">Документация</a>
+      <a class="opt" href="#faq">Вопросы</a>
       <a href="#download">Скачать</a>
       <a class="opt" href="https://github.com/artemspt/horizon-hammer-core">GitHub</a>
     </nav>
@@ -191,7 +209,7 @@ footer { padding: 56px 0 24px; color: var(--muted); font-size: 14px; }
           и перезагружается за секунду, не выходя из мира.</p>
         <a class="btn main" href="#download">Скачать лаунчер ↓</a>
         <a class="btn quiet" href="#start">Сделать первый мод →</a>
-        <a class="btn quiet" href="https://github.com/artemspt/horizon-hammer-core/blob/main/docs/mods.md">Документация</a>
+        <a class="btn quiet" href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/mods.md">Документация</a>
       </div>
 
       <div class="demo reveal" aria-label="Пример: правка мода и перезагрузка в игре">
@@ -209,7 +227,7 @@ footer { padding: 56px 0 24px; color: var(--muted); font-size: 14px; }
       <div><b>1 с</b><span>до перезагрузки мода</span></div>
       <div><b>0</b><span>доступа без разрешения</span></div>
       <div><b>1 файл</b><span><code>.hmod</code> — весь мод</span></div>
-      <div><b>Rust</b><span>и WebAssembly</span></div>
+      <div><b>400+</b><span>функций API для модов</span></div>
     </div>
 
     <section id="why">
@@ -298,7 +316,7 @@ capabilities = [<span class="s">"players"</span>]</pre>
       <h2>Первый мод за десять минут</h2>
       <p class="sub">Нужны Rust и собранный Horizon.</p>
       <div class="steps">
-        <div class="reveal"><b>Установите</b><p><code>rustup target add wasm32-unknown-unknown</code>, затем <code>cargo install --git https://github.com/artemspt/horizon-hammer-core cargo-horizon-mod</code></p></div>
+        <div class="reveal"><b>Установите</b><p><code>rustup target add wasm32-unknown-unknown</code>, затем <code>cargo install --git https://github.com/artemspt/horizon-hammer-core --branch api/extra-100 cargo-horizon-mod</code></p></div>
         <div class="reveal"><b>Создайте</b><p><code>cargo horizon-mod new my-mod</code> — манифест, код и пример теста.</p></div>
         <div class="reveal"><b>Запустите</b><p><code>cargo horizon-mod run</code>. После каждой правки — <code>build</code>, игра перезагрузит мод сама.</p></div>
       </div>
@@ -317,6 +335,67 @@ capabilities = [<span class="s">"players"</span>]</pre>
         <a class="btn main" href="https://github.com/artemspt/PrismLauncher-Horizon/releases/latest">Скачать последнюю версию</a>
         <a class="btn quiet" href="https://github.com/artemspt/PrismLauncher-Horizon">Исходный код лаунчера</a>
       </p>
+    </section>
+
+    <section id="docs">
+      <p class="eyebrow">Документация</p>
+      <h2>Всё, что нужно под рукой</h2>
+      <p class="sub">Руководства, справочник и планы лежат в репозитории рядом с кодом и обновляются вместе с ним.</p>
+      <div class="links reveal">
+        <h3>Писать моды</h3>
+        <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/mods.md"><b>Руководство по модам</b><span>Как устроены моды, манифест, стороны, разрешения</span></a>
+        <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/api/mods-reference.md"><b>Справочник API</b><span>Каждая функция: что делает и когда отказывает</span></a>
+        <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/api/stability.md"><b>Стабильность API</b><span>Уровни API, что меняется, что останется</span></a>
+        <a href="https://github.com/artemspt/horizon-hammer-core/tree/api/extra-100/crates/horizon-mod-sdk"><b>SDK</b><span>Крейт horizon-mod-sdk и контракт WIT</span></a>
+        <a href="https://github.com/artemspt/horizon-hammer-core/tree/api/extra-100/crates/cargo-horizon-mod"><b>cargo horizon-mod</b><span>new, build, run, test, check</span></a>
+        <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/crates/horizon-mods/AGENTS.md"><b>Расширять ядро</b><span>Как добавить функцию в API: от контракта до проверки в игре</span></a>
+        <h3>Играть</h3>
+        <a href="https://github.com/artemspt/PrismLauncher-Horizon/releases/latest"><b>Лаунчер</b><span>Prism Launcher Horizon для Linux, Windows и macOS</span></a>
+        <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/play-with-friends.md"><b>Игра с друзьями</b><span>LAN и подключение по сети</span></a>
+        <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/server.md"><b>Свой сервер</b><span>Выделенный сервер Horizon и серверные моды</span></a>
+        <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/security.md"><b>Безопасность</b><span>Что песочница закрывает и чего не обещает</span></a>
+        <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/modpacks.md"><b>Модпаки и ресурсы</b><span>Что переносится из модов Java: данные, текстуры, модели</span></a>
+        <h3>Проект</h3>
+        <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/mod-api-plan.md"><b>План API</b><span>Что сделано и что дальше</span></a>
+        <a href="https://github.com/artemspt/horizon-hammer-core/blob/api/extra-100/docs/mod-core-known-issues.md"><b>Известные проблемы</b><span>Что найдено и отложено</span></a>
+        <a href="https://github.com/artemspt/horizon-hammer-core/commits/api/extra-100"><b>Что нового</b><span>Последние изменения ядра</span></a>
+        <a href="https://github.com/horizon-rust/horizon"><b>Horizon</b><span>Исходный проект: Minecraft на Rust</span></a>
+        <a href="https://www.rust-lang.org/learn"><b>Учить Rust</b><span>Если Rust ещё не знаком</span></a>
+        <a href="https://component-model.bytecodealliance.org/"><b>Компонентная модель</b><span>Как устроены WebAssembly-компоненты и WIT</span></a>
+      </div>
+    </section>
+
+    <section id="examples">
+      <p class="eyebrow">Примеры</p>
+      <h2>Учитесь на готовых модах</h2>
+      <p class="sub">Каждый пример собирается одной командой и проверяется тестами ядра.</p>
+      <div class="links reveal">
+        <a href="https://github.com/artemspt/horizon-hammer-core/tree/api/extra-100/crates/horizon-mod-sdk/examples/block-guard"><b>block-guard</b><span>Хуки блоков: запретить ломать, прочитать блок палкой</span></a>
+        <a href="https://github.com/artemspt/horizon-hammer-core/tree/api/extra-100/crates/horizon-mod-sdk/examples/iron-press"><b>iron-press</b><span>Механизм: энергия, окно печи, редстоун, сеть</span></a>
+        <a href="https://github.com/artemspt/horizon-hammer-core/tree/api/extra-100/crates/horizon-mod-sdk/examples/worldgen"><b>worldgen</b><span>Поверхность биома и своя руда, с настройками</span></a>
+        <a href="https://github.com/artemspt/horizon-hammer-core/tree/api/extra-100/crates/horizon-mod-sdk/examples/coords-hud"><b>coords-hud</b><span>Клиентский мод: координаты и время на экране</span></a>
+        <a href="https://github.com/artemspt/horizon-hammer-core/tree/api/extra-100/crates/horizon-mod-sdk/examples/core-tour"><b>core-tour</b><span>Данные игрока, ресурсы, сообщения между модами</span></a>
+        <a href="https://github.com/artemspt/horizon-hammer-core/tree/api/extra-100/mods/showcase"><b>showcase</b><span>Всё ядро в одном моде: мобы, модели, измерения, /showcase demo</span></a>
+      </div>
+    </section>
+
+    <section id="faq">
+      <p class="eyebrow">Вопросы</p>
+      <h2>Часто спрашивают</h2>
+      <div class="reveal">
+        <details><summary>Запустятся ли моды для Forge, Fabric или NeoForge?</summary>
+          <p>Нет: их код вызывает Java-классы Minecraft, которых в Horizon нет. Переносятся данные и ресурсы из jar — рецепты, теги, текстуры, модели.</p></details>
+        <details><summary>Нужен ли купленный Minecraft?</summary>
+          <p>Да. Horizon не содержит файлов Minecraft и готовит их из вашей копии игры при первом запуске.</p></details>
+        <details><summary>Может ли мод навредить компьютеру?</summary>
+          <p>Обычный мод — нет: он работает в песочнице и получает только то, что указано в манифесте и что вы разрешили. Исключение — нативные платы с пометкой [UNSAFE], у них полный доступ.</p></details>
+        <details><summary>Чем это отличается от Horizon?</summary>
+          <p>Horizon перешёл на нативные моды, которые правят исходники и требуют пересборки игры. Этот форк сохраняет песочницу: мод — один файл, который ставится без компиляции и перезагружается на лету.</p></details>
+        <details><summary>Работают ли моды в мультиплеере?</summary>
+          <p>Да. Серверные моды работают в одиночной игре, по LAN и на выделенном сервере; клиентские — в окне игрока. Мод может состоять из двух половин, которые общаются по своему каналу.</p></details>
+        <details><summary>На каком языке писать моды?</summary>
+          <p>Сейчас SDK есть для Rust. Мод собирается в WebAssembly-компонент, так что другие языки возможны, но готового SDK для них пока нет.</p></details>
+      </div>
     </section>
 
     <div class="cta reveal">
