@@ -4,11 +4,20 @@ name: hammer release
 # and publishes them as that tag's release, under upstream's asset names, so the launcher installs them as it does
 # Horizon's: it unpacks the archive and runs its horizon-prepare against the player's own Minecraft.
 #   git tag hammer-0.1.0 && git push origin hammer-0.1.0
+# A push to the core's branch publishes a nightly: a prerelease hammer-nightly-<date>-<commit>, which the launcher lists
+# under Snapshots. Only the newest few are kept.
 on:
   push:
-    tags: ['hammer-*']
+    tags: ['hammer-*', '!hammer-nightly-*']
+    branches: [api/extra-100]
+    paths-ignore: ['site/**', 'docs/**', '**.md']
+  workflow_dispatch:
 permissions:
   contents: write
+# A newer push makes a running nightly pointless; a release is never cancelled
+concurrency:
+  group: hammer-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type == 'branch' }}
 env:
   # The upstream release this fork is based on. Its exporters are compiled from the maintainer's Minecraft jars on a
   # runner we don't have; only Horizon's own classes are in them, and they are what this horizon-prepare expects.
@@ -49,8 +58,15 @@ jobs:
         with:
           shared-key: hammer-${{ matrix.name }}
       - name: The version built in
-        # hammer-0.1.0 on Horizon 0.2.93 -> 0.2.93+hammer.0.1.0: what the game shows and crash reports say
-        run: echo "HORIZON_VERSION=${BASE#v}+hammer.${GITHUB_REF_NAME#hammer-}" >> "$GITHUB_ENV"
+        # hammer-0.1.0 on Horizon 0.2.93 -> 0.2.93+hammer.0.1.0: what the game shows and crash reports say.
+        # A nightly is 0.2.93+hammer.dev and names its date and commit in the title screen's corner
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            echo "HORIZON_VERSION=${BASE#v}+hammer.${GITHUB_REF_NAME#hammer-}" >> "$GITHUB_ENV"
+          else
+            echo "HORIZON_VERSION=${BASE#v}+hammer.dev" >> "$GITHUB_ENV"
+            echo "HORIZON_NIGHTLY=$(date -u +%F) ${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+          fi
       - name: ALSA and udev headers
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libasound2-dev libudev-dev
@@ -108,4 +124,16 @@ jobs:
           [ -n "$(ls assets)" ] || { echo "::error::nothing built"; exit 1; }
           (cd assets && sha256sum * > SHA256SUMS)
           notes="Horizon ${BASE} with the Horizon Hammer mod core. Install it from Prism Launcher Horizon: Add Instance, Minecraft (Rust), Horizon Hammer."
-          gh release create "$GITHUB_REF_NAME" assets/* -R "$GITHUB_REPOSITORY" --title "Horizon Hammer ${GITHUB_REF_NAME#hammer-}" --notes "$notes"
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            gh release create "$GITHUB_REF_NAME" assets/* -R "$GITHUB_REPOSITORY" --title "Horizon Hammer ${GITHUB_REF_NAME#hammer-}" --notes "$notes"
+            exit 0
+          fi
+          # A tag made with this workflow's token starts no workflow, so the nightly's own tag builds nothing again
+          tag="hammer-nightly-$(date -u +%F)-${GITHUB_SHA::7}"
+          gh release create "$tag" assets/* -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --latest=false \
+            --title "Horizon Hammer nightly $(date -u +%F) ${GITHUB_SHA::7}" \
+            --notes "Built from ${GITHUB_REF_NAME} at ${GITHUB_SHA}, untested. $notes"
+          # The three newest nightlies stay
+          gh release list -R "$GITHUB_REPOSITORY" --limit 100 --json tagName,createdAt \
+            -q '[.[] | select(.tagName | startswith("hammer-nightly-"))] | sort_by(.createdAt) | reverse | .[3:] | .[].tagName' |
+            while read -r old; do gh release delete "$old" -R "$GITHUB_REPOSITORY" --yes --cleanup-tag; done
