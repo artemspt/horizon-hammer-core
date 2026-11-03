@@ -966,6 +966,16 @@ impl Title {
                 }
                 let version = format!("Horizon {} (Rust)", horizon_core::VANILLA_VERSION);
                 batch.text(atlas, &version, 2.0, h - 10.0, u32::MAX, true);
+                // The mod core says the game is modified, above the version, as Forge does: a hammer-X.Y.Z
+                // release is built as 0.2.93+hammer.X.Y.Z
+                #[cfg(feature = "mods")]
+                {
+                    // Short: the buttons' column starts just right of it
+                    let hammer = horizon_core::release::RELEASE
+                        .and_then(|v| v.split_once("+hammer."))
+                        .map_or("dev", |(_, v)| v);
+                    batch.text(atlas, &format!("Modded: Hammer {hammer}"), 2.0, h - 20.0, u32::MAX, true);
+                }
                 // A nightly names its build in the top-left corner, the one spot no button reaches at any GUI
                 // scale, so screenshots and reports say which build they come from.
                 if let Some(nightly) = horizon_core::release::nightly_label() {
